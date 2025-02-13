@@ -2,7 +2,6 @@ import os
 import numpy as np
 import gen_eva_obs_yaml
 import marine_eva_post
-import diag_statistics
 from multiprocessing import Process
 from soca_vrfy import statePlotter, plotConfig
 import subprocess
@@ -250,7 +249,7 @@ for process in processes:
 
 # Run EVA
 if eva_plots:
-    evadir = os.path.join(HOMEgdas, 'ush', 'eva')
+    evadir = os.path.join(HOMEgdas)
     marinetemplate = os.path.join(evadir, 'marine_gdas_plots.yaml')
     varyaml = os.path.join(comout, 'yaml', 'var.yaml')
 
