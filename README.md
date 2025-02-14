@@ -7,6 +7,14 @@ The above will generate time series of o-b RMSEs, Bias, and obs count for multip
 
 ---
 
+## Using `oceanview`
+An interactive tool, mostly meant for insitu obs.
+```console
+./oceanview -v waterTemperature -i insitu_profile_argo.2021070412.nc4
+```
+
+---
+
 ## How to generate the EVA and State space figures
 
 #### Create a scratch place to run `run_vrfy.py`. This script will generate a bunch of sbatch scripts and logs.
