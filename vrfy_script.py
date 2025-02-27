@@ -64,6 +64,7 @@ HOMEgdas = os.getenv('HOMEgdas')
 plot_ensemble_b = os.getenv('PLOT_ENSEMBLE_B', 'OFF').upper() == 'ON'
 plot_parametric_b = os.getenv('PLOT_PARAMETRIC_B', 'OFF').upper() == 'ON'
 plot_background = os.getenv('PLOT_BACKGROUND', 'OFF').upper() == 'ON'
+plot_letkf_ensemble = os.getenv('PLOT_LETKF_ENSEMBLE', 'OFF').upper() == 'ON'
 plot_increment = os.getenv('PLOT_INCREMENT', 'OFF').upper() == 'ON'
 plot_analysis = os.getenv('PLOT_ANALYSIS', 'OFF').upper() == 'ON'
 eva_plots = os.getenv('EVA_PLOTS', 'OFF').upper() == 'ON'
@@ -77,6 +78,7 @@ configs = []
 
 # Analysis plotting configuration
 if plot_analysis:
+    print('Plotting analysis')
     configs_ana = [plotConfig(grid_file=grid_file,
                           data_file=os.path.join(comout, f'{RUN}.t'+cyc+'z.ocnana.nc'),
                           variables_horiz={'ave_ssh': [-1.8, 1.3],
@@ -96,6 +98,7 @@ if plot_analysis:
 
 # Ensemble B plotting configuration
 if plot_ensemble_b:
+    print('Plotting ensemble B SSH diagnostics')
     config_ens = [plotConfig(grid_file=grid_file,
                              data_file=os.path.join(comout, f'{RUN}.t{cyc}z.ocn.recentering_error.nc'),
                              variables_horiz={'ave_ssh': [-1, 1]},
@@ -125,6 +128,7 @@ if plot_ensemble_b:
 
 # Parametric B plotting configuration
 if plot_parametric_b:
+    print('Plotting parametric B diagnostics')
     config_bkgerr = [plotConfig(grid_file=grid_file,
                                 data_file=os.path.join(comout, os.path.pardir, os.path.pardir,
                                                       'bmatrix', 'ice', f'{RUN}.t'+cyc+'z.ice.bkgerr_stddev.nc'),
@@ -157,8 +161,96 @@ if plot_parametric_b:
                                 vrfyout=os.path.join(vrfyout, 'vrfy', 'bkgerr'))]   # ocn bkgerr stddev
     configs.extend(config_bkgerr)
 
+# LETKF ensemble plotting configuration
+if plot_letkf_ensemble:
+    print('Plotting background ensemble diagnostics')
+    config_letkf =  [plotConfig(grid_file=grid_file,
+                                data_file=os.path.join(comout, 'letkf', f'enkfgdas.ice.t'+cyc+'z.ensvar_prior.nc'),
+                                variables_horiz={'aice_h': [0.0, 0.1]},  # TODO: change the range once spread is big enough to notice
+                                colormap='jet',
+                                projs=['North', 'South', 'Global'],
+                                vrfyout=os.path.join(vrfyout, 'vrfy', 'letkf_bkg_std'),
+                                plot_sqrt=True),   # sea ice background ensemble spread
+                     plotConfig(grid_file=grid_file,
+                                layer_file=layer_file,
+                                data_file=os.path.join(comout, 'letkf', f'enkfgdas.ocean.t'+cyc+'z.ensvar_prior.nc'),
+                                lats=np.arange(-60, 60, 10),
+                                lons=np.arange(-280, 80, 30),
+                                variables_zonal={'Temp': [0, 0.5],       # TODO: change the range once spread is big enough to notice
+                                                 'Salt': [0, 0.2],
+                                                 'u': [0, 0.5],
+                                                 'v': [0, 0.5]},
+                                variables_meridional={'Temp': [0, 0.5],
+                                                      'Salt': [0, 0.2],
+                                                      'u': [0, 0.5],
+                                                      'v': [0, 0.5]},
+                                variables_horiz={'Temp': [0, 0.5],
+                                                 'Salt': [0, 0.2],
+                                                 'u': [0, 0.5],
+                                                 'v': [0, 0.5],
+                                                 'ave_ssh': [0, 0.05]},
+                                colormap='jet',
+                                vrfyout=os.path.join(vrfyout, 'vrfy', 'letkf_bkg_std'),
+                                plot_sqrt=True),   # ocn background ensemble spread
+                     plotConfig(grid_file=grid_file,
+                                data_file=os.path.join(comout, 'letkf', f'enkfgdas.ice.t'+cyc+'z.ensvar_post.nc'),
+                                variables_horiz={'aice_h': [0.0, 0.1]},  # TODO: change the range once spread is big enough to notice
+                                colormap='jet',
+                                projs=['North', 'South', 'Global'],
+                                vrfyout=os.path.join(vrfyout, 'vrfy', 'letkf_ana_std'),
+                                plot_sqrt=True),   # sea ice analysis spread
+                     plotConfig(grid_file=grid_file,
+                                layer_file=layer_file,
+                                data_file=os.path.join(comout, 'letkf', f'enkfgdas.ocean.t'+cyc+'z.ensvar_post.nc'),
+                                lats=np.arange(-60, 60, 10),
+                                lons=np.arange(-280, 80, 30),
+                                variables_zonal={'Temp': [0, 0.5],       # TODO: change the range once spread is big enough to notice
+                                                 'Salt': [0, 0.2],
+                                                 'u': [0, 0.5],
+                                                 'v': [0, 0.5]},
+                                variables_meridional={'Temp': [0, 0.5],
+                                                      'Salt': [0, 0.2],
+                                                      'u': [0, 0.5],
+                                                      'v': [0, 0.5]},
+                                variables_horiz={'Temp': [0, 0.5],
+                                                 'Salt': [0, 0.2],
+                                                 'u': [0, 0.5],
+                                                 'v': [0, 0.5],
+                                                 'ave_ssh': [0, 0.05]},
+                                colormap='jet',
+                                vrfyout=os.path.join(vrfyout, 'vrfy', 'letkf_ana_std'),
+                                plot_sqrt=True),   # ocn letkf var
+                     plotConfig(grid_file=grid_file,
+                                data_file=os.path.join(comout, 'letkf', f'enkfgdas.ice.t{cyc}z.ensmean_prior.nc'),
+                                variables_horiz={'aice_h': [0.0, 1.0]},
+                                colormap='jet',
+                                projs=['North', 'South', 'Global'],
+                                vrfyout=os.path.join(vrfyout, 'vrfy', 'letkf_bkg_mean')),   # sea ice mean ensemble background
+                     plotConfig(grid_file=grid_file,
+                                layer_file=layer_file,
+                                data_file=os.path.join(comout, 'letkf', f'enkfgdas.ocean.t{cyc}z.ensmean_prior.nc'),
+                                lats=np.arange(-60, 60, 10),
+                                lons=np.arange(-280, 80, 30),
+                                variables_zonal={'Temp': [-1.8, 34.0],
+                                                 'Salt': [32, 40],
+                                                 'u': [-1.0, 1.0],
+                                                 'v': [-1.0, 1.0]},
+                                variables_meridional={'Temp': [-1.8, 34.0],
+                                                      'Salt': [32, 40],
+                                                      'u': [-1.0, 1.0],
+                                                      'v': [-1.0, 1.0]},
+                                variables_horiz={'ave_ssh': [-1.8, 1.3],
+                                                 'Temp': [-1.8, 34.0],
+                                                 'Salt': [32, 40],
+                                                 'u': [-1.0, 1.0],
+                                                 'v': [-1.0, 1.0]},
+                                colormap='nipy_spectral',
+                                vrfyout=os.path.join(vrfyout, 'vrfy', 'letkf_bkg_mean'))] # ocean mean ensemble background
+    configs.extend(config_letkf)
+
 # Background plotting configuration
 if plot_background:
+    print('Plotting background')
     config_bkg = [plotConfig(grid_file=grid_file,
                              data_file=os.path.join(com_ice_history, f'{RUN}.ice.t{gcyc}z.inst.f006.nc'),
                              variables_horiz={'aice_h': [0.0, 1.0],
@@ -191,6 +283,7 @@ if plot_background:
 
 # Increment plotting configuration
 if plot_increment:
+    print('Plotting increment')
     config_incr = [plotConfig(grid_file=grid_file,
                               layer_file=layer_file,
                               data_file=os.path.join(comout, f'{RUN}.t'+cyc+'z.ocninc.nc'),
