@@ -1,8 +1,0 @@
-# Parameters used in ocean bgc checkpoint and balance utils
-cpcoefs:
-  chl_max:     20.0      # Maximum chl analysis (checkpoints after maxfac and minfac are applied)
-  chl_min:    0.001      # Mininum chl analysis (checkpoints after maxfac and minfac are applied)
-  po4_max:     3.0e-6    # Maximum po4 analysis (checkpoints after maxfac and minfac are applied)
-  irr_mix_min: 1.0       # Only apply the analysis for po4 where irr_mix is greater than this value
-  maxfac:      2.0       # maximum analysis value is set to be maxfac * bkg value
-  minfac:      0.5       # mininum analysis value is set to be minfac * bkg value
