@@ -21,7 +21,6 @@ A diagnostic application for generating figures related to state-space and obs-s
 
 - **Directory:** `state_space_vrfy/`
 - **Main Components:**
-gen_eva_obs_yaml.py  marine_eva_post.py  run_vrfy.py  soca_vrfy.py  vrfy_script.py
   - `run_vrfy.py` (main script for running verification diagnostics)
   - `soca_vrfy.py` (supporting script for verification)
   - `vrfy_script.py` (additional verification utilities)
