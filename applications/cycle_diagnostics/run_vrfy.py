@@ -80,7 +80,7 @@ if __name__ == "__main__":
           context.update({"pdy": pdy, "cyc": cyc})
 
           # Prepare the job card
-          template_jobcard = os.path.join(context['homegdas'], 'vrfy_jobcard.sh.j2')  # Assumes a Jinja2 template file in the moegdas directory
+          template_jobcard = os.path.join(context['homegdasmarineviz'], 'vrfy_jobcard.sh.j2')  # Assumes a Jinja2 template file in the moegdas directory
           jobcard_name = f"vrfy_jobcard.{context['pslot']}.{context['pdy']}.{context['cyc']}"
           jobcard = jobcard_name+".sh"
           os.system("rm -rf "+jobcard_name+".log")    # deletes old log file
@@ -106,11 +106,11 @@ if __name__ == "__main__":
     days.sort()
 
     # Create the HTML document
-    srcdir = os.path.join(context['homegdas'], 'marine_vrfy_display')
+    srcdir = os.path.join(context['homegdasmarineviz'], 'marine_vrfy_display')
     dstdir = context['vrfyout']
     os.makedirs(dstdir, exist_ok=True)
     subprocess.run(f"cp -r {srcdir}/* {dstdir}/", shell=True)
-    template_path = os.path.join(context['homegdas'], 'index_vrfy_marine.html.j2')
+    template_path = os.path.join(context['homegdasmarineviz'], 'index_vrfy_marine.html.j2')
     output_html = os.path.join(dstdir, 'index.html')
 
     # define the html context

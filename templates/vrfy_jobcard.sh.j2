@@ -14,14 +14,14 @@
 #SBATCH --time={{ walltime | default("00:30:00") }}       # Set the walltime limit
 
 # Define HOMEgdas
-export HOMEgdas="{{ homegdas }}"
+export HOMEgdasmv="{{ homegdasmarineviz }}"
 
 # Load EVA module
-module use ${HOMEgdas}/modulefiles
+module use ${HOMEgdasmv}/modulefiles
 module load {{ eva_module | default("EVA/hera") }}
 
-# Set PYTHONPATH using HOMEgfs
-export PYTHONPATH="${HOMEgdas}:$PYTHONPATH"
+# Set PYTHONPATH using HOMEgdasmv
+export PYTHONPATH="${HOMEgdasmv}:$PYTHONPATH"
 
 # Set flags to control plotConfig in the Python script
 export PLOT_ENSEMBLE_B={{ plot_ensemble_b | default("OFF") }}
@@ -53,4 +53,4 @@ export COM_ICE_HISTORY_PREV="${BASE_EXP_PATH}/gdas.${PREV_PDY}/${PREV_CYC_HOUR}/
 export COM_OCEAN_HISTORY_PREV="${BASE_EXP_PATH}/gdas.${PREV_PDY}/${PREV_CYC_HOUR}/model/ocean/history"
 
 # Execute Marine Verify Analysis
-python3 ${HOMEgdas}/vrfy_script.py
+python3 ${HOMEgdasmv}/vrfy_script.py

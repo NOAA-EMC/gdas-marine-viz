@@ -35,15 +35,7 @@ def gen_eva_obs_yaml(inputyaml, templateyaml, outputdir):
             'name': tmp_os['name'],
             'diagfile': tmp_os['obsdataout']['engine']['obsfile'],
             'vars': tmp_os['simulated variables'],
-            'channels': tmp_os.get('channels', None),
-        }
-
-        evaobs.append(tmp_dict)
-
-    # read in template YAML file
-    # read it in as a text file and not a YAML file
-    # this is so that we can find/replace some things more simply
-    try:
+            'cmarine_eva_post.py
         with open(templateyaml, 'r') as templateyaml_opened:
             template_yaml_str = templateyaml_opened.readlines()
         logging.info(f'Loading template from {templateyaml}')
