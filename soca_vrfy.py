@@ -37,7 +37,8 @@ def plotConfig(grid_file=[],
                lon=np.nan,
                lons=np.arange(-280, 80, 30),
                proj='set me',
-               projs=['Global']):
+               projs=['Global'],
+               plot_sqrt=False):
 
     # Map variable names to their units
     variable_units = {
@@ -78,6 +79,7 @@ def plotConfig(grid_file=[],
     config['variable'] = variable  # the variable currently plotted
     config['projs'] = projs  # all the projections etc.
     config['proj'] = proj
+    config['plot_sqrt'] = plot_sqrt
 
     # Add units to the config for each variable
     config['variable_units'] = variable_units
@@ -112,6 +114,8 @@ def plotHorizontalSlice(config):
         figname = os.path.join(dirname, variable + '_' + config['proj'])
         title = f"{exp} {PDY} {cyc} {variable}"
 
+    if (config['plot_sqrt']):
+        slice_data = np.sqrt(slice_data)
     bounds = config['horiz variables'][variable]
     slice_data = np.clip(slice_data, bounds[0], bounds[1])
 
