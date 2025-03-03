@@ -147,7 +147,7 @@ if __name__ == "__main__":
     experiments.sort()
 
     # Create the html document from the jinja2 template
-    template_path = os.path.join(os.path.dirname(__file__), '..', 'templates', 'gdassoca_obsstats_template.html')
+    template_path = os.path.join(os.path.dirname(__file__), '..', '..', 'templates', 'gdassoca_obsstats_template.html')
     template = Template(open(template_path).read())
     context = {'insts': insts, 'experiments': experiments}
     indexhtml = template.render(context)
