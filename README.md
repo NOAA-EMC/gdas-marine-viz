@@ -1,3 +1,20 @@
+# Marine GDAS Verification Tools
+
+## Unit Testing
+This `oceanview` application relies on older interactive tools and probably requires a different Python environment. Test it separately, from the root directory of the repository:
+```console
+conda activate oceanview  # Does not work on HPC yet
+pytest --disable-warnings -v tests/oceanview/test_oceanview.py
+```
+
+The other application require the `EVA` modules to be loaded to work:
+```console
+module use modulefiles
+module load EVA/orion
+pytest --disable-warnings -v tests/test_coding_style.py
+pytest --disable-warnings -v tests/obsstats_ts/
+```
+
 ## Simple Observation Space Statistics
 A quick way to generate o-b stats and compare experiments
 ```

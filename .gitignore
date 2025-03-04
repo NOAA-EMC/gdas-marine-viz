@@ -1,5 +1,6 @@
 *~
 *.png
+*.pyc
 
 # Do not ignore the following files
 !.gitignore

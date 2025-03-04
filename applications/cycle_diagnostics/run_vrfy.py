@@ -6,6 +6,7 @@ import sys
 import copy
 import os
 
+
 def render_html(template_name, output_html, context):
     # Read the Jinja2 template file
     with open(template_name, 'r') as file:
@@ -20,6 +21,7 @@ def render_html(template_name, output_html, context):
     # Write the rendered script to the output file
     with open(output_html, 'w') as file:
         file.write(rendered_html)
+
 
 def iterate_pdy_range(start_pdy, end_pdy):
     """Generate a range of dates in YYYYMMDD format."""
@@ -49,6 +51,7 @@ def generate_jobcard(template_path, output_path, context):
 
     print(f"Bash script generated at: {output_path}")
 
+
 # Example usage
 if __name__ == "__main__":
 
@@ -76,18 +79,19 @@ if __name__ == "__main__":
         context = copy.deepcopy(config)
         pdys.append(pdy)
         for cyc in config["cycs"]:
-          # Update the cycle's date
-          context.update({"pdy": pdy, "cyc": cyc})
+            # Update the cycle's date
+            context.update({"pdy": pdy, "cyc": cyc})
 
-          # Prepare the job card
-          template_jobcard = os.path.join(context['homegdasmarineviz'], 'templates','vrfy_jobcard.sh.j2')  # Assumes a Jinja2 template file in the moegdas directory
-          jobcard_name = f"vrfy_jobcard.{context['pslot']}.{context['pdy']}.{context['cyc']}"
-          jobcard = jobcard_name+".sh"
-          os.system("rm -rf "+jobcard_name+".log")    # deletes old log file
-          generate_jobcard(template_jobcard, jobcard, context)
+            # Prepare the job card
+            template_jobcard = os.path.join(context['homegdasmarineviz'],
+                                            'templates', 'vrfy_jobcard.sh.j2')
+            jobcard_name = f"vrfy_jobcard.{context['pslot']}.{context['pdy']}.{context['cyc']}"
+            jobcard = jobcard_name + ".sh"
+            os.system("rm -rf " + jobcard_name + ".log")    # deletes old log file
+            generate_jobcard(template_jobcard, jobcard, context)
 
-          # Submit the plotting job
-          subprocess.run(f"sbatch {jobcard}", shell=True)
+            # Submit the plotting job
+            subprocess.run(f"sbatch {jobcard}", shell=True)
 
     # Create the list of years, months, and days from pdys
     pdys = sorted(pdys)

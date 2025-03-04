@@ -4,7 +4,6 @@
 
 import matplotlib.pyplot as plt
 import xarray as xr
-import cartopy
 import cartopy.crs as ccrs
 import numpy as np
 import os
@@ -205,8 +204,10 @@ def plotZonalSlice(config):
     ax.set_title(title)
     dirname = os.path.join(config['vrfyout'], config['variable'])
     os.makedirs(dirname, exist_ok=True)
-    figname = os.path.join(dirname, config['variable'] +
-                           'zonal_lat_' + str(int(lat)) + '_' + str(int(config['max depth'])) + 'm')
+    figname = os.path.join(
+        dirname,
+        config['variable'] + 'zonal_lat_' + str(int(lat)) + '_' + str(int(config['max depth'])) + 'm'
+    )
     plt.savefig(figname, bbox_inches='tight', dpi=300)
     plt.close(fig)
 
@@ -261,8 +262,10 @@ def plotMeridionalSlice(config):
     ax.set_title(title)
     dirname = os.path.join(config['vrfyout'], config['variable'])
     os.makedirs(dirname, exist_ok=True)
-    figname = os.path.join(dirname, config['variable'] +
-                           'meridional_lon_' + str(int(lon)) + '_' + str(int(config['max depth'])) + 'm')
+    figname = os.path.join(
+        dirname,
+        config['variable'] + 'meridional_lon_' + str(int(lon)) + '_' + str(int(config['max depth'])) + 'm'
+    )
     plt.savefig(figname, bbox_inches='tight', dpi=300)
     plt.close(fig)
 

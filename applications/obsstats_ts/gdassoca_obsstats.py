@@ -26,9 +26,11 @@ colors = [
     "lightsalmon",
 ]
 
+
 def get_inst(csv_file_name):
     """Extract the instrument name from the csv file name. gdas.t00z.ocn.sst_ahi_h08_l3c.stats.csv -> sst_ahi_h08_l3c"""
     return csv_file_name.split('.')[-3]
+
 
 class ObsStats:
     def __init__(self):
@@ -60,13 +62,13 @@ class ObsStats:
         # Plot settings
         fig, axs = plt.subplots(3, 1, figsize=(10, 15), sharex=True)
         fig.suptitle(f'{inst} {variable} statistics, {ocean} ocean', fontsize=18, fontweight='bold')
-
-
         exp_counter = 0
         for exp in experiments:
-            exp_data = self.data[(self.data['Ocean'] == ocean) &
-                                 (self.data['Variable'] == variable) &
-                                 (self.data['Exp'] == exp)]
+            exp_data = self.data[
+                (self.data['Ocean'] == ocean)
+                & (self.data['Variable'] == variable)
+                & (self.data['Exp'] == exp)
+            ]
 
             # Plot RMSE
             axs[0].plot(exp_data['date'], exp_data['RMSE'], marker='o', linestyle='-', color=colors[exp_counter], label=exp)
@@ -102,14 +104,23 @@ class ObsStats:
 
         return experiments
 
+
 if __name__ == "__main__":
-    epilog = ["Usage examples: ./gdassoca_obsstats.py --exps cp1/COMROOT/cp1 cp2/COMROOT/cp2 --inst sst_abi_g16_l3c --dirout cp1vscp2"]
+    epilog = [
+        "Usage examples:",
+        "./gdassoca_obsstats.py --exps cp1/COMROOT/cp1 cp2/COMROOT/cp2",
+        "--inst sst_abi_g16_l3c --dirout cp1vscp2"
+    ]
     parser = argparse.ArgumentParser(description="Observation space RMSE's and BIAS's",
                                      formatter_class=argparse.RawDescriptionHelpFormatter,
                                      epilog=os.linesep.join(epilog))
     parser.add_argument("--exps", nargs='+', required=True,
                         help="Path to the experiment's COMROOT")
-    parser.add_argument("--inst", required=True, help="The name of the instrument/platform (ex: sst_abi_g16_l3c) or a wild card (eg sst*)")
+    parser.add_argument(
+        "--inst",
+        required=True,
+        help="The name of the instrument/platform (ex: sst_abi_g16_l3c) or a wild card (eg sst*)"
+    )
     parser.add_argument("--dirout", required=True, help="Output directory")
     args = parser.parse_args()
 

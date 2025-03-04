@@ -8,7 +8,8 @@ import yaml
 
 
 def gen_eva_obs_yaml(inputyaml, templateyaml, outputdir):
-    logging.basicConfig(format='%(asctime)s:%(levelname)s:%(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
+    logging.basicConfig(format='%(asctime)s:%(levelname)s:%(message)s',
+                        level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
     # open input YAML file to get config
     try:
         with open(inputyaml, 'r') as jediyaml_opened:
