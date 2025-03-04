@@ -1,0 +1,31 @@
+name: Run Tests on Pull Request
+
+on:
+  pull_request:
+    branches:
+      - main  # Change this if you want to run on other branches
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4  # Clones the repository
+
+      - name: Set Up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install Dependencies
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Pytest
+        run: |
+          source venv/bin/activate
+          pytest --maxfail=1 --disable-warnings -v
