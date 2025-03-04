@@ -1,3 +1,20 @@
+# Marine GDAS Verification Tools
+
+## Unit Testing
+This `oceanview` application relies on older interactive tools and probably requires a different Python environment. Test it separately, from the root directory of the repository:
+```console
+conda activate oceanview  # Does not work on HPC yet
+pytest --disable-warnings -v tests/oceanview/test_oceanview.py
+```
+
+The other application require the `EVA` modules to be loaded to work:
+```console
+module use modulefiles
+module load EVA/orion
+pytest --disable-warnings -v tests/test_coding_style.py
+pytest --disable-warnings -v tests/obsstats_ts/
+```
+
 ## Simple Observation Space Statistics
 A quick way to generate o-b stats and compare experiments
 ```
@@ -35,8 +52,8 @@ start_pdy: '20210701'
 end_pdy: '20210701'
 cycs: ["00", "06", "12", "18"]
 run: "gdas"
-homegdas: "/work2/noaa/da/gvernier/runs/mlb/GDASApp"
-base_exp_path: "/work2/noaa/da/gvernier/runs/mlb/{{ pslot }}/COMROOT/{{ pslot }}"
+homegdasmarineviz: "/path/to/gdas-marine-viz"
+base_exp_path: "/path/to/comroot/{{ pslot }}/COMROOT/{{ pslot }}"
 plot_ensemble_b: "OFF"
 plot_parametric_b: "OFF"
 plot_background: "OFF"
