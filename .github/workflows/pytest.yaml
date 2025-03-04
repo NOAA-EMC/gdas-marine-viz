@@ -3,7 +3,7 @@ name: Run Tests on Pull Request
 on:
   pull_request:
     branches:
-      - main  # Change this if you want to run on other branches
+      - develop  # Change this if you want to run on other branches
 
 jobs:
   test:
