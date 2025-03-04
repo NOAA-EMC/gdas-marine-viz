@@ -1,0 +1,41 @@
+#!/bin/bash
+
+#SBATCH --requeue
+## "requeue" specifies that the job will be requeued after a node failure.
+#
+
+###################################################################
+# This script creates each python job. It is called in RUN_PLOT.time_series.daily.bash
+###################################################################
+
+# !!!!! USER SHOULD NOT CHANGE ANYTHING BELOW  !!!!!
+# !!!!! EXCEPTION: Updating the loaded modules !!!!!
+
+date	#start date/time
+SECONDS=0
+
+cd ${INDIR}
+
+# These modules are loaded on Hera
+module load gnu/13.2.0
+module load intel/2023.2.0
+module use -a /contrib/anaconda/modulefiles
+module load anaconda/latest
+
+export PYTHONUNBUFFERED=TRUE
+
+#--------------------------------------------------------------
+# Run matching algorithm
+#	Command line inputs ARG# (after script name)
+
+echo "run python job"
+python3 ${INDIR}${SCRIPT} ${ARG1} ${ARG2} ${ARG3} ${ARG4} ${ARG5} ${ARG6} #${ARG7} ${ARG8} ${ARG9} #${ARG10} ${ARG11}
+
+#--------------------------------------------------------------
+
+date	#end date/time
+let MINUTES=$SECONDS/60
+let HOURS=$SECONDS/3600
+echo "##### JOB ELAPSED TIME: $SECONDS seconds, or $MINUTES minutes, or $HOURS hours"
+
+###################################################################
