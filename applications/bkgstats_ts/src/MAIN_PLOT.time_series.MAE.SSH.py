@@ -89,10 +89,10 @@ if ocean_choice!="Global":
 lat, lon = get_ocngrid()
 
 # Read soca_gridspec file for proper land/sea masking and apply to OSTIA
-gridfile = "/scratch1/NCEPDEV/da/Katherine.Lukens/NSST/data/soca_gridspec.nc"
+cwd = os.getcwd()       # get current working directory (CWD)
+gridfile = str(cwd)+"/soca_gridspec.nc"
 ds       = xr.open_dataset(gridfile)
 ufs_mask = np.squeeze(ds['mask2d'][:])          # land/sea mask
-#ufs_area = np.squeeze(ds['area'][:])            # grid cell area
 del gridfile, ds
 
 #=============================================
@@ -572,7 +572,6 @@ while iyy <= int(yyyyE):
 # Plot stats
 #```````````````````````````````````````
 
-#print("MAE: NOAA Operations = "+str(nsst_ops))
 print("MAE: ORAS5 (ECMWF) = "+str(mae_ecm))
 print("MAE: S2Smodel_ATMda = "+str(mae_s2satmB))
 print("MAE: S2Smodel_S2Sda = "+str(mae_C03B))
@@ -580,8 +579,6 @@ print("MAE: marine_candidate = "+str(mae_MCB))
 
 	# MAE
 ax.plot_date(dates[0:len(mae_ecm)], mae_ecm[0:len(mae_ecm)], '.-', label='ORAS5 Replay (ECMWF)', color='black')
-#ax.plot_date(dates[1:len(mae_atmatmB)], mae_atmatmB[1:len(mae_atmatmB)], '.-', label='GFSv17 prototype: ATMmodel_ATMda', color='magenta')
-
 ax.plot_date(dates[0:len(mae_s2satmB)], mae_s2satmB[0:len(mae_s2satmB)], '.-', label='GFSv17 prototype: S2Smodel_ATMda', color='orange')
 ax.plot_date(dates[0:len(mae_C03B)], mae_C03B[0:len(mae_C03B)], '.-', label='GFSv17 prototype: S2Smodel_S2Sda', color='magenta')
 ax.plot_date(dates[0:len(mae_MCB)], mae_MCB[0:len(mae_MCB)], '.-', label='GFSv17 prototype: marine_candidate', color='red')
@@ -589,11 +586,6 @@ ax.plot_date(dates[0:len(mae_v1B)], mae_v1B[0:len(mae_v1B)], '.-', label='GFSv17
 ax.plot_date(dates[0:len(mae_v2B)], mae_v2B[0:len(mae_v2B)], '.-', label='GFSv17 prototype: marine_test_v2', color='blue')
 ax.plot_date(dates[0:len(mae_cp4B)], mae_cp4B[0:len(mae_cp4B)], '.-', label='GFSv17 prototype: cp4', color='cyan')
 ax.plot_date(dates[0:len(mae_cp4drifterB)], mae_cp4drifterB[0:len(mae_cp4drifterB)], '.-', label='GFSv17 prototype: cp4-drifterdepth', color='lime')
-
-	# RMSD
-##ax.plot_date(dates[0:len(rmsd_gdas)], rmsd_gdas[:], '.-', label='cp0.b Ocean BKG: RMSD')
-##ax.plot_date(dates[0:len(rmsd_gsi)], rmsd_gsi[:], '.-', label='cp0.b Ocean ANL: RMSD')
-
 
 	#```````````````````````````````````````
 	# Plotting specs
@@ -604,7 +596,6 @@ legendloc = 'best' #'upper right'
         #       ask matplotlib for the plotted objects and their labels
 lines, labels = ax.get_legend_handles_labels()
 bbox = 0.5 #0.75
-#ax.legend(lines,labels,loc=legendloc, handlelength=10, bbox_to_anchor=[bbox, bbox], prop={'size': 6})
 ax.legend(lines,labels,loc=legendloc, handlelength=10, bbox_to_anchor=[0.5, 0.2], prop={'size': 6})
 
 plt.title('Mean Absolute Error (MAE) of SSH Bkg Forecasts vs COPERNICUS: '+str(ocean_choice), fontsize=12)

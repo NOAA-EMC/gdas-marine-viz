@@ -87,7 +87,8 @@ while start_date <= end_date:
 lat, lon = get_ocngrid()
 
 # Read soca_gridspec file for proper land/sea masking and apply to OSTIA
-gridfile = "/scratch1/NCEPDEV/da/Katherine.Lukens/NSST/data/soca_gridspec.nc" 
+cwd = os.getcwd()       # get current working directory (CWD)
+gridfile = str(cwd)+"/soca_gridspec.nc"
 ds       = xr.open_dataset(gridfile)
 ufs_mask = np.squeeze(ds['mask2d'][:])          # land/sea mask
 ufs_area = np.squeeze(ds['area'][:])            # grid cell area
@@ -657,7 +658,6 @@ legendloc = 'best' #'upper right'
         #       ask matplotlib for the plotted objects and their labels
 lines, labels = ax.get_legend_handles_labels()
 bbox = 0.5 #0.75
-#ax.legend(lines,labels,loc=legendloc, handlelength=10, bbox_to_anchor=[bbox, bbox], prop={'size': 6})
 ax.legend(lines,labels,loc=legendloc, handlelength=10, bbox_to_anchor=[0.5, 0.9], prop={'size': 6})
 
 plt.title('Mean Absolute Error (MAE) of Sea Ice Concentration \nBkg Forecasts vs OSTIA: Arctic', fontsize=12)
@@ -726,7 +726,6 @@ legendloc = 'best' #'upper right'
         #       ask matplotlib for the plotted objects and their labels
 lines, labels = axENPmae.get_legend_handles_labels()
 bbox = 0.5 #0.75
-#ax.legend(lines,labels,loc=legendloc, handlelength=10, bbox_to_anchor=[bbox, bbox], prop={'size': 6})
 axENPmae.legend(lines,labels,loc=legendloc, handlelength=10, bbox_to_anchor=[0.5, 0.65], prop={'size': 6})
 
 plt.title('Mean Absolute Error (MAE) of Sea Ice Extent \nBkg Forecasts vs OSTIA: Arctic', fontsize=11)
@@ -796,7 +795,6 @@ legendloc = 'best' #'upper right'
         #       ask matplotlib for the plotted objects and their labels
 lines, labels = axENP.get_legend_handles_labels()
 bbox = 0.5 #0.75
-#ax.legend(lines,labels,loc=legendloc, handlelength=10, bbox_to_anchor=[bbox, bbox], prop={'size': 6})
 axENP.legend(lines,labels,loc=legendloc, handlelength=10, bbox_to_anchor=[0.5, 0.7], prop={'size': 6})
 
 plt.title('Sea Ice Extent: Arctic', fontsize=12)

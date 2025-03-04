@@ -89,10 +89,10 @@ if ocean_choice!="Global":
 lat, lon = get_ocngrid()
 
 # Read soca_gridspec file for proper land/sea masking and apply to OSTIA
-gridfile = "/scratch1/NCEPDEV/da/Katherine.Lukens/NSST/data/soca_gridspec.nc"
+cwd = os.getcwd()       # get current working directory (CWD)
+gridfile = str(cwd)+"/soca_gridspec.nc"
 ds       = xr.open_dataset(gridfile)
 ufs_mask = np.squeeze(ds['mask2d'][:])          # land/sea mask
-#ufs_area = np.squeeze(ds['area'][:])            # grid cell area
 del gridfile, ds
 
 #=============================================
@@ -603,16 +603,8 @@ yerr_ecm = [sd_ecm, sd_ecm]
 # MAE
 
 if ocean_choice=="Global":
-  ax.plot_date(dates[0:len(nsst_ops)], nsst_ops[0:len(nsst_ops)], '.-', label='NOAA Operations (No ocean model)', color='green')
-#ax.plot_date(dates[1:len(mae_ecm)], mae_ecm[1:len(mae_ecm)], '.-', label='ORAS5 Replay (ECMWF)', color='black')
-#ax.plot_date(dates[1:len(wcda_sst)], wcda_sst[1:len(wcda_sst)], '.-', label='JEDI-SOCA 3DVar, GSI 3DVar-FGAT', color='orange')
-###ax.plot_date(dates[1:len(mae_cp0bB)], mae_cp0bB[1:len(mae_cp0bB)], '.-', label='JEDI-SOCA Hybrid Envar, GSI 3DVar-FGAT', color='red')
-#ax.plot_date(dates[1:len(mae_cp0ocnsstB)], mae_cp0ocnsstB[1:len(mae_cp0ocnsstB)], '.-', label='JEDI-SOCA Hybrid Envar, GSI 3DVar-FGAT', color='blue')
-
-##ax.plot_date(dates[1:len(wcda_sst)], wcda_sst[1:], '.-', label='JEDI-SOCA 3DVar, GSI 3DVar-FGAT', color='orange')
-##ax.plot_date(dates[0:len(mae_cp0bB)], mae_cp0bB[:], '.-', label='JEDI-SOCA Hybrid Envar, GSI 3DVar-FGAT', color='red')     # cp0.b (G's run)
-##ax.plot_date(dates[1:len(mae_cp0ocnsstB)-1], mae_cp0ocnsstB[1:len(mae_cp0ocnsstB)-1], '.-', label='JEDI-SOCA Hybrid Envar, GSI 3DVar-FGAT', color='pink') # cp0.ocn-da.sst (Katie's run from 2023)
-##ax.plot_date(dates[1:len(mae_atmatmB)], mae_atmatmB[1:len(mae_atmatmB)], '.-', label='GFSv17 prototype: ATMmodel_ATMda', color='orange')
+  if len(mae_ecm)>=len(nsst_ops):
+    ax.plot_date(dates[0:len(nsst_ops)], nsst_ops[0:len(nsst_ops)], '.-', label='NOAA Operations (No ocean model)', color='green')
 
 ax.plot_date(dates[0:len(mae_ecm)], mae_ecm[0:len(mae_ecm)], '.-', label='ORAS5 Replay (ECMWF)', color='black')
 ax.plot_date(dates[0:len(mae_s2satmB)], mae_s2satmB[0:len(mae_s2satmB)], '.-', label='GFSv17 prototype: S2Smodel_ATMda', color='orange')
@@ -623,22 +615,14 @@ ax.plot_date(dates[0:len(mae_v2B)], mae_v2B[0:len(mae_v2B)], '.-', label='GFSv17
 ax.plot_date(dates[0:len(mae_cp4B)], mae_cp4B[0:len(mae_cp4B)], '.-', label='GFSv17 prototype: cp4.01', color='cyan')
 ax.plot_date(dates[0:len(mae_cp4drifterB)], mae_cp4drifterB[0:len(mae_cp4drifterB)], '.-', label='GFSv17 prototype: cp4.01-drifterdepth', color='lime')
 
-#plt.errorbar(dates[0:len(mae_ecm)], mae_ecm[0:len(mae_ecm)], yerr=yerr_ecm, ecolor='black' )
-
 	#```````````````````````````````````````
 	# Plotting specs
 	#```````````````````````````````````````
-#ax.legend()
-#legendsize = 9 #5
-#legendloc = 'center left' #'upper right'
-#leg = plt.legend(loc=legendloc, handlelength=5, prop={'size': legendsize})
-#leg = plt.legend(bbox_to_anchor=[0,0.7], loc="center left", handlelength=5, prop={'size': legendsize})
 
 legendloc = 'best' #'upper right'
         # plot all legend labels together
         #       ask matplotlib for the plotted objects and their labels
 lines, labels = ax.get_legend_handles_labels()
-#ax.legend(lines,labels,loc=legendloc, handlelength=5, prop={'size': 7})
 bbox = 0.5 #0.75
 ax.legend(lines,labels,loc=legendloc, handlelength=10, bbox_to_anchor=[bbox, bbox], prop={'size': 6})
 

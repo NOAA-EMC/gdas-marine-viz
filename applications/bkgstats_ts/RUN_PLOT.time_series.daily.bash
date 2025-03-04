@@ -51,45 +51,37 @@ ddS="01"
 
 # --- End Date
 yyyyE="2021"
-mmE="08"
-ddE="31"
+mmE="07"
+ddE="05"
 
 #----------------------------------------------
-# INPUT PARAMETERS
-# ... NOTE: Always end path names with a slash "/"
-
-#``````````````````````````````````````
-# Set home path 'dir_home' (i.e., where this script is located)
-dir_home="./"
-echo 'WORKING DIRECTORY = '${dir_home}
-
-#``````````````````````````````````````
-# Set other input parameters
+# SET INPUT PARAMETERS
 #	'variable'  = variable to be plotted
 #	'reference' = name of reference dataset to compare against 'variable'
 #	'oceans'    = ocean basin regions over which to plot time series
 
 # --- Variable
-#variable="SST"
+variable="SST"
 #variable="SEAICE"
-variable="SSH"
+#variable="SSH"
 
 # --- Reference dataset
-#reference="ostia"		# SST, sea ice
-reference="copernicus"		# SSH
+reference="ostia"		# SST, SEAICE
+#reference="copernicus"		# SSH
 
 # --- Ocean basins
-oceans=("Global" "Arctic" "Atlantic" "Indian" "Pacific" "Southern")
+#oceans=("Global" "Arctic" "Atlantic" "Indian" "Pacific" "Southern")
+oceans=("Global" "Atlantic")
 
 #----------------------------------------------
-# Set HPC account, partition, and runtime limit for jobs
-#	All variables are strings (use double quotes)
+# SET HPC INFO
+#	Account, partition, and runtime limit for jobs
 
-account=""		# Account used for SLURM jobs. String format
+account="da-cpu"		# Account used for SLURM jobs. String format
 
-qos=""			# QOS used for SLURM jobs. String format
+qos="debug"			# QOS used for SLURM jobs. String format
 
-partition=""		# Partition used for SLURM jobs. String format
+partition="hera"		# Partition used for SLURM jobs. String format
 
 timelimit="00:30:00"	# Timelimit for SLURM job. String format
 #timelimit="01:00:00"
@@ -103,6 +95,12 @@ ntasks=1
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 #!!!!! USERS SHOULD NOT CHANGE ANYTHING BELOW THIS LINE !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+#``````````````````````````````````````
+# Set home path 'dir_home' (i.e., where this script is located)
+
+dir_home="$PWD"
+echo 'WORKING DIRECTORY = '${dir_home}
 
 #----------------------------------------------
 # Create output directory (where figures go) if it doesn't already exist
@@ -122,7 +120,7 @@ noceans=${#oceans[@]}
 # Set working paths
 #	Always end path names with a slash "/"
 
-dir_src=${dir_home}"src/"           #location of collocation source code
+dir_src=${dir_home}"/src/"           #location of collocation source code
 echo "SOURCE CODE DIRECTORY = "${dir_src}
 
 #----------------------------------------------
@@ -169,13 +167,13 @@ arg5=${reference}
 #               $arg2 $arg3 $arg4 $arg5 $arg6 $arg7 $arg8 $partition $timelimit $run_job_script
 
 jname="TimeSeries"
-python_code="MAIN_PLOT.time_series.MAE."${var}".py"
+python_code="MAIN_PLOT.time_series.MAE."${variable}".py"
 echo $dir_src" / "$python_code
 
 #-------------------------------------
 # RUN time series scripts
 
-if [[ $var == "SEAICE" ]] ; then
+if [[ $variable == "SEAICE" ]] ; then
   echo 'Plot SeaIce'
 
   arg6="NA"
@@ -188,7 +186,7 @@ if [[ $var == "SEAICE" ]] ; then
   sbatch --mem=0 --output=${log} --job-name=${jlog} --account=${account} --partition=${partition} --qos=${qos} --time=${timelimit} --ntasks=${ntasks} --export=INDIR=${dir_src},SCRIPT=${python_code},ARG1=${arg1},ARG2=${arg2},ARG3=${arg3},ARG4=${arg4},ARG5=${arg5},ARG6=${arg6} ${run_python_code}
 
 else 
-  echo 'Plot SST or SSH: '$var
+  echo 'Plot SST or SSH: '$variable
 
   iocean=0
   while [[ $iocean -lt $noceans ]]

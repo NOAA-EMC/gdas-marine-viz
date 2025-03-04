@@ -47,9 +47,8 @@ def read_ocean_mask(ocean_choice):
 
     ocean = ocean_choice.lower()
 
-    # Get current working directory (CWD)
-    dpath = os.getcwd()
-    fname = "/oceanmask_global_0.25deg.20221025.xesmf_nearest_s2d.nc"
+    dpath = "/scratch1/NCEPDEV/da/Katherine.Lukens/NSST/data/"
+    fname = "oceanmask_global_0.25deg.20221025.xesmf_nearest_s2d.nc"
 
     ds = xr.open_dataset(dpath+fname)
 
