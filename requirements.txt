@@ -12,7 +12,7 @@ kiwisolver==1.4.7
 MarkupSafe==3.0.2
 matplotlib
 mccabe==0.7.0
-numpy==2.2.3
+numpy
 packaging==24.2
 panda==0.3.1
 pandas==2.2.3
