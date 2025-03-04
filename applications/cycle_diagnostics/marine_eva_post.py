@@ -24,6 +24,7 @@ def marine_eva_post(inputyaml, outputdir, diagdir):
         logging.info(f'Loading input YAML from {inputyaml}')
     except Exception as e:
         logging.error(f'Error occurred when attempting to load: {inputyaml}, error: {e}')
+        return
     for dataset in input_yaml_dict['datasets']:
         newfilenames = []
         for filename in dataset['filenames']:

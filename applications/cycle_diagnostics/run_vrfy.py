@@ -8,6 +8,10 @@ import os
 
 
 def render_html(template_name, output_html, context):
+    # Exit if the template file does not exist
+    if not os.path.exists(template_name):
+        print(f"Template file {template_name} does not exist.")
+        return
     # Read the Jinja2 template file
     with open(template_name, 'r') as file:
         template_content = file.read()
@@ -40,6 +44,7 @@ def generate_jobcard(template_path, output_path, context):
         template_content = file.read()
 
     # Create a Jinja2 template object
+    print(f"-------------- {template_content}")
     template = Template(template_content)
 
     # Render the template with custom values

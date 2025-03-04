@@ -17,6 +17,7 @@ def gen_eva_obs_yaml(inputyaml, templateyaml, outputdir):
         logging.info(f'Loading configuration from {inputyaml}')
     except Exception as e:
         logging.error(f'Error occurred when attempting to load: {inputyaml}, error: {e}')
+        return
     # get just the observations part of the YAML
     if 'cost function' in jedi_yaml_dict:
         # cost function is in marine DA var.yaml
@@ -50,6 +51,7 @@ def gen_eva_obs_yaml(inputyaml, templateyaml, outputdir):
         logging.info(f'Loading template from {templateyaml}')
     except Exception as e:
         logging.error(f'Error occurred when attempting to load: {templateyaml}, error: {e}')
+        return
     # first, let us prepend some comments that tell someone this output YAML was generated
     now = datetime.datetime.now()
     prepend_str = [

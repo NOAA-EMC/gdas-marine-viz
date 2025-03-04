@@ -52,8 +52,8 @@ start_pdy: '20210701'
 end_pdy: '20210701'
 cycs: ["00", "06", "12", "18"]
 run: "gdas"
-homegdasmarineviz: "/work2/noaa/da/gvernier/runs/mlb/GDASApp"
-base_exp_path: "/work2/noaa/da/gvernier/runs/mlb/{{ pslot }}/COMROOT/{{ pslot }}"
+homegdasmarineviz: "/path/to/gdas-marine-viz"
+base_exp_path: "/path/to/comroot/{{ pslot }}/COMROOT/{{ pslot }}"
 plot_ensemble_b: "OFF"
 plot_parametric_b: "OFF"
 plot_background: "OFF"
