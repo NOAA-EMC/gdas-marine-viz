@@ -51,6 +51,16 @@ gcyc = str((int(cyc) - 6) % 24).zfill(2)
 grid_file = os.path.join(comout, f'{RUN}.t' + bcyc + 'z.ocngrid.nc')
 layer_file = os.path.join(comout, f'{RUN}.t' + cyc + 'z.ocninc.nc')
 
+# bkg_err grid file path based on the system's hostname
+hpcname = os.getenv('HPCname')
+if hpcname.startswith("hera"):
+    grid_file_bkgerr = '/scratch1/NCEPDEV/da/common/validation/vrfy/soca_gridspec.bkgerr.nc'
+elif hpcname in ["hercules", "orion"]:
+    grid_file_bkgerr = '/work/noaa/da/marineda/validation/vrfy/soca_gridspec.bkgerr.nc'
+else:
+    print(f"Error: Unrecognized HPC name '{hpcname}'. Aborting.")
+    exit(1)
+
 # Check if the file exists, then decide on grid_file
 if not os.path.exists(grid_file):
     # TODO: Make this work on other HPC
@@ -131,7 +141,7 @@ if plot_ensemble_b:
 # Parametric B plotting configuration
 if plot_parametric_b:
     print('Plotting parametric B diagnostics')
-    config_bkgerr = [plotConfig(grid_file=grid_file,
+    config_bkgerr = [plotConfig(grid_file=grid_file_bkgerr,
                                 data_file=os.path.join(comout, os.path.pardir, os.path.pardir,
                                                        'bmatrix', 'ice', f'{RUN}.t' + cyc + 'z.ice.bkgerr_stddev.nc'),
                                 variables_horiz={'aice_h': [0.0, 0.5],
@@ -140,8 +150,8 @@ if plot_parametric_b:
                                 colormap='jet',
                                 projs=['North', 'South', 'Global'],
                                 vrfyout=os.path.join(vrfyout, 'vrfy', 'bkgerr')),   # sea ice bkgerr stddev
-                     plotConfig(grid_file=grid_file,
-                                layer_file=layer_file,
+                     plotConfig(grid_file=grid_file_bkgerr,
+                                layer_file=grid_file_bkgerr,
                                 data_file=os.path.join(comout, os.path.pardir, os.path.pardir,
                                                        'bmatrix', 'ocean', f'{RUN}.t' + cyc + 'z.ocean.bkgerr_stddev.nc'),
                                 lats=np.arange(-60, 60, 10),
