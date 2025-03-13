@@ -1,0 +1,6 @@
+yyyymm: '202107'
+dd: '05'
+cyc: '00'
+time_interval: 300
+save_dir: './test-frames'
+varname: 'sst'
