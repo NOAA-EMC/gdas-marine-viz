@@ -46,4 +46,5 @@ cyc: '00'
 time_interval: 300
 save_dir: './test-frames'
 varname: 'sst'
+bounds: [-2, 35]
 ```

@@ -85,7 +85,7 @@ def load_ioda_diags(netcdf_file):
     return IODAData(time_data, lat, lon, geovar, varname=var_name_short)
 
 
-def plot_data(iodaData, frame_idx, time_interval=300, save_dir='./frames'):
+def plot_data(iodaData, frame_idx, time_interval=300, save_dir='./frames', bounds=[-2, 35]):
     min_time, max_time = iodaData.toarray()
     current_time = min_time
 
@@ -110,7 +110,7 @@ def plot_data(iodaData, frame_idx, time_interval=300, save_dir='./frames'):
 
         # ax.set_extent([-85, -60, 25, 50], crs=ccrs.PlateCarree())
         sc = ax.scatter(iodaData.lon[time_mask], iodaData.lat[time_mask], c=iodaData.geovar[time_mask], cmap='gist_ncar',
-                        s=0.1, transform=ccrs.PlateCarree(), vmin=-2, vmax=35)
+                        s=0.1, transform=ccrs.PlateCarree(), vmin=bounds[0], vmax=bounds[1])
 
         plt.colorbar(sc, ax=ax, orientation='vertical', label=f'{iodaData.varname}')
         plt.title(
@@ -146,6 +146,7 @@ def main():
     time_interval = config['time_interval']
     save_dir = config['save_dir']
     varname = config['varname']
+    bounds = config['bounds']
 
     os.makedirs(save_dir, exist_ok=True)
     netcdf_files = glob(f"{varname}_*.{yyyymm}{dd}{cyc}.nc4")
@@ -157,7 +158,7 @@ def main():
         all_iodaData.append(iodaData)
 
     # Plot data
-    plot_data(all_iodaData, frame_idx=0, time_interval=time_interval, save_dir=save_dir)
+    plot_data(all_iodaData, frame_idx=0, time_interval=time_interval, save_dir=save_dir, bounds=bounds)
 
 
 if __name__ == "__main__":
