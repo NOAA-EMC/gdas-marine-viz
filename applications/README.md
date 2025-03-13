@@ -27,4 +27,24 @@ A diagnostic application for generating figures related to state-space and obs-s
   - `gen_eva_obs_yaml.py` (generates configuration file for EVA)
   - `marine_eva_post.py` (run EVA)
 
+### 4. Obs Maps
+Creates multiple frames containing maps of obs values for now.
 
+- **Directory:** `obsstats_maps/`
+- **Main Components:**
+  - `plt_diags_maps.py` (script that generates multiple obs maps)
+
+Usage:
+```
+python plt_diags_maps.py config.yaml
+```
+where `config.yaml` would look like this:
+```yaml
+yyyymm: '202107'
+dd: '05'
+cyc: '00'
+time_interval: 300
+save_dir: './test-frames'
+varname: 'sst'
+bounds: [-2, 35]
+```
