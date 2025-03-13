@@ -11,6 +11,7 @@ import sys
 
 
 VARIABLE_MAP = {'sst': 'seaSurfaceTemperature',
+                'sss': 'seaSurfaceSalinity',
                 'adt': 'absoluteDynamicTopography',
                 'icec': 'seaIceFraction'}
 
