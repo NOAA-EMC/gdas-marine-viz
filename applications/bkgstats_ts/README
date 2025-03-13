@@ -1,0 +1,52 @@
+=========================================
+README for bkgstats_ts
+
+Time series plotting tool:
+    Generate time series of daily Mean Absolute Error (MAE) 
+    between experiment background forecasts and a reference dataset
+    for SST, SSH, or SEAICE
+=========================================
+
+--- How to run:
+
+1. Add the following files to the /src directory (this only needs to be done once):
+
+	On HERA:
+		/scratch1/NCEPDEV/da/Katherine.Lukens/NSST/data/soca_gridspec.nc
+		/scratch1/NCEPDEV/da/common/validation/oceanmask_global_0.25deg.20221025.xesmf_nearest_s2d.nc
+
+2. In RUN_PLOT.time_series.daily.bash, set the following parameters:
+
+        yyyyS, mmS, ddS ....... Start date (year, month, day)
+        yyyyE, mmE, ddE ....... End date (year, month, day)
+        variable .............. variable to plot: SST, SSH, SEAICE
+        reference ............. reference dataset: ostia (SST or SEAICE), copernicus (SSH)
+        oceans ................ ocean region to plot: Global, Atlantic, Pacific, Indian, Arctic, Southern
+        account ............... HPC account
+        qos ................... HPC QOS
+        partition ............. HPC partition
+        timelimit ............. HPC max time for job
+        ntasks ................ HPC number of tasks (should = 1)
+
+3. Run the tool:
+
+	./RUN_PLOT.time_series.daily.bash
+
+--- To add a new experiment for plotting:
+
+1. cd src
+
+2. In MAIN_PLOT.time_series.MAE.py, add the experiment path, experiment name, and a unique colorname to 
+   the end of the following lists, respectively:
+	
+	exptpaths ............. add new experiment path
+        exptnames ............. add new experiment name
+        colors ................ add line color name for the new experiment
+
+   NOTE: Add a comma to the end of the previous item in each of the above lists.
+
+3. cd ..
+
+4. ./RUN_PLOT.time_series.daily.bash
+
+
