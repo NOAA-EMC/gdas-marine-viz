@@ -16,6 +16,9 @@
 # Define HOMEgdas
 export HOMEgdasmv="{{ homegdasmarineviz }}"
 
+# Define HPC Machines
+export HPCname="{{ hpc }}"
+
 # Load EVA module
 module use ${HOMEgdasmv}/modulefiles
 module load {{ eva_module | default("EVA/hera") }}
