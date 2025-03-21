@@ -140,6 +140,53 @@ window.onclick = function(event) {
 				</div>
                             </div>
 
+			    <!-- Dropdown: Background ensemble mean -->
+                            <div class="dropdown" id="dropclick">
+				<button class="dropbtn">Background ensemble mean</button>
+				<div class="dropdown-content">
+      					<div class="dropdown-item">
+        					<button class="dropbtn">Salinity</button>
+        					<div class="submenu">
+							<button class="dropbtn" id="letkf_bkg_mean" onclick="showImagesBkgErrInc('letkf_bkg_mean', 'Salt', 'Global')">Global SSS</button>
+							<button class="dropbtn" id="letkf_bkg_mean" onclick="showImagesBkgErrInc('letkf_bkg_mean', 'Salt', 'meridional')">Meridional Cross-sections</button>
+							<button class="dropbtn" id="letkf_bkg_mean" onclick="showImagesBkgErrInc('letkf_bkg_mean', 'Salt', 'zonal')">Zonal Cross-sections</button>
+						</div>
+					</div>
+					<div class="dropdown-item">
+                                                <button class="dropbtn">SeaIce Area Fraction</button>
+                                                <div class="submenu">
+                                                        <button class="dropbtn" id="letkf_bkg_mean" onclick="showImagesBkgErrInc('letkf_bkg_mean', 'aice_h', 'Global')">Global</button>
+                                                        <button class="dropbtn" id="letkf_bkg_mean" onclick="showImagesBkgErrInc('letkf_bkg_mean', 'aice_h', 'poles')">Polar Regions</button>
+                                                </div>
+                                        </div>
+					<div class="dropdown-item">
+                                                <button class="dropbtn">SeaIce Snow Depth</button>
+                                                <div class="submenu">
+                                                        <button class="dropbtn" id="letkf_bkg_mean" onclick="showImagesBkgErrInc('letkf_bkg_mean', 'hs_h', 'Global')">Global</button>
+                                                        <button class="dropbtn" id="letkf_bkg_mean" onclick="showImagesBkgErrInc('letkf_bkg_mean', 'hs_h', 'poles')">Polar Regions</button>
+                                                </div>
+                                        </div>
+					<div class="dropdown-item">
+                                                <button class="dropbtn">SeaIce Thickness</button>
+                                                <div class="submenu">
+                                                        <button class="dropbtn" id="letkf_bkg_mean" onclick="showImagesBkgErrInc('letkf_bkg_mean', 'hi_h', 'Global')">Global</button>
+                                                        <button class="dropbtn" id="letkf_bkg_mean" onclick="showImagesBkgErrInc('letkf_bkg_mean', 'hi_h', 'poles')">Polar Regions</button>
+                                                </div>
+                                        </div>
+					<div class="dropdown-item">
+                                                <button class="dropbtn" id="letkf_bkg_mean" onclick="showImagesBkgErrInc('letkf_bkg_mean', 'ave_ssh', 'Global')">SSH</button>
+                                        </div>
+					<div class="dropdown-item">
+                                                <button class="dropbtn">Temperature</button>
+                                                <div class="submenu">
+                                                        <button class="dropbtn" id="letkf_bkg_mean" onclick="showImagesBkgErrInc('letkf_bkg_mean', 'Temp', 'Global')">Global SST</button>
+                                                        <button class="dropbtn" id="letkf_bkg_mean" onclick="showImagesBkgErrInc('letkf_bkg_mean', 'Temp', 'meridional')">Meridional Cross-sections</button>
+                                                        <button class="dropbtn" id="letkf_bkg_mean" onclick="showImagesBkgErrInc('letkf_bkg_mean', 'Temp', 'zonal')">Zonal Cross-sections</button>
+                                                </div>
+                                        </div>
+				</div>
+                            </div>
+
 			    <!-- Dropdown: Analysis -->
                             <div class="dropdown" id="dropclick">
 				<button class="dropbtn">Analysis</button>
@@ -173,6 +220,53 @@ window.onclick = function(event) {
                                         </div>
 					<div class="dropdown-item">
                                                 <button class="dropbtn" id="ana" onclick="showImagesBkgErrInc('ana', 'Temp', 'Global')">Temperature</button>
+                                        </div>
+				</div>
+                            </div>
+
+			    <!-- Dropdown: Analysis ensemble mean -->
+                            <div class="dropdown" id="dropclick">
+				<button class="dropbtn">Analysis ensemble mean</button>
+				<div class="dropdown-content">
+      					<div class="dropdown-item">
+        					<button class="dropbtn">Salinity</button>
+        					<div class="submenu">
+							<button class="dropbtn" id="letkf_ana_mean" onclick="showImagesBkgErrInc('letkf_ana_mean', 'Salt', 'Global')">Global SSS</button>
+							<button class="dropbtn" id="letkf_ana_mean" onclick="showImagesBkgErrInc('letkf_ana_mean', 'Salt', 'meridional')">Meridional Cross-sections</button>
+							<button class="dropbtn" id="letkf_ana_mean" onclick="showImagesBkgErrInc('letkf_ana_mean', 'Salt', 'zonal')">Zonal Cross-sections</button>
+						</div>
+					</div>
+					<div class="dropdown-item">
+                                                <button class="dropbtn">SeaIce Area Fraction</button>
+                                                <div class="submenu">
+                                                        <button class="dropbtn" id="letkf_ana_mean" onclick="showImagesBkgErrInc('letkf_ana_mean', 'aice_h', 'Global')">Global</button>
+                                                        <button class="dropbtn" id="letkf_ana_mean" onclick="showImagesBkgErrInc('letkf_ana_mean', 'aice_h', 'poles')">Polar Regions</button>
+                                                </div>
+                                        </div>
+					<div class="dropdown-item">
+                                                <button class="dropbtn">SeaIce Snow Depth</button>
+                                                <div class="submenu">
+                                                        <button class="dropbtn" id="letkf_ana_mean" onclick="showImagesBkgErrInc('letkf_ana_mean', 'hs_h', 'Global')">Global</button>
+                                                        <button class="dropbtn" id="letkf_ana_mean" onclick="showImagesBkgErrInc('letkf_ana_mean', 'hs_h', 'poles')">Polar Regions</button>
+                                                </div>
+                                        </div>
+					<div class="dropdown-item">
+                                                <button class="dropbtn">SeaIce Thickness</button>
+                                                <div class="submenu">
+                                                        <button class="dropbtn" id="letkf_ana_mean" onclick="showImagesBkgErrInc('letkf_ana_mean', 'hi_h', 'Global')">Global</button>
+                                                        <button class="dropbtn" id="letkf_ana_mean" onclick="showImagesBkgErrInc('letkf_ana_mean', 'hi_h', 'poles')">Polar Regions</button>
+                                                </div>
+                                        </div>
+					<div class="dropdown-item">
+                                                <button class="dropbtn" id="letkf_ana_mean" onclick="showImagesBkgErrInc('letkf_ana_mean', 'ave_ssh', 'Global')">SSH</button>
+                                        </div>
+					<div class="dropdown-item">
+                                                <button class="dropbtn">Temperature</button>
+                                                <div class="submenu">
+                                                        <button class="dropbtn" id="letkf_ana_mean" onclick="showImagesBkgErrInc('letkf_ana_mean', 'Temp', 'Global')">Global SST</button>
+                                                        <button class="dropbtn" id="letkf_ana_mean" onclick="showImagesBkgErrInc('letkf_ana_mean', 'Temp', 'meridional')">Meridional Cross-sections</button>
+                                                        <button class="dropbtn" id="letkf_ana_mean" onclick="showImagesBkgErrInc('letkf_ana_mean', 'Temp', 'zonal')">Zonal Cross-sections</button>
+                                                </div>
                                         </div>
 				</div>
                             </div>
@@ -219,6 +313,53 @@ window.onclick = function(event) {
                                                         <button class="dropbtn" id="incr" onclick="showImagesBkgErrInc('incr', 'Temp', 'Global')">Global SST</button>
                                                         <button class="dropbtn" id="incr" onclick="showImagesBkgErrInc('incr', 'Temp', 'meridional')">Meridional Cross-sections</button>
                                                         <button class="dropbtn" id="incr" onclick="showImagesBkgErrInc('incr', 'Temp', 'zonal')">Zonal Cross-sections</button>
+                                                </div>
+                                        </div>
+				</div>
+                            </div>
+
+			    <!-- Dropdown: LETKF mean increments -->
+                            <div class="dropdown" id="dropclick">
+				<button class="dropbtn">LETKF mean increments</button>
+				<div class="dropdown-content">
+      					<div class="dropdown-item">
+        					<button class="dropbtn">Salinity</button>
+        					<div class="submenu">
+							<button class="dropbtn" id="letkf_incr_mean" onclick="showImagesBkgErrInc('letkf_incr_mean', 'Salt', 'Global')">Global SSS</button>
+							<button class="dropbtn" id="letkf_incr_mean" onclick="showImagesBkgErrInc('letkf_incr_mean', 'Salt', 'meridional')">Meridional Cross-sections</button>
+							<button class="dropbtn" id="letkf_incr_mean" onclick="showImagesBkgErrInc('letkf_incr_mean', 'Salt', 'zonal')">Zonal Cross-sections</button>
+						</div>
+					</div>
+					<div class="dropdown-item">
+                                                <button class="dropbtn">SeaIce Area Fraction</button>
+                                                <div class="submenu">
+                                                        <button class="dropbtn" id="letkf_incr_mean" onclick="showImagesBkgErrInc('letkf_incr_mean', 'aice_h', 'Global')">Global</button>
+                                                        <button class="dropbtn" id="letkf_incr_mean" onclick="showImagesBkgErrInc('letkf_incr_mean', 'aice_h', 'poles')">Polar Regions</button>
+                                                </div>
+                                        </div>
+					<div class="dropdown-item">
+                                                <button class="dropbtn">SeaIce Snow Depth</button>
+                                                <div class="submenu">
+                                                        <button class="dropbtn" id="letkf_incr_mean" onclick="showImagesBkgErrInc('letkf_incr_mean', 'hs_h', 'Global')">Global</button>
+                                                        <button class="dropbtn" id="letkf_incr_mean" onclick="showImagesBkgErrInc('letkf_incr_mean', 'hs_h', 'poles')">Polar Regions</button>
+                                                </div>
+                                        </div>
+					<div class="dropdown-item">
+                                                <button class="dropbtn">SeaIce Thickness</button>
+                                                <div class="submenu">
+                                                        <button class="dropbtn" id="letkf_incr_mean" onclick="showImagesBkgErrInc('letkf_incr_mean', 'hi_h', 'Global')">Global</button>
+                                                        <button class="dropbtn" id="letkf_incr_mean" onclick="showImagesBkgErrInc('letkf_incr_mean', 'hi_h', 'poles')">Polar Regions</button>
+                                                </div>
+                                        </div>
+					<div class="dropdown-item">
+                                                <button class="dropbtn" id="letkf_incr_mean" onclick="showImagesBkgErrInc('letkf_incr_mean', 'ave_ssh', 'Global')">SSH</button>
+                                        </div>
+					<div class="dropdown-item">
+                                                <button class="dropbtn">Temperature</button>
+                                                <div class="submenu">
+                                                        <button class="dropbtn" id="letkf_incr_mean" onclick="showImagesBkgErrInc('letkf_incr_mean', 'Temp', 'Global')">Global SST</button>
+                                                        <button class="dropbtn" id="letkf_incr_mean" onclick="showImagesBkgErrInc('letkf_incr_mean', 'Temp', 'meridional')">Meridional Cross-sections</button>
+                                                        <button class="dropbtn" id="letkf_incr_mean" onclick="showImagesBkgErrInc('letkf_incr_mean', 'Temp', 'zonal')">Zonal Cross-sections</button>
                                                 </div>
                                         </div>
 				</div>
@@ -318,10 +459,9 @@ window.onclick = function(event) {
 				</div>
                             </div>
 
-
-			    <!-- Dropdown: Background ensemble mean -->
+			    <!-- Dropdown: Analysis ensemble spread -->
                             <div class="dropdown" id="dropclick">
-				<button class="dropbtn">Background ensemble mean</button>
+				<button class="dropbtn">Analysis ensemble spread</button>
 				<div class="dropdown-content">
       					<div class="dropdown-item">
         					<button class="dropbtn">Salinity</button>
@@ -361,53 +501,6 @@ window.onclick = function(event) {
                                                         <button class="dropbtn" id="letkf_ana_std" onclick="showImagesBkgErrInc('letkf_ana_std', 'Temp', 'Global')">Global SST</button>
                                                         <button class="dropbtn" id="letkf_ana_std" onclick="showImagesBkgErrInc('letkf_ana_std', 'Temp', 'meridional')">Meridional Cross-sections</button>
                                                         <button class="dropbtn" id="letkf_ana_std" onclick="showImagesBkgErrInc('letkf_ana_std', 'Temp', 'zonal')">Zonal Cross-sections</button>
-                                                </div>
-                                        </div>
-				</div>
-                            </div>
-
-			    <!-- Dropdown: Analysis ensemble spread -->
-                            <div class="dropdown" id="dropclick">
-				<button class="dropbtn">Analysis ensemble spread</button>
-				<div class="dropdown-content">
-      					<div class="dropdown-item">
-        					<button class="dropbtn">Salinity</button>
-        					<div class="submenu">
-							<button class="dropbtn" id="letkf_bkg_std" onclick="showImagesBkgErrInc('letkf_bkg_std', 'Salt', 'Global')">Global SSS</button>
-							<button class="dropbtn" id="letkf_bkg_std" onclick="showImagesBkgErrInc('letkf_bkg_std', 'Salt', 'meridional')">Meridional Cross-sections</button>
-							<button class="dropbtn" id="letkf_bkg_std" onclick="showImagesBkgErrInc('letkf_bkg_std', 'Salt', 'zonal')">Zonal Cross-sections</button>
-						</div>
-					</div>
-					<div class="dropdown-item">
-                                                <button class="dropbtn">SeaIce Area Fraction</button>
-                                                <div class="submenu">
-                                                        <button class="dropbtn" id="letkf_bkg_std" onclick="showImagesBkgErrInc('letkf_bkg_std', 'aice_h', 'Global')">Global</button>
-                                                        <button class="dropbtn" id="letkf_bkg_std" onclick="showImagesBkgErrInc('letkf_bkg_std', 'aice_h', 'poles')">Polar Regions</button>
-                                                </div>
-                                        </div>
-					<div class="dropdown-item">
-                                                <button class="dropbtn">SeaIce Snow Depth</button>
-                                                <div class="submenu">
-                                                        <button class="dropbtn" id="letkf_bkg_std" onclick="showImagesBkgErrInc('letkf_bkg_std', 'hs_h', 'Global')">Global</button>
-                                                        <button class="dropbtn" id="letkf_bkg_std" onclick="showImagesBkgErrInc('letkf_bkg_std', 'hs_h', 'poles')">Polar Regions</button>
-                                                </div>
-                                        </div>
-					<div class="dropdown-item">
-                                                <button class="dropbtn">SeaIce Thickness</button>
-                                                <div class="submenu">
-                                                        <button class="dropbtn" id="letkf_bkg_std" onclick="showImagesBkgErrInc('letkf_bkg_std', 'hi_h', 'Global')">Global</button>
-                                                        <button class="dropbtn" id="letkf_bkg_std" onclick="showImagesBkgErrInc('letkf_bkg_std', 'hi_h', 'poles')">Polar Regions</button>
-                                                </div>
-                                        </div>
-					<div class="dropdown-item">
-                                                <button class="dropbtn" id="letkf_bkg_std" onclick="showImagesBkgErrInc('letkf_bkg_std', 'ave_ssh', 'Global')">SSH</button>
-                                        </div>
-					<div class="dropdown-item">
-                                                <button class="dropbtn">Temperature</button>
-                                                <div class="submenu">
-                                                        <button class="dropbtn" id="letkf_bkg_std" onclick="showImagesBkgErrInc('letkf_bkg_std', 'Temp', 'Global')">Global SST</button>
-                                                        <button class="dropbtn" id="letkf_bkg_std" onclick="showImagesBkgErrInc('letkf_bkg_std', 'Temp', 'meridional')">Meridional Cross-sections</button>
-                                                        <button class="dropbtn" id="letkf_bkg_std" onclick="showImagesBkgErrInc('letkf_bkg_std', 'Temp', 'zonal')">Zonal Cross-sections</button>
                                                 </div>
                                         </div>
 				</div>
@@ -457,6 +550,50 @@ window.onclick = function(event) {
 			        </div>
 			    </div>
 
+			    <!-- Dropdown: LETKF OMB Maps -->
+                            <div class="dropdown" id="dropclick">
+				<button class="dropbtn">LETKF OMB Maps</button>
+				<div class="dropdown-content">
+				        <div class="dropdown-item">
+        					<button class="dropbtn" id="omb" onclick="showImagesDiags('map_plots_letkf', 'adt', 'rads', 'all', '')">Altimetry</button>
+					</div>
+					<div class="dropdown-item">
+        					<button class="dropbtn">In situ Obs</button>
+						<div class="submenu">
+        					        <button class="dropbtn" id="omb" onclick="showImagesDiags('map_plots_letkf', 'insitu', 'profile', 'argo', 'Salt')">ARGO Salinity</button>
+							<button class="dropbtn" id="omb" onclick="showImagesDiags('map_plots_letkf', 'insitu', 'profile', 'argo', 'Temp')">ARGO Temperature</button>
+							<button class="dropbtn" id="omb" onclick="showImagesDiags('map_plots_letkf', 'insitu', 'profile', 'tesac_salinity', 'Salt')">TESAC Salinity</button>
+							<button class="dropbtn" id="omb" onclick="showImagesDiags('map_plots_letkf', 'insitu', 'profile', 'tesac', 'Temp')">TESAC Temperature</button>
+							<button class="dropbtn" id="omb" onclick="showImagesDiags('map_plots_letkf', 'insitu', 'profile', 'trkob_salinity', 'Salt')">TRKOB Salinity</button>
+							<button class="dropbtn" id="omb" onclick="showImagesDiags('map_plots_letkf', 'insitu', 'profile', 'trkob', 'Temp')">TRKOB Temperature</button>
+						</div>
+					</div>
+					<div class="dropdown-item">
+        					<button class="dropbtn">SeaIce Obs</button>
+        					<div class="submenu">
+							<button class="dropbtn" id="omb" onclick="showImagesDiags('map_plots_letkf', 'icec', 'amsr2', 'north', '')">AMSR-2 (Arctic)</button>
+							<button class="dropbtn" id="omb" onclick="showImagesDiags('map_plots_letkf', 'icec', 'amsr2', 'south', '')">AMSR-2 (Antarctic)</button>
+							<button class="dropbtn" id="omb" onclick="showImagesDiags('map_plots_letkf', 'icec', 'atms', 'npp_l2', '')">ATMS (S-NPP)</button>
+							<button class="dropbtn" id="omb" onclick="showImagesDiags('map_plots_letkf', 'icec', 'ssmis', 'f17_l2', '')">SSMIS (F17)</button>
+							<button class="dropbtn" id="omb" onclick="showImagesDiags('map_plots_letkf', 'icec', 'viirs_n20_l2', 'north', '')">VIIRS NOAA-20 (Arctic)</button>
+							<button class="dropbtn" id="omb" onclick="showImagesDiags('map_plots_letkf', 'icec', 'viirs_n20_l2', 'south', '')">VIIRS NOAA-20 (Antarctic)</button>
+						</div>
+					</div>
+      					<div class="dropdown-item">
+        					<button class="dropbtn">SST Obs</button>
+        					<div class="submenu">
+							<button class="dropbtn" id="omb" onclick="showImagesDiags('map_plots_letkf', 'sst', 'abi', 'g16', '')">ABI (GOES-16)</button>
+							<button class="dropbtn" id="omb" onclick="showImagesDiags('map_plots_letkf', 'sst', 'abi', 'g17', '')">ABI (GOES-17)</button>
+							<button class="dropbtn" id="omb" onclick="showImagesDiags('map_plots_letkf', 'sst', 'ahi', 'h08', '')">AHI (HIMAWARI-8)</button>
+							<button class="dropbtn" id="omb" onclick="showImagesDiags('map_plots_letkf', 'sst', 'avhrr', 'ma', '')">AVHRR (METOP-A)</button>
+							<button class="dropbtn" id="omb" onclick="showImagesDiags('map_plots_letkf', 'sst', 'avhrr', 'mb', '')">AVHRR (METOP-B)</button>
+							<button class="dropbtn" id="omb" onclick="showImagesDiags('map_plots_letkf', 'sst', 'viirs', 'n20', '')">VIIRS (NOAA-20)</button>
+							<button class="dropbtn" id="omb" onclick="showImagesDiags('map_plots_letkf', 'sst', 'viirs', 'npp', '')">VIIRS (S-NPP)</button>
+						</div>
+					</div>
+			        </div>
+			    </div>
+
 			    <!-- Dropdown: OMB, OMA Histograms -->
                             <div class="dropdown" id="dropclick">
 				<button class="dropbtn">OMB, OMA Histograms</button>
@@ -496,6 +633,50 @@ window.onclick = function(event) {
 							<button class="dropbtn" id="hist" onclick="showImagesDiags('histograms', 'sst', 'avhrr', 'mb', '')">AVHRR (METOP-B)</button>
 							<button class="dropbtn" id="hist" onclick="showImagesDiags('histograms', 'sst', 'viirs', 'n20', '')">VIIRS (NOAA-20)</button>
 							<button class="dropbtn" id="hist" onclick="showImagesDiags('histograms', 'sst', 'viirs', 'npp', '')">VIIRS (S-NPP)</button>
+						</div>
+					</div>
+			        </div>
+			    </div>
+
+			    <!-- Dropdown: LETKF OMB, OMA Histograms -->
+                            <div class="dropdown" id="dropclick">
+				<button class="dropbtn">LETKF OMB, OMA Histograms</button>
+				<div class="dropdown-content">
+				        <div class="dropdown-item">
+        					<button class="dropbtn" id="hist" onclick="showImagesDiags('histograms_letkf', 'adt', 'rads', 'all', '')">Altimetry</button>
+					</div>
+					<div class="dropdown-item">
+        					<button class="dropbtn">In situ Obs</button>
+						<div class="submenu">
+        					        <button class="dropbtn" id="hist" onclick="showImagesDiags('histograms_letkf', 'insitu', 'profile', 'argo', 'Salt')">ARGO Salinity</button>
+							<button class="dropbtn" id="hist" onclick="showImagesDiags('histograms_letkf', 'insitu', 'profile', 'argo', 'Temp')">ARGO Temperature</button>
+							<button class="dropbtn" id="hist" onclick="showImagesDiags('histograms_letkf', 'insitu', 'profile', 'tesac_salinity', 'Salt')">TESAC Salinity</button>
+							<button class="dropbtn" id="hist" onclick="showImagesDiags('histograms_letkf', 'insitu', 'profile', 'tesac', 'Temp')">TESAC Temperature</button>
+							<button class="dropbtn" id="hist" onclick="showImagesDiags('histograms_letkf', 'insitu', 'profile', 'trkob_salinity', 'Salt')">TRKOB Salinity</button>
+							<button class="dropbtn" id="hist" onclick="showImagesDiags('histograms_letkf', 'insitu', 'profile', 'trkob', 'Temp')">TRKOB Temperature</button>
+						</div>
+					</div>
+					<div class="dropdown-item">
+        					<button class="dropbtn">SeaIce Obs</button>
+        					<div class="submenu">
+							<button class="dropbtn" id="hist" onclick="showImagesDiags('histograms_letkf', 'icec', 'amsr2', 'north', '')">AMSR-2 (Arctic)</button>
+							<button class="dropbtn" id="hist" onclick="showImagesDiags('histograms_letkf', 'icec', 'amsr2', 'south', '')">AMSR-2 (Antarctic)</button>
+						        <button class="dropbtn" id="hist" onclick="showImagesDiags('histograms_letkf', 'icec', 'atms', 'npp_l2', '')">ATMS (S-NPP)</button>
+                                                        <button class="dropbtn" id="hist" onclick="showImagesDiags('histograms_letkf', 'icec', 'ssmis', 'f17_l2', '')">SSMIS (F17)</button>
+                                                        <button class="dropbtn" id="hist" onclick="showImagesDiags('histograms_letkf', 'icec', 'viirs_n20_l2', 'north', '')">VIIRS NOAA-20 (Arctic)</button>
+                                                        <button class="dropbtn" id="hist" onclick="showImagesDiags('histograms_letkf', 'icec', 'viirs_n20_l2', 'south', '')">VIIRS NOAA-20 (Antarctic)</button>
+						</div>
+					</div>
+      					<div class="dropdown-item">
+        					<button class="dropbtn">SST Obs</button>
+        					<div class="submenu">
+							<button class="dropbtn" id="hist" onclick="showImagesDiags('histograms_letkf', 'sst', 'abi', 'g16', '')">ABI (GOES-16)</button>
+							<button class="dropbtn" id="hist" onclick="showImagesDiags('histograms_letkf', 'sst', 'abi', 'g17', '')">ABI (GOES-17)</button>
+							<button class="dropbtn" id="hist" onclick="showImagesDiags('histograms_letkf', 'sst', 'ahi', 'h08', '')">AHI (HIMAWARI-8)</button>
+							<button class="dropbtn" id="hist" onclick="showImagesDiags('histograms_letkf', 'sst', 'avhrr', 'ma', '')">AVHRR (METOP-A)</button>
+							<button class="dropbtn" id="hist" onclick="showImagesDiags('histograms_letkf', 'sst', 'avhrr', 'mb', '')">AVHRR (METOP-B)</button>
+							<button class="dropbtn" id="hist" onclick="showImagesDiags('histograms_letkf', 'sst', 'viirs', 'n20', '')">VIIRS (NOAA-20)</button>
+							<button class="dropbtn" id="hist" onclick="showImagesDiags('histograms_letkf', 'sst', 'viirs', 'npp', '')">VIIRS (S-NPP)</button>
 						</div>
 					</div>
 			        </div>
@@ -544,6 +725,51 @@ window.onclick = function(event) {
 					</div>
 			        </div>
 			    </div>
+
+			    <!-- Dropdown: LETKF h(x) vs Obs -->
+                            <div class="dropdown" id="dropclick">
+				<button class="dropbtn">LETKF h(x) vs Obs</button>
+				<div class="dropdown-content">
+				        <div class="dropdown-item">
+        					<button class="dropbtn" id="hofx" onclick="showImagesDiags('observation_scatter_plots_letkf', 'adt', 'rads', 'all', '')">Altimetry</button>
+					</div>
+					<div class="dropdown-item">
+        					<button class="dropbtn">In situ Obs</button>
+						<div class="submenu">
+        					        <button class="dropbtn" id="hofx" onclick="showImagesDiags('observation_scatter_plots_letkf', 'insitu', 'profile', 'argo', 'Salt')">ARGO Salinity</button>
+							<button class="dropbtn" id="hofx" onclick="showImagesDiags('observation_scatter_plots_letkf', 'insitu', 'profile', 'argo', 'Temp')">ARGO Temperature</button>
+							<button class="dropbtn" id="hofx" onclick="showImagesDiags('observation_scatter_plots_letkf', 'insitu', 'profile', 'tesac_salinity', 'Salt')">TESAC Salinity</button>
+							<button class="dropbtn" id="hofx" onclick="showImagesDiags('observation_scatter_plots_letkf', 'insitu', 'profile', 'tesac', 'Temp')">TESAC Temperature</button>
+							<button class="dropbtn" id="hofx" onclick="showImagesDiags('observation_scatter_plots_letkf', 'insitu', 'profile', 'trkob_salinity', 'Salt')">TRKOB Salinity</button>
+							<button class="dropbtn" id="hofx" onclick="showImagesDiags('observation_scatter_plots_letkf', 'insitu', 'profile', 'trkob', 'Temp')">TRKOB Temperature</button>
+						</div>
+					</div>
+					<div class="dropdown-item">
+        					<button class="dropbtn">SeaIce Obs</button>
+        					<div class="submenu">
+							<button class="dropbtn" id="hofx" onclick="showImagesDiags('observation_scatter_plots_letkf', 'icec', 'amsr2', 'north', '')">AMSR-2 (Arctic)</button>
+							<button class="dropbtn" id="hofx" onclick="showImagesDiags('observation_scatter_plots_letkf', 'icec', 'amsr2', 'south', '')">AMSR-2 (Antarctic)</button>
+						        <button class="dropbtn" id="hofx" onclick="showImagesDiags('observation_scatter_plots_letkf', 'icec', 'atms', 'npp_l2', '')">ATMS (S-NPP)</button>
+                                                        <button class="dropbtn" id="hofx" onclick="showImagesDiags('observation_scatter_plots_letkf', 'icec', 'ssmis', 'f17_l2', '')">SSMIS (F17)</button>
+                                                        <button class="dropbtn" id="hofx" onclick="showImagesDiags('observation_scatter_plots_letkf', 'icec', 'viirs_n20_l2', 'north', '')">VIIRS NOAA-20 (Arctic)</button>
+                                                        <button class="dropbtn" id="hofx" onclick="showImagesDiags('observation_scatter_plots_letkf', 'icec', 'viirs_n20_l2', 'south', '')">VIIRS NOAA-20 (Antarctic)</button>
+						</div>
+					</div>
+      					<div class="dropdown-item">
+        					<button class="dropbtn">SST Obs</button>
+        					<div class="submenu">
+							<button class="dropbtn" id="hofx" onclick="showImagesDiags('observation_scatter_plots_letkf', 'sst', 'abi', 'g16', '')">ABI (GOES-16)</button>
+							<button class="dropbtn" id="hofx" onclick="showImagesDiags('observation_scatter_plots_letkf', 'sst', 'abi', 'g17', '')">ABI (GOES-17)</button>
+							<button class="dropbtn" id="hofx" onclick="showImagesDiags('observation_scatter_plots_letkf', 'sst', 'ahi', 'h08', '')">AHI (HIMAWARI-8)</button>
+							<button class="dropbtn" id="hofx" onclick="showImagesDiags('observation_scatter_plots_letkf', 'sst', 'avhrr', 'ma', '')">AVHRR (METOP-A)</button>
+							<button class="dropbtn" id="hofx" onclick="showImagesDiags('observation_scatter_plots_letkf', 'sst', 'avhrr', 'mb', '')">AVHRR (METOP-B)</button>
+							<button class="dropbtn" id="hofx" onclick="showImagesDiags('observation_scatter_plots_letkf', 'sst', 'viirs', 'n20', '')">VIIRS (NOAA-20)</button>
+							<button class="dropbtn" id="hofx" onclick="showImagesDiags('observation_scatter_plots_letkf', 'sst', 'viirs', 'npp', '')">VIIRS (S-NPP)</button>
+						</div>
+					</div>
+			        </div>
+			    </div>
+
 
                         </ul>
 		</div>
@@ -1297,7 +1523,7 @@ window.onclick = function(event) {
 		    }
 		}
 
-		if (thisFigType == 'map_plots') {
+		if ((thisFigType == 'map_plots') || (thisFigType == 'map_plots_letkf')) {
                     var container = document.getElementById('imageContainer');
                     container.innerHTML = `<div class="gallery" style="display: grid; grid-template-columns: repeat(1, 1fr);">
 			<figure>
@@ -1308,7 +1534,7 @@ window.onclick = function(event) {
 			        <!-- extra space at bottom of webpage -->
 			</figure>
                     </div>`;
-		} else if (thisFigType == 'histograms') {
+		} else if ((thisFigType == 'histograms') || (thisFigType == 'histograms_letkf')) {
 		    var container = document.getElementById('imageContainer');
                     container.innerHTML = `<div class="gallery" style="display: grid; grid-template-columns: repeat(2, 1fr);">
                         <figure>
@@ -1326,7 +1552,7 @@ window.onclick = function(event) {
 			        <!-- extra space at bottom of webpage -->
 			</figure>
                     </div>`;
-		} else if (thisFigType == 'observation_scatter_plots') {
+		} else if ((thisFigType == 'observation_scatter_plots') || (thisFigType == 'observation_scatter_plots_letkf')) {
 		   var container = document.getElementById('imageContainer');
                     container.innerHTML = `<div class="gallery" style="display: grid; grid-template-columns: repeat(1, 1fr);">
                         <figure>
