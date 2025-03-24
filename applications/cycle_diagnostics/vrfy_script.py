@@ -68,7 +68,8 @@ if not os.path.exists(grid_file):
 
 # for eva
 diagdir = os.path.join(comout, 'diags')
-HOMEgdas = os.getenv('HOMEgdas')
+letkfdiagdir = os.path.join(comout, 'letkf', 'diags')
+HOMEgdasmv = os.getenv('HOMEgdasmv')
 
 # Get flags from environment variables (set in the bash driver)
 plot_ensemble_b = os.getenv('PLOT_ENSEMBLE_B', 'OFF').upper() == 'ON'
@@ -78,6 +79,7 @@ plot_letkf_ensemble = os.getenv('PLOT_LETKF_ENSEMBLE', 'OFF').upper() == 'ON'
 plot_increment = os.getenv('PLOT_INCREMENT', 'OFF').upper() == 'ON'
 plot_analysis = os.getenv('PLOT_ANALYSIS', 'OFF').upper() == 'ON'
 eva_plots = os.getenv('EVA_PLOTS', 'OFF').upper() == 'ON'
+eva_letkf_plots = os.getenv('EVA_LETKF_PLOTS', 'OFF').upper() == 'ON'
 
 # output directory
 vrfyout = os.getenv('VRFYOUT', './vrfyout')
@@ -257,7 +259,54 @@ if plot_letkf_ensemble:
                                                 'u': [-1.0, 1.0],
                                                 'v': [-1.0, 1.0]},
                                colormap='nipy_spectral',
-                               vrfyout=os.path.join(vrfyout, 'vrfy', 'letkf_bkg_mean'))]  # ocean mean ensemble background
+                               vrfyout=os.path.join(vrfyout, 'vrfy', 'letkf_bkg_mean')),  # ocean mean ensemble background
+                    plotConfig(grid_file=grid_file,
+                               data_file=os.path.join(comout, 'letkf', f'enkfgdas.ice.t{cyc}z.ensmean_post.nc'),
+                               variables_horiz={'aice_h': [0.0, 1.0]},
+                               colormap='jet',
+                               projs=['North', 'South', 'Global'],
+                               vrfyout=os.path.join(vrfyout, 'vrfy', 'letkf_ana_mean')),   # sea ice mean ensemble analysis
+                    plotConfig(grid_file=grid_file,
+                               layer_file=layer_file,
+                               data_file=os.path.join(comout, 'letkf', f'enkfgdas.ocean.t{cyc}z.ensmean_post.nc'),
+                               lats=np.arange(-60, 60, 10),
+                               lons=np.arange(-280, 80, 30),
+                               variables_zonal={'Temp': [-1.8, 34.0],
+                                                'Salt': [32, 40],
+                                                'u': [-1.0, 1.0],
+                                                'v': [-1.0, 1.0]},
+                               variables_meridional={'Temp': [-1.8, 34.0],
+                                                     'Salt': [32, 40],
+                                                     'u': [-1.0, 1.0],
+                                                     'v': [-1.0, 1.0]},
+                               variables_horiz={'ave_ssh': [-1.8, 1.3],
+                                                'Temp': [-1.8, 34.0],
+                                                'Salt': [32, 40],
+                                                'u': [-1.0, 1.0],
+                                                'v': [-1.0, 1.0]},
+                               colormap='nipy_spectral',
+                               vrfyout=os.path.join(vrfyout, 'vrfy', 'letkf_ana_mean')),  # ocean mean ensemble analysis
+                    plotConfig(grid_file=grid_file,
+                               layer_file=layer_file,
+                               data_file=os.path.join(comout, 'letkf', f'enkfgdas.ocean.t{cyc}z.ensmean_incr.nc'),
+                               lats=np.arange(-60, 60, 10),
+                               lons=np.arange(-280, 80, 30),
+                               variables_zonal={'Temp': [-0.5, 0.5],
+                                                'Salt': [-0.1, 0.1]},
+                               variables_horiz={'Temp': [-0.5, 0.5],
+                                                'Salt': [-0.1, 0.1],
+                                                'ave_ssh': [-0.1, 0.1]},
+                               variables_meridional={'Temp': [-0.5, 0.5],
+                                                     'Salt': [-0.1, 0.1]},
+                               colormap='seismic',
+                               vrfyout=os.path.join(vrfyout, 'vrfy', 'letkf_incr_mean')),   # ocean mean LETKF increment
+                    plotConfig(grid_file=grid_file,
+                               data_file=os.path.join(comout, 'letkf', f'enkfgdas.ice.t{cyc}z.ensmean_incr.nc'),
+                               lats=np.arange(-60, 60, 10),
+                               variables_horiz={'aice_h': [-0.2, 0.2]},
+                               colormap='seismic',
+                               projs=['North', 'South'],
+                               vrfyout=os.path.join(vrfyout, 'vrfy', 'letkf_incr_mean'))]   # sea ice mean LETKF increment
     configs.extend(config_letkf)
 
 # Background plotting configuration
@@ -356,8 +405,8 @@ for process in processes:
 
 # Run EVA
 if eva_plots:
-    evadir = os.path.join(HOMEgdas)
-    marinetemplate = os.path.join(evadir, 'marine_gdas_plots.yaml')
+    evadir = os.path.join(HOMEgdasmv)
+    marinetemplate = os.path.join(evadir, 'configs', 'marine_gdas_plots.yaml')
     varyaml = os.path.join(comout, 'yaml', 'var.yaml')
 
     # it would be better to refrence the dirs explicitly with the comout path
@@ -378,6 +427,33 @@ if eva_plots:
     files = os.listdir('evayamls')
     for file in files:
         infile = os.path.join('evayamls', file)
+        print('running eva on', infile)
+        subprocess.run(['eva', infile], check=True)
+
+# Run EVA on LETKF diags
+if eva_letkf_plots:
+    evadir = os.path.join(HOMEgdasmv)
+    marinetemplate = os.path.join(evadir, 'configs', 'marine_letkf_gdas_plots.yaml')
+    letkfyaml = os.path.join(comout, 'letkf', 'letkf.yaml')
+
+    # it would be better to refrence the dirs explicitly with the comout path
+    # but eva doesn't allow for specifying output directories
+    os.chdir(os.path.join(vrfyout, 'vrfy'))
+    if not os.path.exists('preevayamls_letkf'):
+        os.makedirs('preevayamls_letkf')
+    if not os.path.exists('evayamls_letkf'):
+        os.makedirs('evayamls_letkf')
+
+    gen_eva_obs_yaml.gen_eva_obs_yaml(letkfyaml, marinetemplate, 'preevayamls_letkf')
+
+    files = os.listdir('preevayamls_letkf')
+    for file in files:
+        infile = os.path.join('preevayamls_letkf', file)
+        marine_eva_post.marine_eva_post(infile, 'evayamls_letkf', letkfdiagdir)
+
+    files = os.listdir('evayamls_letkf')
+    for file in files:
+        infile = os.path.join('evayamls_letkf', file)
         print('running eva on', infile)
         subprocess.run(['eva', infile], check=True)
 
