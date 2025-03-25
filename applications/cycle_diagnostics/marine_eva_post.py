@@ -35,11 +35,13 @@ def marine_eva_post(inputyaml, outputdir, diagdir):
         # this assumes that there is only one variable, or that the
         # variables are all the same
         variable = graphic['batch figure']['variables'][0]
-        for plot in graphic['plots']:
-            for layer in plot['layers']:
-                if layer['type'] == 'MapScatter':
-                    layer['vmin'] = vminmax[variable]['vmin']
-                    layer['vmax'] = vminmax[variable]['vmax']
+        # Comment out the below for-loop block to accommodate EVA map_plots 
+        # ... without a specified vmin/vmax in the yaml file: ../../configs/marine_gdas_plots.yaml
+        # for plot in graphic['plots']:
+            # for layer in plot['layers']:
+                # if layer['type'] == 'MapScatter':
+                    # layer['vmin'] = vminmax[variable]['vmin']
+                    # layer['vmax'] = vminmax[variable]['vmax']
 
     # first, let us prepend some comments that tell someone this output YAML was generated
     now = datetime.datetime.now()
