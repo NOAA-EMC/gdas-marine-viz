@@ -191,6 +191,8 @@ graphics:
           label: '$(variable)'
           colorbar: true
           cmap: 'nipy_spectral'
+          vmin: 
+          vmax: 
 
   # Map of observation error
   - batch figure:
@@ -226,6 +228,8 @@ graphics:
           label: '$(variable)'
           colorbar: true
           cmap: 'nipy_spectral'
+          vmin:
+          vmax:
 
   # Map of observation times
   - batch figure:
@@ -261,6 +265,8 @@ graphics:
           label: '$(variable)'
           colorbar: true
           cmap: 'nipy_spectral'
+          vmin:
+          vmax:
 
 
   # Histogram plots
