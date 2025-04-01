@@ -15,6 +15,7 @@
 
 # Define HOMEgdas
 export HOMEgdasmv="{{ homegdasmarineviz }}"
+export HOMEgfs="{{ homegfs }}"
 
 # Define HPC Machines
 export HPCname="{{ hpc }}"
@@ -35,6 +36,8 @@ export PLOT_INCREMENT={{ plot_increment | default("ON") }}
 export PLOT_ANALYSIS={{ plot_analysis | default("OFF") }}
 export EVA_PLOTS={{ eva_plots | default("OFF") }}
 export EVA_LETKF_PLOTS={{ eva_letkf_plots | default("OFF") }}
+export COMPUTE_LETKF_OBSSTATS={{ compute_letkf_obsstats | default("OFF") }}
+export NENS={{ nens | default(0) }}
 
 # Define and export the environment variables
 export cyc="{{ cyc }}"
@@ -58,3 +61,13 @@ export COM_OCEAN_HISTORY_PREV="${BASE_EXP_PATH}/gdas.${PREV_PDY}/${PREV_CYC_HOUR
 
 # Execute Marine Verify Analysis
 python3 ${HOMEgdasmv}/applications/cycle_diagnostics/vrfy_script.py
+
+{% if compute_letkf_obsstats == "ON" %}
+  module purge
+  module use ${HOMEgdasmv}/modulefiles
+  module load {{ gdas_module | default("GDAS/hera.intel") }}
+  wxflowPATH=${HOMEgfs}/ush/python
+  PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}${wxflowPATH}"
+  export PYTHONPATH
+  python3 ${HOMEgdasmv}/applications/cycle_diagnostics/letkf_obsstats.py
+{% endif %}
