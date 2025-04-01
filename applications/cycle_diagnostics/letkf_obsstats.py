@@ -54,11 +54,11 @@ for obsfile in diags_list:
             'csv_output': os.path.join(comout, 'letkf', 'diags', f"{obs_space}.stats.csv")}
     obs_spaces.append(create_obs_space(data))
 
-    # create the yaml
-    data = {'obs_spaces': obs_spaces, 'nens': nens}
-    conf = parse_j2yaml(path=obsstats_j2yaml, data=data)
-    stats_yaml = 'diag_stats.yaml'
-    conf.save(stats_yaml)
+# create the yaml
+data = {'obs_spaces': obs_spaces, 'nens': nens}
+conf = parse_j2yaml(path=obsstats_j2yaml, data=data)
+stats_yaml = 'diag_stats.yaml'
+conf.save(stats_yaml)
 
 # Path to your executable
 exe_path = HOMEgfs + '/sorc/gdas.cd/build/bin/gdassoca_obsstats.x'
