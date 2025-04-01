@@ -1,19 +1,19 @@
 import os
 import glob
-import yaml
 import subprocess
 import re
 import netCDF4
 from wxflow import parse_j2yaml
 
 # obs space statistics
-print(f"---------------- Compute basic stats")
+print("---------------- Compute basic stats")
 comout = os.getenv('COM_OCEAN_ANALYSIS')
 HOMEgdasmv = os.getenv('HOMEgdasmv')
 HOMEgfs = os.getenv('HOMEgfs')
 nens = os.getenv('NENS')
 diags_list = glob.glob(os.path.join(os.path.join(comout, 'letkf', 'diags', '*.nc4')))
 obsstats_j2yaml = os.path.join(HOMEgdasmv, 'configs', 'obs_stats.yaml.j2')
+
 
 # function to create a minimalist ioda obs sapce
 def create_obs_space(data):
@@ -27,11 +27,12 @@ def create_obs_space(data):
                "variable": data["variable"],
                "experiment identifier": data["pslot"],
                "csv output": data["csv_output"]
-              }
+               }
     return os_dict
 
 # get the experiment id
 pslot = os.getenv("PSLOT")
+
 
 # iterate through the obs spaces and generate the yaml for gdassoca_obsstats.x
 obs_spaces = []

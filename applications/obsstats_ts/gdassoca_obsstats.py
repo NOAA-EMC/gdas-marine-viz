@@ -71,12 +71,14 @@ class ObsStats:
             ]
 
             # Plot RMSE, obs error, obs error + spread
-            axs[0].plot(exp_data['date'], exp_data['RMSE'], marker='o', linestyle='-', color=colors[exp_counter], label='RMSE '+exp)
+            axs[0].plot(exp_data['date'], exp_data['RMSE'], marker='o', linestyle='-',
+                        color=colors[exp_counter], label='RMSE ' + exp)
             if ('EnsStd' in exp_data) and ('ObsErr' in exp_data):
-                axs[0].plot(exp_data['date'], exp_data['EnsStd']+exp_data['ObsErr'], marker='s', linestyle='-',
-                            color=colors[exp_counter], label='EnsStd+ObsErr '+exp)
+                axs[0].plot(exp_data['date'], exp_data['EnsStd'] + exp_data['ObsErr'], marker='s', linestyle='-',
+                            color=colors[exp_counter], label='EnsStd+ObsErr ' + exp)
             if ('EnsStd' in exp_data):
-                axs[0].plot(exp_data['date'], exp_data['EnsStd'], marker='x', linestyle='-', color=colors[exp_counter], label='EnsStd '+exp)
+                axs[0].plot(exp_data['date'], exp_data['EnsStd'], marker='x', linestyle='-',
+                            color=colors[exp_counter], label='EnsStd ' + exp)
             axs[0].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H'))
             axs[0].xaxis.set_major_locator(mdates.DayLocator())
             axs[0].tick_params(labelbottom=False)
