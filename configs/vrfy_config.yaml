@@ -2,8 +2,10 @@ pslot: "mlb.02"
 start_pdy: '20210701'
 end_pdy: '20210701'
 cycs: ["06"]
+nens: 30
 run: "gdas"
 homegdasmarineviz: "/work2/noaa/da/gvernier/sandboxes/gdas-marine-viz/"
+# homegfs: "path/to/global-workflow"   # used for computing LETKF obsstats
 base_exp_path: "/work2/noaa/da/gvernier/runs/mlb/{{ pslot }}/COMROOT/{{ pslot }}"
 vrfyout: "/work2/noaa/da/gvernier/sandboxes/gdas-marine-viz/test/{{ pslot }}"
 plot_ensemble_b: "OFF"
@@ -14,6 +16,7 @@ plot_analysis: "OFF"
 plot_letkf_ensemble: "OFF"
 eva_plots: "ON"
 eva_letkf_plots: "OFF"
+compute_letkf_obsstats: "OFF"
 qos: "batch"
 hpc: "hercules"
 eva_module: "EVA/orion"

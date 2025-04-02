@@ -29,7 +29,7 @@ colors = [
 
 def get_inst(csv_file_name):
     """Extract the instrument name from the csv file name. gdas.t00z.ocn.sst_ahi_h08_l3c.stats.csv -> sst_ahi_h08_l3c"""
-    return csv_file_name.split('.')[-3]
+    return csv_file_name.split('.')[-3].split('/')[-1]
 
 
 class ObsStats:
@@ -70,8 +70,15 @@ class ObsStats:
                 & (self.data['Exp'] == exp)
             ]
 
-            # Plot RMSE
-            axs[0].plot(exp_data['date'], exp_data['RMSE'], marker='o', linestyle='-', color=colors[exp_counter], label=exp)
+            # Plot RMSE, obs error, obs error + spread
+            axs[0].plot(exp_data['date'], exp_data['RMSE'], marker='o', linestyle='-',
+                        color=colors[exp_counter], label='RMSE ' + exp)
+            if ('EnsStd' in exp_data) and ('ObsErr' in exp_data):
+                axs[0].plot(exp_data['date'], exp_data['EnsStd'] + exp_data['ObsErr'], marker='s', linestyle='-',
+                            color=colors[exp_counter], label='EnsStd+ObsErr ' + exp)
+            if ('EnsStd' in exp_data):
+                axs[0].plot(exp_data['date'], exp_data['EnsStd'], marker='x', linestyle='-',
+                            color=colors[exp_counter], label='EnsStd ' + exp)
             axs[0].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H'))
             axs[0].xaxis.set_major_locator(mdates.DayLocator())
             axs[0].tick_params(labelbottom=False)
@@ -109,7 +116,7 @@ if __name__ == "__main__":
     epilog = [
         "Usage examples:",
         "./gdassoca_obsstats.py --exps cp1/COMROOT/cp1 cp2/COMROOT/cp2",
-        "--inst sst_abi_g16_l3c --dirout cp1vscp2"
+        "--inst sst_abi_g16_l3c --dirout cp1vscp2 [--letkf]"
     ]
     parser = argparse.ArgumentParser(description="Observation space RMSE's and BIAS's",
                                      formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -122,6 +129,7 @@ if __name__ == "__main__":
         help="The name of the instrument/platform (ex: sst_abi_g16_l3c) or a wild card (eg sst*)"
     )
     parser.add_argument("--dirout", required=True, help="Output directory")
+    parser.add_argument("--letkf", action="store_true", help="Generate stats for LETKF diag files")
     args = parser.parse_args()
 
     insts = []
@@ -131,6 +139,8 @@ if __name__ == "__main__":
     # Get all instruments/obs spaces
     for exp in args.exps:
         wc = exp + f'/*.*/??/analysis/ocean/*{inst}*.stats.csv'
+        if (args.letkf):
+            wc = exp + f'/*.*/??/analysis/ocean/letkf/diags/*{inst}*.stats.csv'
         flist = glob.glob(wc)
         for fname in flist:
             insts.append(get_inst(fname))
@@ -144,6 +154,8 @@ if __name__ == "__main__":
         flist = []
         for exp in args.exps:
             wc = exp + f'/*.*/??/analysis/ocean/*{inst}*.stats.csv'
+            if (args.letkf):
+                wc = exp + f'/*.*/??/analysis/ocean/letkf/diags/*{inst}*.stats.csv'
             flist.append(glob.glob(wc))
 
         flist = sum(flist, [])
