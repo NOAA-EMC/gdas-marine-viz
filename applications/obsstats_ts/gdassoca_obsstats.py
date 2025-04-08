@@ -73,11 +73,11 @@ class ObsStats:
             # Plot RMSE, obs error, obs error + spread
             axs[0].plot(exp_data['date'], exp_data['RMSE'], marker='o', linestyle='-',
                         color=colors[exp_counter], label='RMSE ' + exp)
-            if ('EnsStd' in exp_data) and ('ObsErr' in exp_data):
-                axs[0].plot(exp_data['date'], exp_data['EnsStd'] + exp_data['ObsErr'], marker='s', linestyle='-',
+            if (exp.endswith("letkf")):
+                axs[0].plot(exp_data['date'], exp_data['EnsStd'] + exp_data['ObsErr'], marker='x', linestyle='--',
                             color=colors[exp_counter], label='EnsStd+ObsErr ' + exp)
-            if ('EnsStd' in exp_data):
-                axs[0].plot(exp_data['date'], exp_data['EnsStd'], marker='x', linestyle='-',
+            if (exp.endswith("letkf")):
+                axs[0].plot(exp_data['date'], exp_data['EnsStd'], marker='s', linestyle='-',
                             color=colors[exp_counter], label='EnsStd ' + exp)
             axs[0].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H'))
             axs[0].xaxis.set_major_locator(mdates.DayLocator())
@@ -139,11 +139,14 @@ if __name__ == "__main__":
     # Get all instruments/obs spaces
     for exp in args.exps:
         wc = exp + f'/*.*/??/analysis/ocean/*{inst}*.stats.csv'
-        if (args.letkf):
-            wc = exp + f'/*.*/??/analysis/ocean/letkf/diags/*{inst}*.stats.csv'
         flist = glob.glob(wc)
         for fname in flist:
             insts.append(get_inst(fname))
+        if (args.letkf):
+            wc = exp + f'/*.*/??/analysis/ocean/letkf/diags/*{inst}*.stats.csv'
+            flist = glob.glob(wc)
+            for fname in flist:
+                insts.append(get_inst(fname))
     insts = list(set(insts))
     insts.sort()
     print(insts)
@@ -154,9 +157,10 @@ if __name__ == "__main__":
         flist = []
         for exp in args.exps:
             wc = exp + f'/*.*/??/analysis/ocean/*{inst}*.stats.csv'
+            flist.append(glob.glob(wc))
             if (args.letkf):
                 wc = exp + f'/*.*/??/analysis/ocean/letkf/diags/*{inst}*.stats.csv'
-            flist.append(glob.glob(wc))
+                flist.append(glob.glob(wc))
 
         flist = sum(flist, [])
         obsStats = ObsStats()

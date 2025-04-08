@@ -49,7 +49,7 @@ for obsfile in diags_list:
     # filling values for the templated yaml
     data = {'obs_space': os.path.basename(obsfile),
             'obsfile': obsfile,
-            'pslot': pslot,
+            'pslot': pslot + "_letkf",
             'variable': variable,
             'csv_output': os.path.join(comout, 'letkf', 'diags', f"{obs_space}.stats.csv")}
     obs_spaces.append(create_obs_space(data))

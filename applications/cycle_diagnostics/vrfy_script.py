@@ -20,28 +20,29 @@ else:
 del matching_paths
 
 com_ice_history = os.getenv('COM_ICE_HISTORY_PREV')
-# resolve the comout path since it may contain wild cards
-matching_paths = glob.glob(com_ice_history)
-if matching_paths:
-    com_ice_history = matching_paths[0]  # Assuming you want the first match
-    print(com_ice_history)
-else:
-    print(com_ice_history)
-    print("No matching paths found")
-    exit(1)
-del matching_paths
-
 com_ocean_history = os.getenv('COM_OCEAN_HISTORY_PREV')
-# resolve the comout path since it may contain wild cards
-matching_paths = glob.glob(com_ocean_history)
-if matching_paths:
-    com_ocean_history = matching_paths[0]  # Assuming you want the first match
-    print(com_ocean_history)
-else:
-    print(com_ocean_history)
-    print("No matching paths found")
-    exit(1)
-del matching_paths
+plot_background = os.getenv('PLOT_BACKGROUND', 'OFF').upper() == 'ON'
+if plot_background:
+    # resolve the comout path since it may contain wild cards
+    matching_paths = glob.glob(com_ice_history)
+    if matching_paths:
+        com_ice_history = matching_paths[0]  # Assuming you want the first match
+        print(com_ice_history)
+    else:
+        print(com_ice_history)
+        print("No matching paths found")
+        exit(1)
+    del matching_paths
+    # resolve the comout path since it may contain wild cards
+    matching_paths = glob.glob(com_ocean_history)
+    if matching_paths:
+        com_ocean_history = matching_paths[0]  # Assuming you want the first match
+        print(com_ocean_history)
+    else:
+        print(com_ocean_history)
+        print("No matching paths found")
+        exit(1)
+    del matching_paths
 
 cyc = os.getenv('cyc')
 RUN = os.getenv('RUN')
@@ -74,7 +75,6 @@ HOMEgdasmv = os.getenv('HOMEgdasmv')
 # Get flags from environment variables (set in the bash driver)
 plot_ensemble_b = os.getenv('PLOT_ENSEMBLE_B', 'OFF').upper() == 'ON'
 plot_parametric_b = os.getenv('PLOT_PARAMETRIC_B', 'OFF').upper() == 'ON'
-plot_background = os.getenv('PLOT_BACKGROUND', 'OFF').upper() == 'ON'
 plot_letkf_ensemble = os.getenv('PLOT_LETKF_ENSEMBLE', 'OFF').upper() == 'ON'
 plot_increment = os.getenv('PLOT_INCREMENT', 'OFF').upper() == 'ON'
 plot_analysis = os.getenv('PLOT_ANALYSIS', 'OFF').upper() == 'ON'
@@ -112,27 +112,27 @@ if plot_analysis:
 # Ensemble B plotting configuration
 if plot_ensemble_b:
     print('Plotting ensemble B SSH diagnostics')
-    config_ens = [plotConfig(grid_file=grid_file,
+    config_ens = [plotConfig(grid_file=grid_file_bkgerr,
                              data_file=os.path.join(comout, f'{RUN}.t{cyc}z.ocn.recentering_error.nc'),
                              variables_horiz={'ave_ssh': [-1, 1]},
                              colormap='seismic',
                              vrfyout=os.path.join(vrfyout, 'vrfy', 'recentering_error')),   # recentering error
-                  plotConfig(grid_file=grid_file,
+                  plotConfig(grid_file=grid_file_bkgerr,
                              data_file=os.path.join(comout, f'{RUN}.t{cyc}z.ocn.ssh_steric_stddev.nc'),
                              variables_horiz={'ave_ssh': [0, 0.8]},
                              colormap='gist_ncar',
                              vrfyout=os.path.join(vrfyout, 'vrfy', 'bkgerr', 'ssh_steric_stddev')),  # ssh steric stddev
-                  plotConfig(grid_file=grid_file,
+                  plotConfig(grid_file=grid_file_bkgerr,
                              data_file=os.path.join(comout, f'{RUN}.t{cyc}z.ocn.ssh_unbal_stddev.nc'),
                              variables_horiz={'ave_ssh': [0, 0.8]},
                              colormap='gist_ncar',
                              vrfyout=os.path.join(vrfyout, 'vrfy', 'bkgerr', 'ssh_unbal_stddev')),   # ssh unbal stddev
-                  plotConfig(grid_file=grid_file,
+                  plotConfig(grid_file=grid_file_bkgerr,
                              data_file=os.path.join(comout, f'{RUN}.t{cyc}z.ocn.ssh_total_stddev.nc'),
                              variables_horiz={'ave_ssh': [0, 0.8]},
                              colormap='gist_ncar',
                              vrfyout=os.path.join(vrfyout, 'vrfy', 'bkgerr', 'ssh_total_stddev')),   # ssh total stddev
-                  plotConfig(grid_file=grid_file,
+                  plotConfig(grid_file=grid_file_bkgerr,
                              data_file=os.path.join(comout, f'{RUN}.t{cyc}z.ocn.steric_explained_variance.nc'),
                              variables_horiz={'ave_ssh': [0, 1]},
                              colormap='seismic',
