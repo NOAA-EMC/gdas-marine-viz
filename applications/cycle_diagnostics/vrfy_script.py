@@ -114,7 +114,7 @@ if plot_ensemble_b:
     print('Plotting ensemble B SSH diagnostics')
     config_ens = [plotConfig(grid_file=grid_file_bkgerr,
                              data_file=os.path.join(comout, f'{RUN}.t{cyc}z.ocn.recentering_error.nc'),
-                             variables_horiz={'ave_ssh': [-1, 1]},
+                             variables_horiz={'ave_ssh': [-0.05, 0.05]},
                              colormap='seismic',
                              vrfyout=os.path.join(vrfyout, 'vrfy', 'recentering_error')),   # recentering error
                   plotConfig(grid_file=grid_file_bkgerr,
@@ -138,6 +138,7 @@ if plot_ensemble_b:
                              colormap='seismic',
                              vrfyout=os.path.join(vrfyout, 'vrfy', 'bkgerr',
                                                   'steric_explained_variance'))]  # steric explained variance
+
     configs.extend(config_ens)
 
 # Parametric B plotting configuration
@@ -146,7 +147,7 @@ if plot_parametric_b:
     config_bkgerr = [plotConfig(grid_file=grid_file_bkgerr,
                                 data_file=os.path.join(comout, os.path.pardir, os.path.pardir,
                                                        'bmatrix', 'ice', f'{RUN}.t' + cyc + 'z.ice.bkgerr_stddev.nc'),
-                                variables_horiz={'aice_h': [0.0, 0.5],
+                                variables_horiz={'aice_h': [0.0, 0.3],
                                                  'hi_h': [0.0, 2.0],
                                                  'hs_h': [0.0, 0.2]},
                                 colormap='jet',
@@ -180,7 +181,7 @@ if plot_letkf_ensemble:
     print('Plotting background ensemble diagnostics')
     config_letkf = [plotConfig(grid_file=grid_file,
                                data_file=os.path.join(comout, 'letkf', f'enkfgdas.ice.t{cyc}z.ensvar_prior.nc'),
-                               variables_horiz={'aice_h': [0.0, 0.1]},  # TODO: change the range once spread is big enough to notice
+                               variables_horiz={'aice_h': [0.0, 0.3]},
                                colormap='jet',
                                projs=['North', 'South', 'Global'],
                                vrfyout=os.path.join(vrfyout, 'vrfy', 'letkf_bkg_std'),
@@ -190,15 +191,15 @@ if plot_letkf_ensemble:
                                data_file=os.path.join(comout, 'letkf', f'enkfgdas.ocean.t{cyc}z.ensvar_prior.nc'),
                                lats=np.arange(-60, 60, 10),
                                lons=np.arange(-280, 80, 30),
-                               variables_zonal={'Temp': [0, 0.5],       # TODO: change the range once spread is big enough to notice
+                               variables_zonal={'Temp': [0, 2],
                                                 'Salt': [0, 0.2],
                                                 'u': [0, 0.5],
                                                 'v': [0, 0.5]},
-                               variables_meridional={'Temp': [0, 0.5],
+                               variables_meridional={'Temp': [0, 2],
                                                      'Salt': [0, 0.2],
                                                      'u': [0, 0.5],
                                                      'v': [0, 0.5]},
-                               variables_horiz={'Temp': [0, 0.5],
+                               variables_horiz={'Temp': [0, 2],
                                                 'Salt': [0, 0.2],
                                                 'u': [0, 0.5],
                                                 'v': [0, 0.5],
@@ -208,7 +209,7 @@ if plot_letkf_ensemble:
                                plot_sqrt=True),   # ocn background ensemble spread
                     plotConfig(grid_file=grid_file,
                                data_file=os.path.join(comout, 'letkf', f'enkfgdas.ice.t{cyc}z.ensvar_post.nc'),
-                               variables_horiz={'aice_h': [0.0, 0.1]},  # TODO: change the range once spread is big enough to notice
+                               variables_horiz={'aice_h': [0.0, 0.3]},
                                colormap='jet',
                                projs=['North', 'South', 'Global'],
                                vrfyout=os.path.join(vrfyout, 'vrfy', 'letkf_ana_std'),
@@ -218,7 +219,7 @@ if plot_letkf_ensemble:
                                data_file=os.path.join(comout, 'letkf', f'enkfgdas.ocean.t{cyc}z.ensvar_post.nc'),
                                lats=np.arange(-60, 60, 10),
                                lons=np.arange(-280, 80, 30),
-                               variables_zonal={'Temp': [0, 0.5],       # TODO: change the range once spread is big enough to notice
+                               variables_zonal={'Temp': [0, 2],
                                                 'Salt': [0, 0.2],
                                                 'u': [0, 0.5],
                                                 'v': [0, 0.5]},

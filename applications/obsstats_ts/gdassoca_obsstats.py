@@ -72,13 +72,13 @@ class ObsStats:
 
             # Plot RMSE, obs error, obs error + spread
             axs[0].plot(exp_data['date'], exp_data['RMSE'], marker='o', linestyle='-',
-                        color=colors[exp_counter], label='RMSE ' + exp)
+                        color=colors[exp_counter], linewidth=2, label='RMSE ' + exp)
             if (exp.endswith("letkf")):
                 axs[0].plot(exp_data['date'], exp_data['EnsStd'] + exp_data['ObsErr'], marker='x', linestyle='--',
-                            color=colors[exp_counter], label='EnsStd+ObsErr ' + exp)
+                            color=colors[exp_counter], linewidth=2, label='EnsStd+ObsErr ' + exp)
             if (exp.endswith("letkf")):
                 axs[0].plot(exp_data['date'], exp_data['EnsStd'], marker='s', linestyle='-',
-                            color=colors[exp_counter], label='EnsStd ' + exp)
+                            color=colors[exp_counter], linewidth=2, label='EnsStd ' + exp)
             axs[0].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H'))
             axs[0].xaxis.set_major_locator(mdates.DayLocator())
             axs[0].tick_params(labelbottom=False)
@@ -87,7 +87,8 @@ class ObsStats:
             axs[0].grid(True)
 
             # Plot Bias
-            axs[1].plot(exp_data['date'], exp_data['Bias'], marker='o', linestyle='-', color=colors[exp_counter], label=exp)
+            axs[1].plot(exp_data['date'], exp_data['Bias'], marker='o', linestyle='-',
+                        color=colors[exp_counter], linewidth=2, label=exp)
             axs[1].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H'))
             axs[1].xaxis.set_major_locator(mdates.DayLocator())
             axs[1].tick_params(labelbottom=False)
@@ -95,7 +96,8 @@ class ObsStats:
             axs[1].grid(True)
 
             # Plot Count
-            axs[2].plot(exp_data['date'], exp_data['Count'], marker='o', linestyle='-', color=colors[exp_counter], label=exp)
+            axs[2].plot(exp_data['date'], exp_data['Count'], marker='o', linestyle='-',
+                        color=colors[exp_counter], linewidth=2, label=exp)
             axs[2].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H'))
             axs[2].xaxis.set_major_locator(mdates.DayLocator())
             axs[2].set_ylabel('Count', fontsize=18, fontweight='bold')
