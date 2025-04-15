@@ -43,7 +43,7 @@ transforms:
     for:
       variable: *variables
 
-  # Generate oma that passed QC for JEDI
+  # Generate hofx that passed QC for JEDI
   - transform: accept where
     new name: experiment::hofxQC::${variable}
     starting field: experiment::hofx0::${variable}
@@ -52,6 +52,23 @@ transforms:
     for:
       variable: *variables
 
+  # Generate obserror for obs that passed QC for JEDI
+  - transform: accept where
+    new name: experiment::ObsErrorQC::${variable}
+    starting field: experiment::ObsError::${variable}
+    where:
+      - experiment::EffectiveQC0::${variable} == 0
+    for:
+      variable: *variables
+
+  # Generate obs timing for obs that passed QC for JEDI
+  - transform: accept where
+    new name: experiment::ObsTimeQC::${variable}
+    starting field: experiment::MetaData::dateTime
+    where:
+      - experiment::EffectiveQC0::${variable} == 0
+    for:
+      variable: *variables
 
 
 
@@ -62,9 +79,10 @@ graphics:
   figure_list:
 
   # ---------- Map Plots ----------
-  # Map plot of OmBQC
+  # Map plots
   # --------
 
+  # Map of OmB
   - batch figure:
       variables: *variables
       @CHANNELSKEY@
@@ -99,6 +117,154 @@ graphics:
           colorbar: true
           # below may need to be edited/removed
           cmap: 'seismic'
+          vmin: ${dynamic_vmin}
+          vmax: ${dynamic_vmax}
+
+  # Map of OmA
+  - batch figure:
+      variables: *variables
+      @CHANNELSKEY@
+    dynamic options:
+      - type: vminvmaxcmap
+        data variable: experiment::OmAQC::${variable}
+    figure:
+      layout: [1,1]
+      figure size: [20,10]
+      title: 'OmA post QC | @NAME@ @CYCLE@ | ${variable_title}'
+      output name: map_plots/@NAME@/${variable}/@CHANNELVAR@/@NAME@_${variable}@CHANNELVAR@OmAQC.png
+      tight_layout: true
+    plots:
+      - mapping:
+          projection: plcarr
+          domain: global
+        add_map_features: ['coastline']
+        add_grid:
+        add_colorbar:
+           label: '${variable}'
+        layers:
+        - type: MapScatter
+          longitude:
+            variable: experiment::MetaData::longitude
+          latitude:
+            variable: experiment::MetaData::latitude
+          data:
+            variable: experiment::OmAQC::${variable}
+            @CHANNELKEY@
+          markersize: 0.01
+          label: '$(variable)'
+          colorbar: true
+          cmap: 'seismic'
+          vmin: ${dynamic_vmin}
+          vmax: ${dynamic_vmax}
+
+  # Map of hofx
+  - batch figure:
+      variables: *variables
+      @CHANNELSKEY@
+    dynamic options:
+      - type: vminvmaxcmap
+        data variable: experiment::hofxQC::${variable}
+    figure:
+      layout: [1,1]
+      figure size: [20,10]
+      title: 'hofx post QC | @NAME@ @CYCLE@ | ${variable_title}'
+      output name: map_plots/@NAME@/${variable}/@CHANNELVAR@/@NAME@_${variable}@CHANNELVAR@hofxQC.png
+      tight_layout: true
+    plots:
+      - mapping:
+          projection: plcarr
+          domain: global
+        add_map_features: ['coastline']
+        add_grid:
+        add_colorbar:
+           label: '${variable}'
+        layers:
+        - type: MapScatter
+          longitude:
+            variable: experiment::MetaData::longitude
+          latitude:
+            variable: experiment::MetaData::latitude
+          data:
+            variable: experiment::hofxQC::${variable}
+            @CHANNELKEY@
+          markersize: 0.01
+          label: '$(variable)'
+          colorbar: true
+          cmap: 'nipy_spectral'
+          vmin: ${dynamic_vmin}
+          vmax: ${dynamic_vmax}
+
+  # Map of observation error
+  - batch figure:
+      variables: *variables
+      @CHANNELSKEY@
+    dynamic options:
+      - type: vminvmaxcmap
+        data variable: experiment::ObsErrorQC::${variable}
+    figure:
+      layout: [1,1]
+      figure size: [20,10]
+      title: 'ObsError where Obs post QC | @NAME@ @CYCLE@ | ${variable_title}'
+      output name: map_plots/@NAME@/${variable}/@CHANNELVAR@/@NAME@_${variable}@CHANNELVAR@ObsErrorQC.png
+      tight_layout: true
+    plots:
+      - mapping:
+          projection: plcarr
+          domain: global
+        add_map_features: ['coastline']
+        add_grid:
+        add_colorbar:
+           label: '${variable} Error'
+        layers:
+        - type: MapScatter
+          longitude:
+            variable: experiment::MetaData::longitude
+          latitude:
+            variable: experiment::MetaData::latitude
+          data:
+            variable: experiment::ObsErrorQC::${variable}
+            @CHANNELKEY@
+          markersize: 0.01
+          label: '$(variable)'
+          colorbar: true
+          cmap: 'nipy_spectral'
+          vmin: ${dynamic_vmin}
+          vmax: ${dynamic_vmax}
+
+  # Map of observation times
+  - batch figure:
+      variables: *variables
+      @CHANNELSKEY@
+    dynamic options:
+      - type: vminvmaxcmap
+        data variable: experiment::ObsTimeQC::${variable}
+    figure:
+      layout: [1,1]
+      figure size: [20,10]
+      title: 'ObsTime post QC | @NAME@ @CYCLE@ | ${variable_title}'
+      output name: map_plots/@NAME@/${variable}/@CHANNELVAR@/@NAME@_${variable}@CHANNELVAR@ObsTimeQC.png
+      tight_layout: true
+    plots:
+      - mapping:
+          projection: plcarr
+          domain: global
+        add_map_features: ['coastline']
+        add_grid:
+        add_colorbar:
+           label: 'Time of Observation (s)'
+        layers:
+        - type: MapScatter
+          longitude:
+            variable: experiment::MetaData::longitude
+          latitude:
+            variable: experiment::MetaData::latitude
+          data:
+            variable: experiment::ObsTimeQC::${variable}
+            @CHANNELKEY@
+          markersize: 0.01
+          label: '$(variable)'
+          colorbar: true
+          cmap: 'nipy_spectral'
           vmin: ${dynamic_vmin}
           vmax: ${dynamic_vmax}
 
