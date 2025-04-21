@@ -15,7 +15,7 @@ import re
 mpl.use('WXAgg')
 mpl.interactive(False)
 
-COLORS = ['b', 'r', 'g', 'm', 'k', 'y']
+COLORS = ['b', 'r', 'g', 'm', 'k', 'y', 'c', 'orange', 'purple', 'lime', 'brown', 'pink']
 
 
 class Instrument:
@@ -50,8 +50,14 @@ class VarSpecs:
         self.units = units
 
 
-dict_inst = {'insitu_profile_argo'   :
-             Instrument(name='Argo', instid=508, varid=np.array([101, 102]), zmin=0, zmax=2000),
+dict_inst = {'insitu_profile_tropical'   :
+             Instrument(name='Tropical_Moorings', instid=505, varid=np.array([101, 102]), zmin=0, zmax=2000),
+             'insitu_profile_argo'   :
+             Instrument(name='Argo', instid=506, varid=np.array([101, 102]), zmin=0, zmax=2000),
+             'insitu_temp_profile_argo'   :
+             Instrument(name='Argo', instid=507, varid=np.array([101, 102]), zmin=0, zmax=2000),
+             'insitu_surface_drifter'   :
+             Instrument(name='drifter', instid=508, varid=np.array([101, 102]), zmin=0, zmax=2000),
              'insitu_profile_bathy'   :
              Instrument(name='bathy', instid=509, varid=np.array([101, 102]), zmin=0, zmax=2000),
              'insitu_profile_tesac'   :
@@ -222,7 +228,7 @@ class observation_space(object):
         self.Y = y
         cnt = 0
         alpha = 1.0
-        for inst in [508, 509, 510, 511, 512, 513]:
+        for inst in range(505, 514):
             msize = 5.0
             # Plot obs loc
             valid_index = np.where(self.ioda.instid == inst)
