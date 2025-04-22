@@ -8,6 +8,7 @@ from mpl_toolkits.basemap import Basemap
 from netCDF4 import Dataset
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
+from matplotlib.colors import LogNorm
 from tqdm import tqdm
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 import re
@@ -50,7 +51,11 @@ class VarSpecs:
         self.units = units
 
 
-dict_inst = {'insitu_profile_tropical'   :
+dict_inst = {'insitu_profile_xbtctd'   :
+             Instrument(name='XBT_CTD', instid=504, varid=np.array([101, 102]), zmin=0, zmax=2000),
+             'insitu_profile_glider'   :
+             Instrument(name='Gliders', instid=504, varid=np.array([101, 102]), zmin=0, zmax=2000),
+             'insitu_profile_tropical'   :
              Instrument(name='Tropical_Moorings', instid=505, varid=np.array([101, 102]), zmin=0, zmax=2000),
              'insitu_profile_argo'   :
              Instrument(name='Argo', instid=506, varid=np.array([101, 102]), zmin=0, zmax=2000),
@@ -130,7 +135,11 @@ class ioda:
             self.unit = '[psu]'
 
         def get_from_ioda(ncfile, varname, groupname):
-            return ncfile.groups[groupname].variables[varname][:]
+            try:
+                return ncfile.groups[groupname].variables[varname][:]
+            except (KeyError, IndexError):
+                return np.array([])
+
         pattern = re.compile(r'\.\d{10}\.nc4$')
         for iodafname in tqdm(flist):
             ncfile = Dataset(iodafname)
@@ -411,23 +420,57 @@ class observation_space(object):
 
                 figure2 = plt.figure(num=self.fignum, figsize=(16, 12))
 
+                def create_hist2d_plot(ax, data, depth, title=None, xlabel=None):
+                    """
+                    Creates a 2D histogram plot of data vs depth
+
+                    Parameters:
+                    - ax (matplotlib.axes): The axis to plot on
+                    - data (array): The data for x-axis (omf or oma)
+                    - depth (array): The depth data for y-axis
+                    - title (str): Optional title for the plot
+                    - xlabel (str): Label for x-axis
+                    """
+                    # Calculate bias and RMSE
+                    bias = np.mean(data)
+                    rmse = np.sqrt(np.mean(data**2))
+
+                    # Create the 2D histogram
+                    ax.hist2d(data, depth, bins=200, norm=LogNorm(), cmap='jet')
+                    ax.set_xlim(-6, 6)
+                    ax.grid(True)
+
+                    if xlabel:
+                        ax.set_xlabel(f'{xlabel} {self.ioda.unit}', fontweight='bold', fontsize=18)
+
+                    if title:
+                        ax.set_title(f'{title}: Bias = {bias:.3f}, RMSE = {rmse:.3f}',
+                                    fontweight='bold', fontsize=16)
+
+                    return bias, rmse
+
+                # Set up the figure
                 axis2 = figure2.add_subplot(121)
                 plt.suptitle(inst_name, fontweight='bold', fontsize=18)
+
+                # Plot OMF data
                 valid_index = np.where((self.ioda.instid == INSTID)
                                        & (np.abs(self.ioda.omf) < 6.0)
                                        & (self.ioda.lev > -3000.0) & (self.ioda.lev < 0.0))
-                axis2.set_xlim(-6, 6)
-                axis2.grid(True)
-                axis2.set_xlabel(f'omf {self.ioda.unit}', fontweight='bold', fontsize=18)
+                yy = self.ioda.lev[valid_index]
+                xx = self.ioda.omf[valid_index]
+                create_hist2d_plot(axis2, xx, yy, self.ioda.varname, 'omf')
                 axis2.set_ylabel('depth [m]', fontweight='bold', fontsize=18)
 
+                # Plot OMA data
                 axis3 = figure2.add_subplot(122)
                 valid_index = np.where((self.ioda.instid == INSTID)
                                        & (np.abs(self.ioda.oma) < 6.0)
                                        & (self.ioda.lev > -3000.0) & (self.ioda.lev < 0.0))
-                axis3.set_xlim(-6, 6)
-                axis3.grid(True)
-                axis3.set_xlabel(f'oma {self.ioda.unit}', fontweight='bold', fontsize=18)
+                yy = self.ioda.lev[valid_index]
+                xx = self.ioda.oma[valid_index]
+                create_hist2d_plot(axis3, xx, yy, self.ioda.varname, 'oma')
+
                 self.fignum += 1
 
             plt.show()
