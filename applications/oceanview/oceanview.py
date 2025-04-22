@@ -445,7 +445,7 @@ class observation_space(object):
 
                     if title:
                         ax.set_title(f'{title}: Bias = {bias:.3f}, RMSE = {rmse:.3f}',
-                                    fontweight='bold', fontsize=16)
+                                     fontweight='bold', fontsize=16)
 
                     return bias, rmse
 
