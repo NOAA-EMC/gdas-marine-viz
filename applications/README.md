@@ -13,14 +13,14 @@ An interactive map-based diagnostic tool for visualizing ocean observations and 
 This application will eventually supersede `Oceanview`. It allows plotting slices of 3D fields along with in situ OMA and OMB values (currently only works for temperature).
 
 
-### 2. Obs Stats Time Series
+### 3. Obs Stats Time Series
 A tool for generating time series statistics of o-b.
 
 - **Directory:** `obsstats_ts/`
 - **Main Components:**
   - `gdassoca_obsstats.py` (main script for generating statistics)
 
-### 3. Cycle Diagnostics
+### 4. Cycle Diagnostics
 A diagnostic application for generating figures related to state-space and obs-space verification for a specific cycle.
 
 - **Directory:** `state_space_vrfy/`
@@ -31,7 +31,7 @@ A diagnostic application for generating figures related to state-space and obs-s
   - `gen_eva_obs_yaml.py` (generates configuration file for EVA)
   - `marine_eva_post.py` (run EVA)
 
-### 4. Obs Maps
+### 5. Obs Maps
 Creates multiple frames containing maps of obs values for now.
 
 - **Directory:** `obsstats_maps/`
