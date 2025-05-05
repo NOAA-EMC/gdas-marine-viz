@@ -3,21 +3,22 @@ import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
 import matplotlib.widgets as mwidgets
-import cartopy.crs as ccrs
 from netCDF4 import Dataset
+from matplotlib.widgets import RangeSlider
+
 
 def plot_vertical_profile(ix, iy, lon2d, lat2d, data, depth, ax_profile):
     print(f"Vertical profile at lon={lon2d[iy, ix].values:.2f}, lat={lat2d[iy, ix].values:.2f}")
     print(f"iy, ix: {iy}, {ix}")
     profile = data[:, iy, ix]
     depth_profile = depth[:, iy, ix]
-    #fig_profile, ax_profile = plt.subplots()
     ax_profile.plot(profile, depth_profile, '-o')
     ax_profile.invert_yaxis()
     ax_profile.set_xlabel('Field Stddev')
     ax_profile.set_ylabel('Depth')
     ax_profile.set_title(f'Vertical Profile at (lon={lon2d[iy, ix].values:.2f}, lat={lat2d[iy, ix].values:.2f})')
     ax_profile.grid()
+
 
 def load_obsfile(obsfile, longitude_max=None):
     print(f"Loading observation file: {obsfile}")
@@ -49,6 +50,7 @@ def load_obsfile(obsfile, longitude_max=None):
                'obsval': obsval,
                'hofx': hofx}
     return obs
+
 
 def main(hfile, errfile, varname, is_variance, gridfile, obsfile=None):
     # --- Step 1: Open h file and compute depth
@@ -84,10 +86,34 @@ def main(hfile, errfile, varname, is_variance, gridfile, obsfile=None):
     masked_field = np.ma.masked_where(~surface_mask, surface_field)
 
     # Plot using pcolormesh for lon/lat with 50% transparency
-    pcm = ax.pcolormesh(lon2d, lat2d, masked_field, vmin=0, vmax=0.5, cmap='gist_ncar', shading='auto', alpha=0.5)
+    # Add color bounds as interactive sliders
+
+    # Initial color bounds
+    vmin_init = float(np.nanmin(masked_field))
+    vmax_init = float(np.nanmax(masked_field))
+
+    pcm = ax.pcolormesh(lon2d, lat2d, masked_field, vmin=vmin_init, vmax=vmax_init, cmap='gist_ncar', shading='auto', alpha=0.5)
+
+    # Use a RangeSlider for both vmin and vmax
+
+    # Slider axis: [left, bottom, width, height]
+    slider_ax = fig.add_axes([0.1, 0.8, 0.12, 0.05])
+
+    range_slider = RangeSlider(
+        slider_ax, 'vmin/vmax', vmin_init, vmax_init,
+        valinit=(vmin_init, vmax_init)
+    )
+
+    def update_color_bounds(val):
+        vmin, vmax = range_slider.val
+        pcm.set_clim(vmin, vmax)
+        fig.canvas.draw_idle()
+
+    range_slider.on_changed(update_color_bounds)
+
     if obs is not None:
-      obs_scatter = ax.scatter(obs['lon'], obs['lat'], s=2, c='black', label='Observations', alpha=1.0)
-      ax.legend(loc='lower left')
+        ax.scatter(obs['lon'], obs['lat'], s=2, c='black', label='Observations', alpha=1.0)
+        ax.legend(loc='lower left')
 
     ax.set_title('Click on the map to show vertical profile, zonal or meridional slice')
     fig.colorbar(pcm, ax=ax, label='Surface Field (stddev)', shrink=0.3)
@@ -97,9 +123,8 @@ def main(hfile, errfile, varname, is_variance, gridfile, obsfile=None):
 
     # Add menu (RadioButtons) at the top right
     menu_ax = fig.add_axes([0.82, 0.75, 0.15, 0.15])  # [left, bottom, width, height]
-    #menu = mwidgets.RadioButtons(menu_ax, ('Vertical Profile', 'Zonal Slice', 'Meridional Slice'))
     menu = mwidgets.RadioButtons(menu_ax, (
-    'Vertical Profile', 'Zonal Slice', 'Meridional Slice', 'Observation Profile'))
+        'Vertical Profile', 'Zonal Slice', 'Meridional Slice', 'Observation Profile'))
     menu_ax.set_title("Plot Type", fontsize=10)
 
     # Store selected plot type
@@ -214,8 +239,9 @@ def main(hfile, errfile, varname, is_variance, gridfile, obsfile=None):
             plt.show()
 
     # Connect the click event
-    cid = fig.canvas.mpl_connect('button_press_event', onclick)
+    fig.canvas.mpl_connect('button_press_event', onclick)
     plt.show()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Plot vertical profile from background error file.')

@@ -9,6 +9,10 @@ An interactive map-based diagnostic tool for visualizing ocean observations and 
 - **Main Components:**
   - `obsview` (executable)
 
+### 2. Aquaslice
+This application will eventually supersede `Oceanview`. It allows plotting slices of 3D fields along with in situ OMA and OMB values (currently only works for temperature).
+
+
 ### 2. Obs Stats Time Series
 A tool for generating time series statistics of o-b.
 
