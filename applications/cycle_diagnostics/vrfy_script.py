@@ -373,7 +373,7 @@ if plot_increment:
                               variables_meridional={'Temp': [-0.5, 0.5],
                                                     'Salt': [-0.1, 0.1]},
                               colormap='seismic',
-                              vrfyout=os.path.join(vrfyout, 'vrfy', 'incr.postproc')),   # ocean increment postprocessing          
+                              vrfyout=os.path.join(vrfyout, 'vrfy', 'incr.postproc')),   # ocean increment postprocessing
                    plotConfig(grid_file=grid_file,
                               data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.ice.incr.nc'),
                               lats=np.arange(-60, 60, 10),
