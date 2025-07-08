@@ -92,7 +92,7 @@ configs = []
 if plot_analysis:
     print('Plotting analysis')
     configs_ana = [plotConfig(grid_file=grid_file,
-                              data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.ocnana.nc'),
+                              data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.ocn.ana.nc'),
                               variables_horiz={
                                   'ave_ssh': [-1.8, 1.3],
                                   'Temp': [-1.8, 34.0],
@@ -100,7 +100,7 @@ if plot_analysis:
                               colormap='nipy_spectral',
                               vrfyout=os.path.join(vrfyout, 'vrfy', 'ana')),   # ocean surface analysis
                    plotConfig(grid_file=grid_file,
-                              data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.iceana.nc'),
+                              data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.ice.ana.nc'),
                               variables_horiz={'aice_h': [0.0, 1.0],
                                                'hi_h': [0.0, 4.0],
                                                'hs_h': [0.0, 0.5]},
@@ -361,6 +361,20 @@ if plot_increment:
                               colormap='seismic',
                               vrfyout=os.path.join(vrfyout, 'vrfy', 'incr')),   # ocean increment
                    plotConfig(grid_file=grid_file,
+                              layer_file=layer_file,
+                              data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.ocn.incr.postproc.nc'),
+                              lats=np.arange(-60, 60, 10),
+                              lons=np.arange(-280, 80, 30),
+                              variables_zonal={'Temp': [-0.5, 0.5],
+                                               'Salt': [-0.1, 0.1]},
+                              variables_horiz={'Temp': [-0.5, 0.5],
+                                               'Salt': [-0.1, 0.1],
+                                               'ave_ssh': [-0.1, 0.1]},
+                              variables_meridional={'Temp': [-0.5, 0.5],
+                                                    'Salt': [-0.1, 0.1]},
+                              colormap='seismic',
+                              vrfyout=os.path.join(vrfyout, 'vrfy', 'incr.postproc')),   # ocean increment postprocessing          
+                   plotConfig(grid_file=grid_file,
                               data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.ice.incr.nc'),
                               lats=np.arange(-60, 60, 10),
                               variables_horiz={'aice_h': [-0.2, 0.2],
@@ -379,6 +393,7 @@ if plot_increment:
                               projs=['North', 'South'],
                               vrfyout=os.path.join(vrfyout,
                                                    'vrfy', 'incr.postproc'))]   # sea ice increment after postprocessing
+
     configs.extend(config_incr)
 
 
