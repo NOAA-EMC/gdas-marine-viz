@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.widgets as mwidgets
 from netCDF4 import Dataset
 from matplotlib.widgets import RangeSlider
+import os
 
 
 def plot_vertical_profile(ix, iy, lon2d, lat2d, data, depth, ax_profile):
@@ -52,19 +53,39 @@ def load_obsfile(obsfile, longitude_max=None):
     return obs
 
 
-def main(hfile, errfile, varname, is_variance, gridfile, obsfile=None):
+def main(hfile, errfile, varname, is_variance, gridfile, obsfile=None, level=0):
     # --- Step 1: Open h file and compute depth
     dsg = xr.open_dataset(hfile)
-    h = dsg['h'].isel(time=0)        # layer thickness
+    # Try both 'time' and 'Time' dimension names
+    if 'time' in dsg.dims:
+        h = dsg['h'].isel(time=0)        # layer thickness
+    elif 'Time' in dsg.dims:
+        h = dsg['h'].isel(Time=0)        # layer thickness
+    else:
+        raise ValueError("Could not find time dimension (tried both 'time' and 'Time')")
     surface_mask = ~np.isnan(h[0, :, :])  # True where surface layer is valid (not NaN)
-    depth = h.cumsum(dim='z_l')      # cumulative sum along vertical
+    # Check which vertical dimension name exists in the dataset
+    if 'z_l' in h.dims:
+        depth = h.cumsum(dim='z_l')      # cumulative sum along vertical
+    elif 'zaxis_1' in h.dims:
+        depth = h.cumsum(dim='zaxis_1')  # cumulative sum along vertical
+    else:
+        print('...')
+        #raise ValueError("Could not find vertical dimension (tried both 'z_l' and 'zaxis_1')")
     dsg.close()
 
     # --- Step 2: Open error file and extract variable
     ds = xr.open_dataset(errfile)
-    data = ds[varname].isel(Time=0)  # shape: (z_l, yh, xh)
+    # Try both 'time' and 'Time' dimension names
+    if 'time' in ds.dims:
+        data = ds[varname].isel(time=0)  # shape: (z_l, yh, xh)
+    elif 'Time' in ds.dims:
+        data = ds[varname].isel(Time=0)  # shape: (z_l, yh, xh)
+    else:
+        raise ValueError("Could not find time dimension (tried both 'time' and 'Time')")
     # Convert variance to stddev if needed
     if is_variance:
+        print("--------------------------------- sqrt *************")
         data = np.sqrt(data)
 
     # --- Step 3: Open grid file and extract lon/lat
@@ -80,7 +101,13 @@ def main(hfile, errfile, varname, is_variance, gridfile, obsfile=None):
         obs = load_obsfile(obsfile, longitude_max=np.max(lon2d.values))
 
     # Make a simple 2D slice (e.g., surface field)
-    surface_field = data[0, :, :]
+    # Handle both 2D and 3D data arrays
+    if data.ndim == 3:
+        surface_field = data[level, :, :]
+    elif data.ndim == 2:
+        surface_field = data
+    else:
+        raise ValueError(f"Unexpected number of dimensions for data: {data.ndim}")
 
     fig, ax = plt.subplots(figsize=(14, 8))
     masked_field = np.ma.masked_where(~surface_mask, surface_field)
@@ -115,7 +142,7 @@ def main(hfile, errfile, varname, is_variance, gridfile, obsfile=None):
         ax.scatter(obs['lon'], obs['lat'], s=2, c='black', label='Observations', alpha=1.0)
         ax.legend(loc='lower left')
 
-    ax.set_title('Click on the map to show vertical profile, zonal or meridional slice')
+    ax.set_title(f'Field from {os.path.basename(errfile)}\nClick on the map to show vertical profile, zonal or meridional slice')
     fig.colorbar(pcm, ax=ax, label='Surface Field (stddev)', shrink=0.3)
     ax.set_xlabel('Longitude')
     ax.set_ylabel('Latitude')
@@ -216,15 +243,7 @@ def main(hfile, errfile, varname, is_variance, gridfile, obsfile=None):
             ax_obs.set_title(f'OMB/OMA at lon={obs["lon"][iobs]:.2f}, lat={obs["lat"][iobs]:.2f}')
             ax_obs.legend()
             ax_obs.grid()
-            # Obs value subplot
-            ax_obsval.plot(obs_value, depth_values, '.-', color='tab:blue', label='Obs Value')
-            ax_obsval.plot(obs_value - ombg_values, depth_values, '.-', color='tab:green', label='Background')
-            ax_obsval.plot(obs_value - oman_values, depth_values, '.-', color='tab:red', label='Analysis')
-            ax_obsval.invert_yaxis()
-            ax_obsval.set_xlabel('Obs Value (K)')
-            ax_obsval.set_title('Obs Value')
-            ax_obsval.legend()
-            ax_obsval.grid()
+
             # Model profile subplot (nearest grid point)
             # Find nearest grid point to obs location
             iy_grid, ix_grid = find_nearest_2d(lon2d.values, lat2d.values, obs['lon'][iobs], obs['lat'][iobs])
@@ -236,6 +255,18 @@ def main(hfile, errfile, varname, is_variance, gridfile, obsfile=None):
             ax_model.set_title(f'Model Profile\n(lon={lon2d[iy_grid, ix_grid].values:.2f}, lat={lat2d[iy_grid, ix_grid].values:.2f})')
             ax_model.legend()
             ax_model.grid()
+
+            # Obs value subplot
+            ax_obsval.plot(obs_value, depth_values, '.-', color='tab:blue', label='Obs Value')
+            ax_obsval.plot(obs_value - ombg_values, depth_values, '.-', color='tab:green', label='Background')
+            ax_obsval.plot(obs_value - oman_values, depth_values, '.-', color='tab:red', label='Analysis')
+            ax_obsval.plot(model_profile, model_depth, '.-', color='tab:purple', label="QC'ed Analysis")
+            ax_obsval.invert_yaxis()
+            ax_obsval.set_xlabel('Obs Value (K)')
+            ax_obsval.set_title('Obs Value')
+            ax_obsval.legend()
+            ax_obsval.grid()
+
             plt.show()
 
     # Connect the click event
@@ -251,5 +282,6 @@ if __name__ == "__main__":
     parser.add_argument('--variance', action='store_true', help='Set if the file contains variance instead of standard deviation')
     parser.add_argument('--gridfile', required=True, help='NetCDF file containing 2D lon/lat variables (lon, lat)')
     parser.add_argument('--obsfile', required=False, help='IODA observation file with ombg and oman')
+    parser.add_argument('--level', required=False, help='model level to plot (default: 0)', type=int, default=0)
     args = parser.parse_args()
-    main(args.hfile, args.errfile, args.varname, args.variance, args.gridfile, args.obsfile)
+    main(args.hfile, args.errfile, args.varname, args.variance, args.gridfile, obsfile=args.obsfile, level=args.level)
