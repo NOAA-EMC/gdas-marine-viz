@@ -60,7 +60,7 @@ dict_inst = {'insitu_profile_xbtctd'   :
              'insitu_profile_argo'   :
              Instrument(name='Argo', instid=506, varid=np.array([101, 102]), zmin=0, zmax=2000),
              'insitu_temp_profile_argo'   :
-             Instrument(name='Argo', instid=507, varid=np.array([101, 102]), zmin=0, zmax=2000),
+             Instrument(name='Argo', instid=507, varid=np.array([101]), zmin=0, zmax=2000),
              'insitu_surface_drifter'   :
              Instrument(name='drifter', instid=508, varid=np.array([101, 102]), zmin=0, zmax=2000),
              'insitu_profile_bathy'   :
@@ -143,7 +143,8 @@ class ioda:
         pattern = re.compile(r'\.\d{10}\.nc4$')
         for iodafname in tqdm(flist):
             ncfile = Dataset(iodafname)
-            bufr_subset = pattern.sub('', iodafname.split('/')[-1])
+            bufr_subset = pattern.sub('', iodafname.split('.')[0])
+            print(f"++++++++++++++++++++++++++++++++    {bufr_subset}")
             dum = get_from_ioda(ncfile, varname, 'ObsValue')
             valid_indices = np.where(abs(dum) < 9999999.9)
             self.obs = np.append(dum[valid_indices], self.obs)

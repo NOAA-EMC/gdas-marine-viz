@@ -21,18 +21,20 @@ def plot_vertical_profile(ix, iy, lon2d, lat2d, data, depth, ax_profile):
     ax_profile.grid()
 
 
-def load_obsfile(obsfile, longitude_max=None):
+def load_obsfile(obsfile, longitude_max=None, variable='Temp'):
     print(f"Loading observation file: {obsfile}")
     print(f"Longitude min: {longitude_max}")
+    var_map = {'Temp': 'waterTemperature', 'Salt': 'salinity'}
+    nc_var = var_map[variable]
     with Dataset(obsfile, 'r') as f:
         lat_obs = f.groups['MetaData'].variables['latitude'][:]
         lon_obs = f.groups['MetaData'].variables['longitude'][:]
         lon_obs[lon_obs > longitude_max] -= 360.0  # Rotate to the mom6 grid
         depth_obs = f.groups['MetaData'].variables['depth'][:]
-        ombg = f.groups['ombg'].variables['waterTemperature'][:]
-        oman = f.groups['oman'].variables['waterTemperature'][:]
-        obsval = f.groups['ObsValue'].variables['waterTemperature'][:]
-        hofx = f.groups['hofx0'].variables['waterTemperature'][:]
+        ombg = f.groups['ombg'].variables[nc_var][:]
+        oman = f.groups['oman'].variables[nc_var][:]
+        obsval = f.groups['ObsValue'].variables[nc_var][:]
+        hofx = f.groups['hofx0'].variables[nc_var][:]
 
         valid = np.isfinite(lat_obs) & np.isfinite(lon_obs) & np.isfinite(depth_obs)
         lat_obs = lat_obs[valid]
@@ -64,6 +66,8 @@ def main(hfile, errfile, varname, is_variance, gridfile, obsfile=None, level=0):
     else:
         raise ValueError("Could not find time dimension (tried both 'time' and 'Time')")
     surface_mask = ~np.isnan(h[0, :, :])  # True where surface layer is valid (not NaN)
+    mask3d = np.where(h >= 0.01, 1, np.nan)
+    h = h * mask3d  # Set very thin layers to NaN
     # Check which vertical dimension name exists in the dataset
     if 'z_l' in h.dims:
         depth = h.cumsum(dim='z_l')      # cumulative sum along vertical
@@ -84,6 +88,8 @@ def main(hfile, errfile, varname, is_variance, gridfile, obsfile=None, level=0):
     else:
         raise ValueError("Could not find time dimension (tried both 'time' and 'Time')")
     # Convert variance to stddev if needed
+    #mask = data/data
+    data = data * mask3d  # Set invalid points to NaN
     if is_variance:
         print("--------------------------------- sqrt *************")
         data = np.sqrt(data)
@@ -98,7 +104,7 @@ def main(hfile, errfile, varname, is_variance, gridfile, obsfile=None, level=0):
     print("%%%%%%%%%%%%%%%%%%% obsfile:", obsfile)
     if obsfile:
         print(f"Loading observation file: {obsfile}")
-        obs = load_obsfile(obsfile, longitude_max=np.max(lon2d.values))
+        obs = load_obsfile(obsfile, longitude_max=np.max(lon2d.values), variable=varname)
 
     # Make a simple 2D slice (e.g., surface field)
     # Handle both 2D and 3D data arrays

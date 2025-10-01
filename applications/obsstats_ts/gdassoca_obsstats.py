@@ -22,7 +22,7 @@ colors = [
     "palegreen",
     "palegoldenrod",
     "mistyrose",
-    "lavender"
+    "lavender",
     "lightsalmon",
 ]
 
@@ -117,8 +117,9 @@ class ObsStats:
 if __name__ == "__main__":
     epilog = [
         "Usage examples:",
-        "./gdassoca_obsstats.py --exps cp1/COMROOT/cp1 cp2/COMROOT/cp2",
-        "--inst sst_abi_g16_l3c --dirout cp1vscp2 [--letkf]"
+        "./gdassoca_obsstats.py --exps cp1/COMROOT/cp1 cp2/COMROOT/cp2 --dirout cp1vscp2",
+        "./gdassoca_obsstats.py --exps cp1/COMROOT/cp1 --inst sst_abi_g16_l3c --dirout cp1vscp2",
+        "./gdassoca_obsstats.py --exps cp1/COMROOT/cp1 --inst 'sst*' --dirout cp1vscp2 --letkf"
     ]
     parser = argparse.ArgumentParser(description="Observation space RMSE's and BIAS's",
                                      formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -127,21 +128,24 @@ if __name__ == "__main__":
                         help="Path to the experiment's COMROOT")
     parser.add_argument(
         "--inst",
-        required=True,
-        help="The name of the instrument/platform (ex: sst_abi_g16_l3c) or a wild card (eg sst*)"
+        required=False,
+        help="Optional: The name of the instrument/platform (ex: sst_abi_g16_l3c) or a wild card "
+             "(eg sst*). If not provided, all available instruments will be processed."
     )
     parser.add_argument("--dirout", required=True, help="Output directory")
     parser.add_argument("--letkf", action="store_true", help="Generate stats for LETKF diag files")
     args = parser.parse_args()
 
     insts = []
-    inst = args.inst
+    inst = args.inst if args.inst else "*"  # Use wildcard if no instrument specified
     os.makedirs(args.dirout, exist_ok=True)
 
     # Get all instruments/obs spaces
     for exp in args.exps:
-        wc = exp + f'/*.*/??/analysis/ocean/*{inst}*.stats.csv'
+        wc = exp + f'/*.*/??/analysis/ocean/diags/*{inst}*.stats.csv'
         flist = glob.glob(wc)
+        print(f"wc: {wc}")
+        print(f"flist: {flist}")
         for fname in flist:
             insts.append(get_inst(fname))
         if (args.letkf):
@@ -158,7 +162,7 @@ if __name__ == "__main__":
         print(f"Processing {inst}")
         flist = []
         for exp in args.exps:
-            wc = exp + f'/*.*/??/analysis/ocean/*{inst}*.stats.csv'
+            wc = exp + f'/*.*/??/analysis/ocean/diags/*{inst}*.stats.csv'
             flist.append(glob.glob(wc))
             if (args.letkf):
                 wc = exp + f'/*.*/??/analysis/ocean/letkf/diags/*{inst}*.stats.csv'
@@ -169,6 +173,7 @@ if __name__ == "__main__":
         obsStats.read_csv(flist)
         for var, ocean in product(['ombg_noqc', 'ombg_qc'],
                                   ['Global', 'Atlantic', 'Pacific', 'Indian', 'Arctic', 'Southern']):
+            print(f"OCEAN: {ocean}")
             experiments.extend(obsStats.plot_timeseries(ocean, var, inst=inst, dirout=args.dirout))
 
     # Select unique elements of experiments
