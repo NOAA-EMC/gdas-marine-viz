@@ -75,7 +75,7 @@ def main(hfile, errfile, varname, is_variance, gridfile, obsfile=None, level=0):
         depth = h.cumsum(dim='zaxis_1')  # cumulative sum along vertical
     else:
         print('...')
-        #raise ValueError("Could not find vertical dimension (tried both 'z_l' and 'zaxis_1')")
+        raise ValueError("Could not find vertical dimension (tried both 'z_l' and 'zaxis_1')")
     dsg.close()
 
     # --- Step 2: Open error file and extract variable
@@ -87,9 +87,8 @@ def main(hfile, errfile, varname, is_variance, gridfile, obsfile=None, level=0):
         data = ds[varname].isel(Time=0)  # shape: (z_l, yh, xh)
     else:
         raise ValueError("Could not find time dimension (tried both 'time' and 'Time')")
-    # Convert variance to stddev if needed
-    #mask = data/data
     data = data * mask3d  # Set invalid points to NaN
+    # Convert variance to stddev if needed
     if is_variance:
         print("--------------------------------- sqrt *************")
         data = np.sqrt(data)
