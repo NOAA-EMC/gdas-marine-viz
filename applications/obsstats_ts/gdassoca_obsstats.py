@@ -417,9 +417,7 @@ if __name__ == "__main__":
     experiments = []
     for inst in insts:
         print(f"Processing {inst}")
-
         obsStats = ObsStats()
-
         if args.source == 'csv':
             flist = []
             for exp in args.exps:
