@@ -8,6 +8,7 @@ import subprocess
 import glob
 
 comout = os.getenv('COM_OCEAN_ANALYSIS')
+comconf = os.getenv('COM_CONF')
 # resolve the comout path since it may contain wild cards
 matching_paths = glob.glob(comout)
 if matching_paths:
@@ -56,6 +57,8 @@ layer_file = os.path.join(comout, f'{RUN}.t' + cyc + 'z.ocninc.nc')
 hpcname = os.getenv('HPCname')
 if hpcname.startswith("hera"):
     grid_file_bkgerr = '/scratch1/NCEPDEV/da/common/validation/vrfy/soca_gridspec.bkgerr.nc'
+elif hpcname in ["ursa"]:
+    grid_file_bkgerr = '/scratch3/NCEPDEV/da/common/validation/vrfy/soca_gridspec.bkgerr.nc'
 elif hpcname in ["hercules", "orion"]:
     grid_file_bkgerr = '/work/noaa/da/marineda/validation/vrfy/soca_gridspec.bkgerr.nc'
 else:
@@ -408,7 +411,7 @@ for process in processes:
 if eva_plots:
     evadir = os.path.join(HOMEgdasmv)
     marinetemplate = os.path.join(evadir, 'configs', 'marine_gdas_plots.yaml')
-    varyaml = os.path.join(comout, 'yaml', 'var.yaml')
+    varyaml = os.path.join(comconf, 'var.yaml')
 
     # it would be better to refrence the dirs explicitly with the comout path
     # but eva doesn't allow for specifying output directories

@@ -4,10 +4,11 @@
 
 import matplotlib.pyplot as plt
 import xarray as xr
+import os
+import cartopy
+cartopy.config['data_dir'] = os.getenv('cartopy_fix')
 import cartopy.crs as ccrs
 import numpy as np
-import os
-
 
 projs = {'North': ccrs.NorthPolarStereo(),
          'South': ccrs.SouthPolarStereo(),
