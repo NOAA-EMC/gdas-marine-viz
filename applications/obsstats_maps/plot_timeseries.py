@@ -71,20 +71,23 @@ def plot_timeseries_single(data, output_file=None, title=None):
     times = data['times']
     obs_space_name = data['experiment_id']
 
+    # Use consistent color for all panels
+    color = 'blue'
+
     # Plot mean
-    ax1.plot(times, data['mean'], color='blue', marker='o', markersize=3, linewidth=1.5)
+    ax1.plot(times, data['mean'], color=color, marker='o', markersize=3, linewidth=1.5)
     ax1.set_ylabel(f"Mean ({data['variable']})", fontsize=12)
     ax1.grid(True, alpha=0.3)
     ax1.set_title(f"{obs_space_name} - Mean", fontsize=10)
 
     # Plot standard deviation
-    ax2.plot(times, data['std'], color='red', marker='s', markersize=3, linewidth=1.5)
+    ax2.plot(times, data['std'], color=color, marker='s', markersize=3, linewidth=1.5)
     ax2.set_ylabel(f"Std ({data['variable']})", fontsize=12)
     ax2.grid(True, alpha=0.3)
     ax2.set_title(f"{obs_space_name} - Standard Deviation", fontsize=10)
 
     # Plot observation count
-    ax3.plot(times, data['n_obs'], color='green', marker='^', markersize=3, linewidth=1.5)
+    ax3.plot(times, data['n_obs'], color=color, marker='^', markersize=3, linewidth=1.5)
     ax3.set_ylabel("Observation Count", fontsize=12)
     ax3.set_xlabel("Time", fontsize=12)
     ax3.grid(True, alpha=0.3)
@@ -130,6 +133,224 @@ def plot_timeseries(observation_spaces_data, output_dir=None, title_prefix=None)
 
         # Create individual plot
         plot_timeseries_single(data, output_file, title_prefix)
+
+
+def validate_comparable_obs_spaces(experiments_data):
+    """Validate that observation spaces across experiments are comparable.
+
+    Returns dict of validated observation spaces with experiment data.
+    """
+    # Group observation spaces by name
+    obs_space_groups = {}
+
+    for exp_name, obs_spaces in experiments_data.items():
+        for obs_space_config, data in obs_spaces:
+            obs_space_name = obs_space_config['name']
+
+            if obs_space_name not in obs_space_groups:
+                obs_space_groups[obs_space_name] = []
+
+            obs_space_groups[obs_space_name].append({
+                'experiment': exp_name,
+                'config': obs_space_config,
+                'data': data
+            })
+
+    validated_groups = {}
+
+    for obs_space_name, configs in obs_space_groups.items():
+        if len(configs) < 2:
+            print(f"Warning: Observation space '{obs_space_name}' only found in one experiment, skipping comparison")
+            continue
+
+        # Check if configurations are identical except for ioda_data_path and stats_output
+        reference_config = configs[0]['config'].copy()
+        reference_config.pop('ioda_data_path', None)
+        reference_config.pop('stats_output', None)
+
+        all_compatible = True
+        for config_data in configs[1:]:
+            test_config = config_data['config'].copy()
+            test_config.pop('ioda_data_path', None)
+            test_config.pop('stats_output', None)
+
+            if reference_config != test_config:
+                print(f"Warning: Observation space '{obs_space_name}' has incompatible configurations:")
+                print(f"  Reference: {reference_config}")
+                print(f"  Experiment {config_data['experiment']}: {test_config}")
+                all_compatible = False
+                break
+
+        if all_compatible:
+            validated_groups[obs_space_name] = configs
+            print(f"✓ Observation space '{obs_space_name}' validated across {len(configs)} experiments")
+        else:
+            print(f"✗ Skipping observation space '{obs_space_name}' due to incompatible configurations")
+
+    return validated_groups
+
+
+def plot_timeseries_multi_experiment(experiments_data, output_dir=None, title_prefix=None):
+    """Create comparison plots showing multiple experiments on the same figure.
+
+    Args:
+        experiments_data: Dictionary where keys are experiment names and values are lists of (config, data) tuples
+        output_dir: Directory to save plots
+        title_prefix: Prefix for plot titles
+    """
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    # Validate that observation spaces are comparable across experiments
+    validated_obs_spaces = validate_comparable_obs_spaces(experiments_data)
+
+    if not validated_obs_spaces:
+        print("Error: No comparable observation spaces found across experiments")
+        return
+
+    # Create comparison plots for each validated observation space
+    colors = plt.cm.Set1(np.linspace(0, 1, len(experiments_data)))
+
+    for obs_space_name, configs in validated_obs_spaces.items():
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
+
+        variable_name = None
+
+        for i, config_data in enumerate(configs):
+            exp_name = config_data['experiment']
+            data = config_data['data']
+
+            if data is None:
+                print(f"Warning: No data available for {exp_name} - {obs_space_name}")
+                continue
+
+            times = data['times']
+            color = colors[i % len(colors)]
+
+            # Plot mean
+            ax1.plot(times, data['mean'], color=color, marker='o',
+                     markersize=3, linewidth=1.5, label=exp_name)
+
+            # Plot standard deviation
+            ax2.plot(times, data['std'], color=color, marker='s',
+                     markersize=3, linewidth=1.5, label=exp_name)
+
+            # Plot observation count
+            ax3.plot(times, data['n_obs'], color=color, marker='^',
+                     markersize=3, linewidth=1.5, label=exp_name)
+
+            if variable_name is None:
+                variable_name = data['variable']
+
+        # Set labels and titles
+        ax1.set_ylabel(f"Mean ({variable_name})", fontsize=12)
+        ax1.grid(True, alpha=0.3)
+        ax1.set_title(f"{obs_space_name} - Mean", fontsize=10)
+        ax1.legend(fontsize=10)
+
+        ax2.set_ylabel(f"Std ({variable_name})", fontsize=12)
+        ax2.grid(True, alpha=0.3)
+        ax2.set_title(f"{obs_space_name} - Standard Deviation", fontsize=10)
+        ax2.legend(fontsize=10)
+
+        ax3.set_ylabel("Observation Count", fontsize=12)
+        ax3.set_xlabel("Time", fontsize=12)
+        ax3.grid(True, alpha=0.3)
+        ax3.set_title(f"{obs_space_name} - Observation Count", fontsize=10)
+        ax3.legend(fontsize=10)
+
+        # Format x-axis
+        fig.autofmt_xdate()
+
+        # Add overall title
+        if title_prefix:
+            fig.suptitle(f"{title_prefix} - {obs_space_name}", fontsize=14, fontweight='bold')
+        else:
+            fig.suptitle(f"{obs_space_name} - Multi-Experiment Comparison", fontsize=14, fontweight='bold')
+
+        plt.tight_layout()
+
+        # Save plot
+        if output_dir:
+            safe_name = "".join(c for c in obs_space_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            safe_name = safe_name.replace(' ', '_')
+            output_file = os.path.join(output_dir, f"{safe_name}_comparison.png")
+            plt.savefig(output_file, dpi=150, bbox_inches='tight')
+            print(f"Multi-experiment comparison plot saved to: {output_file}")
+        else:
+            plt.show()
+
+        plt.close()
+
+
+def process_observation_space(obs_config, exp_name=None):
+    """Process a single observation space configuration and return data."""
+    obs_name = obs_config['name']
+    obs_file = obs_config.get('file')
+
+    # New: Support for IODA data processing
+    ioda_data_path = obs_config.get('ioda_data_path')
+    varname = obs_config.get('varname', 'sst')
+    geovar_group = obs_config.get('geovar_group', 'ObsValue')
+    time_interval = obs_config.get('time_interval', 3600)
+    ice_edge_stats = obs_config.get('ice_edge_stats', False)
+    depth_bins = obs_config.get('depth_bins')
+    ocean_basins = obs_config.get('ocean_basins')
+
+    data = None
+
+    # Try to load existing statistics file first
+    if obs_file:
+        # Support glob patterns for files
+        if '*' in obs_file:
+            files = glob(obs_file)
+            if files:
+                obs_file = files[0]  # Take first match
+            else:
+                obs_file = None
+
+        if obs_file and os.path.exists(obs_file):
+            print(f"Loading existing statistics: {obs_name} from {obs_file}")
+            data = load_statistics_file(obs_file)
+
+    # If no statistics file exists or failed to load, try to generate from IODA files
+    if not data and ioda_data_path:
+        print("Statistics file not found or failed to load. Generating from IODA files...")
+
+        # Generate output filename for statistics
+        stats_output = obs_config.get('stats_output')
+        if not stats_output and obs_file:
+            # Use the intended stats file location
+            stats_output = obs_file
+        elif not stats_output:
+            # Generate a default filename
+            safe_name = "".join(c for c in obs_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            stats_output = f"{safe_name}_{varname}_statistics.nc"
+
+        experiment_id = f"{exp_name} - {obs_name}" if exp_name else obs_name
+
+        data = generate_statistics_from_ioda(
+            data_path=ioda_data_path,
+            varname=varname,
+            geovar_group=geovar_group,
+            time_interval=time_interval,
+            experiment_id=experiment_id,
+            output_file=stats_output,
+            ice_edge_stats=ice_edge_stats,
+            depth_bins=depth_bins,
+            ocean_basins=ocean_basins
+        )
+
+    if data:
+        # Override experiment ID with config name if provided
+        data['experiment_id'] = f"{exp_name} - {obs_name}" if exp_name else obs_name
+        data['obs_space_name'] = obs_name  # Keep base observation space name for comparison
+        return data
+    else:
+        print(f"Failed to load or generate data for observation space: {obs_name}")
+        print(f"  - Statistics file: {obs_file}")
+        print(f"  - IODA data path: {ioda_data_path}")
+        return None
 
 
 def generate_statistics_from_ioda(data_path, varname, geovar_group='ObsValue',
@@ -305,7 +526,9 @@ Examples:
   python plot_timeseries.py config.yaml
   python plot_timeseries.py --help
 
-Config YAML file should contain:
+Config YAML file can use either format:
+
+Single Experiment Format:
   observation_spaces:  # Each observation space gets its own separate plot
     - name: "SST AVHRR-MB ombg"
       file: "/path/to/sst_statistics.nc"          # Existing statistics file
@@ -314,17 +537,32 @@ Config YAML file should contain:
       geovar_group: "ombg"                        # NetCDF group (default: ObsValue)
       time_interval: 21600                        # Time interval in seconds (default: 3600)
       ice_edge_stats: false                       # Enable ice-edge statistics (default: false)
+      depth_bins: [[0, 50], [50, 200]]            # Depth ranges in meters (optional)
+      ocean_basins: [1, 2, 3]                    # Ocean basin codes (optional)
       stats_output: "/path/to/output_stats.nc"    # Where to save generated statistics
-    - name: "Temperature Drifter ombg"
-      ioda_data_path: "/path/to/drifter/*.nc"
-      varname: "temp"
-      geovar_group: "ombg"
-      time_interval: 21600
-  output_dir: "./timeseries_plots"                # Directory for individual plots
+  output_dir: "./timeseries_plots"                # Directory for plots
   title: "Experiment Name"                        # Prefix for plot titles
 
-Note: Each observation space will generate a separate 3-panel timeseries plot
-      saved as {observation_space_name}_timeseries.png in the output directory.
+Multi-Experiment Format (for comparisons):
+  experiments:
+    "Experiment A":
+      observation_spaces:
+        - name: "Surface Drifters"
+          ioda_data_path: "/path/to/drifter/*.nc"
+          varname: "temp"
+          geovar_group: "ombg"
+    "Experiment B":
+      observation_spaces:
+        - name: "Surface Drifters"  # Same obs space name for comparison
+          ioda_data_path: "/path/to/drifter/*.nc"
+          varname: "temp"
+          geovar_group: "ombg"
+          ocean_basins: [2]  # Different filtering
+  output_dir: "./multi_experiment_plots"
+  title: "Multi-Experiment Comparison"
+
+Note: Multi-experiment format creates comparison plots showing multiple experiments
+      for each observation space, plus individual plots for each experiment.
         '''
     )
 
@@ -337,86 +575,58 @@ Note: Each observation space will generate a separate 3-panel timeseries plot
     with open(args.config_file, 'r') as f:
         config = yaml.safe_load(f)
 
-    # Load observation space data (support both new and legacy config formats)
-    observation_spaces_data = []
+    # Check if this is a multi-experiment configuration
+    if 'experiments' in config and isinstance(config['experiments'], dict):
+        # Multi-experiment format
+        experiments_data = {}
 
-    # Support both 'observation_spaces' (new) and 'experiments' (legacy) keys
-    obs_spaces_config = config.get('observation_spaces', config.get('experiments', []))
+        for exp_name, exp_config in config['experiments'].items():
+            print(f"\nProcessing experiment: {exp_name}")
+            observation_spaces_data = []
 
-    for obs_config in obs_spaces_config:
-        obs_name = obs_config['name']
-        obs_file = obs_config.get('file')
+            obs_spaces_config = exp_config.get('observation_spaces', [])
 
-        # New: Support for IODA data processing
-        ioda_data_path = obs_config.get('ioda_data_path')
-        varname = obs_config.get('varname', 'sst')
-        geovar_group = obs_config.get('geovar_group', 'ObsValue')
-        time_interval = obs_config.get('time_interval', 3600)
-        ice_edge_stats = obs_config.get('ice_edge_stats', False)
-        depth_bins = obs_config.get('depth_bins')
-        ocean_basins = obs_config.get('ocean_basins')
+            for obs_config in obs_spaces_config:
+                data = process_observation_space(obs_config, exp_name)
+                # Store both config and data for validation
+                observation_spaces_data.append((obs_config, data))
 
-        data = None
+            if observation_spaces_data:
+                experiments_data[exp_name] = observation_spaces_data
 
-        # Try to load existing statistics file first
-        if obs_file:
-            # Support glob patterns for files
-            if '*' in obs_file:
-                files = glob(obs_file)
-                if files:
-                    obs_file = files[0]  # Take first match
-                else:
-                    obs_file = None
+        if not experiments_data:
+            print("Error: No experiment data loaded successfully")
+            return
 
-            if obs_file and os.path.exists(obs_file):
-                print(f"Loading existing statistics: {obs_name} from {obs_file}")
-                data = load_statistics_file(obs_file)
+        # Get output settings
+        output_dir = config.get('output_dir', './timeseries_plots')
+        title_prefix = config.get('title')
 
-        # If no statistics file exists or failed to load, try to generate from IODA files
-        if not data and ioda_data_path:
-            print("Statistics file not found or failed to load. Generating from IODA files...")
+        # Create multi-experiment comparison plots only
+        plot_timeseries_multi_experiment(experiments_data, output_dir, title_prefix)
 
-            # Generate output filename for statistics
-            stats_output = obs_config.get('stats_output')
-            if not stats_output and obs_file:
-                # Use the intended stats file location
-                stats_output = obs_file
-            elif not stats_output:
-                # Generate a default filename
-                safe_name = "".join(c for c in obs_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
-                stats_output = f"{safe_name}_{varname}_statistics.nc"
+    else:
+        # Single experiment format (backward compatibility)
+        observation_spaces_data = []
 
-            data = generate_statistics_from_ioda(
-                data_path=ioda_data_path,
-                varname=varname,
-                geovar_group=geovar_group,
-                time_interval=time_interval,
-                experiment_id=obs_name,
-                output_file=stats_output,
-                ice_edge_stats=ice_edge_stats,
-                depth_bins=depth_bins,
-                ocean_basins=ocean_basins
-            )
+        # Support both 'observation_spaces' (new) and 'experiments' (legacy) keys
+        obs_spaces_config = config.get('observation_spaces', config.get('experiments', []))
 
-        if data:
-            # Override experiment ID with config name if provided
-            data['experiment_id'] = obs_name
-            observation_spaces_data.append(data)
-        else:
-            print(f"Failed to load or generate data for observation space: {obs_name}")
-            print(f"  - Statistics file: {obs_file}")
-            print(f"  - IODA data path: {ioda_data_path}")
+        for obs_config in obs_spaces_config:
+            data = process_observation_space(obs_config)
+            if data:
+                observation_spaces_data.append(data)
 
-    if not observation_spaces_data:
-        print("Error: No observation space data loaded successfully")
-        return
+        if not observation_spaces_data:
+            print("Error: No observation space data loaded successfully")
+            return
 
-    # Get output settings - now using output_dir instead of single output_file
-    output_dir = config.get('output_dir', './timeseries_plots')
-    title_prefix = config.get('title')
+        # Get output settings - now using output_dir instead of single output_file
+        output_dir = config.get('output_dir', './timeseries_plots')
+        title_prefix = config.get('title')
 
-    # Create separate plots for each observation space
-    plot_timeseries(observation_spaces_data, output_dir, title_prefix)
+        # Create separate plots for each observation space
+        plot_timeseries(observation_spaces_data, output_dir, title_prefix)
 
 
 if __name__ == "__main__":
