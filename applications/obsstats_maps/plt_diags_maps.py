@@ -15,7 +15,8 @@ VARIABLE_MAP = {'sst': 'seaSurfaceTemperature',
                 'sss': 'seaSurfaceSalinity',
                 'adt': 'absoluteDynamicTopography',
                 'icec': 'seaIceFraction',
-                'temp': ['waterTemperature', 'seaSurfaceTemperature']}  # Support multiple temp variables
+                'temp': ['waterTemperature', 'seaSurfaceTemperature'],
+                'salt': ['salinity']}
 
 # Predefined instrument color dictionary for consistent coloring across plots
 INSTRUMENT_COLORS = {
