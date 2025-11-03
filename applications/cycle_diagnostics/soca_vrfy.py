@@ -2,9 +2,14 @@
 
 # make plots for marine analysis
 
+
+import os
+# Ensure non-interactive backend on headless systems (HPC)
+if not os.environ.get("DISPLAY"):
+    import matplotlib
+    matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import xarray as xr
-import os
 import cartopy
 cartopy.config['data_dir'] = os.getenv('cartopy_fix')
 import cartopy.crs as ccrs
