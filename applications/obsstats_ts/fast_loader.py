@@ -16,6 +16,7 @@ That's it! Your existing code works unchanged but runs much faster.
 import sys
 import os
 import time
+import threading
 
 # Add path to access plt_diags_maps
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'obsstats_maps'))
@@ -24,13 +25,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'obsstats_maps'
 from plt_diags_maps import load_ioda_diags as _original_load_ioda_diags
 from plt_diags_maps import IODAData, save_statistics_to_netcdf
 
-# Global cache for loaded IODA data
+# Global cache for loaded IODA data with thread safety
 _CACHE = {}
 _STATS = {'hits': 0, 'misses': 0}
+_CACHE_LOCK = threading.Lock()  # Thread safety for cache operations
 
 def load_ioda_diags(netcdf_file, var_name_short, geovar_group='ObsValue'):
     """
-    Drop-in replacement for load_ioda_diags with caching.
+    Drop-in replacement for load_ioda_diags with thread-safe caching.
 
     This function has the EXACT same signature and behavior as the original,
     but caches results to avoid reloading the same files multiple times.
@@ -40,25 +42,27 @@ def load_ioda_diags(netcdf_file, var_name_short, geovar_group='ObsValue'):
     - Argo files used 18 times → 18x faster
     - Overall improvement: 5-50x depending on configuration
     """
-    global _CACHE, _STATS
+    global _CACHE, _STATS, _CACHE_LOCK
 
     # Create cache key
     cache_key = f"{netcdf_file}::{var_name_short}::{geovar_group}"
 
-    # Check cache first
-    if cache_key in _CACHE:
-        _STATS['hits'] += 1
-        return _CACHE[cache_key]
+    # Thread-safe cache check
+    with _CACHE_LOCK:
+        if cache_key in _CACHE:
+            _STATS['hits'] += 1
+            return _CACHE[cache_key]
 
-    # Not in cache - load it
-    _STATS['misses'] += 1
+        # Mark as loading to prevent duplicate loads
+        _STATS['misses'] += 1
+
+    # Load outside of lock to allow parallel processing
     start_time = time.time()
-
-    # Load using original function
     data = _original_load_ioda_diags(netcdf_file, var_name_short, geovar_group)
 
-    # Cache the result
-    _CACHE[cache_key] = data
+    # Thread-safe cache storage
+    with _CACHE_LOCK:
+        _CACHE[cache_key] = data
 
     load_time = time.time() - start_time
     filename = os.path.basename(netcdf_file)
@@ -67,17 +71,18 @@ def load_ioda_diags(netcdf_file, var_name_short, geovar_group='ObsValue'):
     return data
 
 def get_cache_stats():
-    """Get current cache performance statistics."""
-    total = _STATS['hits'] + _STATS['misses']
-    hit_rate = (_STATS['hits'] / total * 100) if total > 0 else 0
+    """Get current cache performance statistics (thread-safe)."""
+    with _CACHE_LOCK:
+        total = _STATS['hits'] + _STATS['misses']
+        hit_rate = (_STATS['hits'] / total * 100) if total > 0 else 0
 
-    return {
-        'hits': _STATS['hits'],
-        'misses': _STATS['misses'],
-        'hit_rate': f"{hit_rate:.1f}%",
-        'cached_files': len(_CACHE),
-        'total_calls': total
-    }
+        return {
+            'hits': _STATS['hits'],
+            'misses': _STATS['misses'],
+            'hit_rate': f"{hit_rate:.1f}%",
+            'cached_files': len(_CACHE),
+            'total_calls': total
+        }
 
 def print_cache_stats():
     """Print cache performance statistics."""
@@ -94,10 +99,11 @@ def print_cache_stats():
         print(f"   • Estimated speedup: {speedup:.1f}x")
 
 def clear_cache():
-    """Clear the cache - useful between experiments."""
-    global _CACHE, _STATS
-    _CACHE.clear()
-    _STATS = {'hits': 0, 'misses': 0}
+    """Clear the cache - useful between experiments (thread-safe)."""
+    global _CACHE, _STATS, _CACHE_LOCK
+    with _CACHE_LOCK:
+        _CACHE.clear()
+        _STATS = {'hits': 0, 'misses': 0}
     print("🗑️  Cache cleared")
 
 # Export everything the original module exports

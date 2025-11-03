@@ -92,8 +92,6 @@ Examples:
                         action='store_true',
                         help='Disable SST satellite observations')
 
-
-
     parser.add_argument('--output-dir',
                         help='Base output directory for plots (default: ./real-time)')
 

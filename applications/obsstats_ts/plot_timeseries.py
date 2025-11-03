@@ -21,11 +21,46 @@ import os
 import sys
 from datetime import datetime, timedelta
 from glob import glob
-
 # Add the obsstats_maps directory to the path for importing plt_diags_maps
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'obsstats_maps'))
 # Performance optimization: Use cached loader for massive speedup (5-50x)
 from fast_loader import load_ioda_diags, IODAData, save_statistics_to_netcdf
+
+
+def process_observation_spaces_sequentially(obs_configs, exp_name=None):
+    """
+    Process multiple observation spaces sequentially.
+
+    Args:
+        obs_configs: List of observation space configurations
+        exp_name: Experiment name
+
+    Returns:
+        List of processed data
+    """
+    print(f"\n🚀 SEQUENTIAL PROCESSING")
+    print(f"   • Observation spaces: {len(obs_configs)}")
+    print(f"   • Using optimized file caching for maximum performance")
+
+    results = []
+
+    for i, obs_config in enumerate(obs_configs, 1):
+        obs_name = obs_config.get('name', 'Unknown')
+        print(f"🔄 [{i}/{len(obs_configs)}] Processing: {obs_name}")
+
+        try:
+            result = process_observation_space(obs_config, exp_name)
+            if result:
+                results.append(result)
+                print(f"✅ [{i}/{len(obs_configs)}] Completed: {obs_name}")
+            else:
+                print(f"❌ [{i}/{len(obs_configs)}] Failed: {obs_name}")
+
+        except Exception as e:
+            print(f"❌ [{i}/{len(obs_configs)}] Error processing {obs_name}: {e}")
+
+    print(f"✅ Sequential processing complete: {len(results)}/{len(obs_configs)} successful")
+    return results
 
 
 def load_statistics_file(filename):
@@ -1022,7 +1057,7 @@ def generate_statistics_from_ioda_periods(data_path, varname, missing_periods, g
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Plot timeseries statistics for different observation spaces in an experiment',
+        description='Plot timeseries statistics for different observation spaces in an experiment (optimized with file caching)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Examples:
@@ -1071,6 +1106,7 @@ Notes:
 - The application automatically detects missing time periods in existing statistics
   files and appends only new data, making incremental updates efficient.
 - Use force_regenerate: true to bypass append functionality and regenerate all statistics.
+- File caching provides 5-50x speedup by avoiding duplicate file loading operations.
         '''
     )
 
@@ -1089,15 +1125,20 @@ Notes:
         experiments_data = {}
 
         for exp_name, exp_config in config['experiments'].items():
-            print(f"\nProcessing experiment: {exp_name}")
-            observation_spaces_data = []
+            print(f"\n🔬 Processing experiment: {exp_name}")
 
             obs_spaces_config = exp_config.get('observation_spaces', [])
 
-            for obs_config in obs_spaces_config:
-                data = process_observation_space(obs_config, exp_name)
-                # Store both config and data for validation
-                observation_spaces_data.append((obs_config, data))
+            if not obs_spaces_config:
+                print(f"⚠️  No observation spaces found for experiment: {exp_name}")
+                continue
+
+            # Process observation spaces sequentially
+            processed_data = process_observation_spaces_sequentially(obs_spaces_config, exp_name)
+            # Convert to format expected by multi-experiment plotting
+            observation_spaces_data = [(obs_spaces_config[i], data)
+                                     for i, data in enumerate(processed_data)
+                                     if data is not None]
 
             if observation_spaces_data:
                 experiments_data[exp_name] = observation_spaces_data
@@ -1115,15 +1156,15 @@ Notes:
 
     else:
         # Single experiment format (backward compatibility)
-        observation_spaces_data = []
-
         # Support both 'observation_spaces' (new) and 'experiments' (legacy) keys
         obs_spaces_config = config.get('observation_spaces', config.get('experiments', []))
 
-        for obs_config in obs_spaces_config:
-            data = process_observation_space(obs_config)
-            if data:
-                observation_spaces_data.append(data)
+        if not obs_spaces_config:
+            print("❌ No observation spaces found in configuration")
+            return
+
+        # Process observation spaces sequentially for best performance
+        observation_spaces_data = process_observation_spaces_sequentially(obs_spaces_config)
 
         if not observation_spaces_data:
             print("Error: No observation space data loaded successfully")
@@ -1137,11 +1178,13 @@ Notes:
         plot_timeseries(observation_spaces_data, output_dir, title_prefix)
 
     # Report cache performance at the end
+    print("\n📊 PERFORMANCE SUMMARY")
+    print("=" * 25)
     try:
         from fast_loader import print_cache_stats
         print_cache_stats()
     except ImportError:
-        pass  # fast_loader not available
+        print("📈 Caching: fast_loader not available")
 
 if __name__ == "__main__":
     main()
