@@ -1,0 +1,2659 @@
+# Configuration for depth and ocean basin binning of in-situ observations
+# Generated from Jinja2 template - simplifies multi-experiment setup
+# Basin codes: 1=Atlantic, 2=Pacific, 3=Indian, 4=Arctic, 5=Southern
+
+
+
+
+
+
+
+experiments:
+  "cp4.02d":
+    observation_spaces:
+      - name: "Surface Drifters (Temp) - Global"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_surface_drifter.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/drifters_temp_global_ombg_statistics.nc"
+      - name: "Surface Drifters (Temp) - Atlantic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_surface_drifter.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/drifters_temp_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "Surface Drifters (Temp) - Pacific"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_surface_drifter.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/drifters_temp_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "Surface Drifters (Temp) - Indian"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_surface_drifter.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/drifters_temp_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "Surface Drifters (Temp) - Arctic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_surface_drifter.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/drifters_temp_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "Surface Drifters (Temp) - Southern"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_surface_drifter.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/drifters_temp_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "Argo Profiles Temp (0-10m) - Global"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_temp_0_10m_global_ombg_statistics.nc"
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Temp (0-10m) - Atlantic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_temp_0_10m_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Temp (0-10m) - Pacific"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_temp_0_10m_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Temp (0-10m) - Indian"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_temp_0_10m_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Temp (0-10m) - Arctic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_temp_0_10m_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Temp (0-10m) - Southern"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_temp_0_10m_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Temp (0-300m) - Global"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_temp_0_300m_global_ombg_statistics.nc"
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Temp (0-300m) - Atlantic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_temp_0_300m_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Temp (0-300m) - Pacific"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_temp_0_300m_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Temp (0-300m) - Indian"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_temp_0_300m_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Temp (0-300m) - Arctic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_temp_0_300m_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Temp (0-300m) - Southern"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_temp_0_300m_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Temp (300-2000m) - Global"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_temp_300_2000m_global_ombg_statistics.nc"
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Temp (300-2000m) - Atlantic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_temp_300_2000m_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Temp (300-2000m) - Pacific"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_temp_300_2000m_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Temp (300-2000m) - Indian"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_temp_300_2000m_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Temp (300-2000m) - Arctic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_temp_300_2000m_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Temp (300-2000m) - Southern"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_temp_300_2000m_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Salt (0-10m) - Global"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_salt_0_10m_global_ombg_statistics.nc"
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Salt (0-10m) - Atlantic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_salt_0_10m_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Salt (0-10m) - Pacific"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_salt_0_10m_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Salt (0-10m) - Indian"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_salt_0_10m_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Salt (0-10m) - Arctic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_salt_0_10m_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Salt (0-10m) - Southern"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_salt_0_10m_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Salt (0-300m) - Global"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_salt_0_300m_global_ombg_statistics.nc"
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Salt (0-300m) - Atlantic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_salt_0_300m_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Salt (0-300m) - Pacific"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_salt_0_300m_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Salt (0-300m) - Indian"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_salt_0_300m_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Salt (0-300m) - Arctic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_salt_0_300m_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Salt (0-300m) - Southern"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_salt_0_300m_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Salt (300-2000m) - Global"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_salt_300_2000m_global_ombg_statistics.nc"
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Salt (300-2000m) - Atlantic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_salt_300_2000m_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Salt (300-2000m) - Pacific"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_salt_300_2000m_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Salt (300-2000m) - Indian"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_salt_300_2000m_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Salt (300-2000m) - Arctic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_salt_300_2000m_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Salt (300-2000m) - Southern"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/argo_salt_300_2000m_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+        depth_min: 300
+        depth_max: 2000
+      - name: "ADT Jason-3 - Global"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_j3.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_j3_global_ombg_statistics.nc"
+      - name: "ADT Jason-3 - Atlantic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_j3.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_j3_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "ADT Jason-3 - Pacific"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_j3.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_j3_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "ADT Jason-3 - Indian"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_j3.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_j3_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "ADT Jason-3 - Arctic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_j3.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_j3_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "ADT Jason-3 - Southern"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_j3.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_j3_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "ADT Sentinel-3A - Global"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_sa.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_sa_global_ombg_statistics.nc"
+      - name: "ADT Sentinel-3A - Atlantic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_sa.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_sa_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "ADT Sentinel-3A - Pacific"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_sa.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_sa_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "ADT Sentinel-3A - Indian"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_sa.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_sa_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "ADT Sentinel-3A - Arctic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_sa.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_sa_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "ADT Sentinel-3A - Southern"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_sa.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_sa_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "ADT Sentinel-6A - Global"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_6a.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_6a_global_ombg_statistics.nc"
+      - name: "ADT Sentinel-6A - Atlantic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_6a.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_6a_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "ADT Sentinel-6A - Pacific"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_6a.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_6a_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "ADT Sentinel-6A - Indian"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_6a.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_6a_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "ADT Sentinel-6A - Arctic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_6a.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_6a_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "ADT Sentinel-6A - Southern"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_6a.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_6a_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "ADT SWOT - Global"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_sw.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_sw_global_ombg_statistics.nc"
+      - name: "ADT SWOT - Atlantic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_sw.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_sw_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "ADT SWOT - Pacific"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_sw.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_sw_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "ADT SWOT - Indian"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_sw.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_sw_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "ADT SWOT - Arctic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_sw.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_sw_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "ADT SWOT - Southern"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_sw.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_sw_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "ADT Cryosat-2 - Global"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_c2.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_c2_global_ombg_statistics.nc"
+      - name: "ADT Cryosat-2 - Atlantic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_c2.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_c2_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "ADT Cryosat-2 - Pacific"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_c2.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_c2_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "ADT Cryosat-2 - Indian"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_c2.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_c2_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "ADT Cryosat-2 - Arctic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_c2.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_c2_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "ADT Cryosat-2 - Southern"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/rads_adt_c2.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/adt_c2_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+
+      - name: "SST AVHRR F MB - Global"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mb_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_avhrrf_mb_global_ombg_statistics.nc"
+      - name: "SST AVHRR F MB - Atlantic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mb_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_avhrrf_mb_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "SST AVHRR F MB - Pacific"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mb_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_avhrrf_mb_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "SST AVHRR F MB - Indian"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mb_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_avhrrf_mb_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "SST AVHRR F MB - Arctic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mb_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_avhrrf_mb_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "SST AVHRR F MB - Southern"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mb_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_avhrrf_mb_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "SST AVHRR F MC - Global"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mc_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_avhrrf_mc_global_ombg_statistics.nc"
+      - name: "SST AVHRR F MC - Atlantic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mc_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_avhrrf_mc_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "SST AVHRR F MC - Pacific"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mc_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_avhrrf_mc_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "SST AVHRR F MC - Indian"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mc_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_avhrrf_mc_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "SST AVHRR F MC - Arctic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mc_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_avhrrf_mc_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "SST AVHRR F MC - Southern"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mc_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_avhrrf_mc_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "SST VIIRS N20 - Global"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n20_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_viirs_n20_global_ombg_statistics.nc"
+      - name: "SST VIIRS N20 - Atlantic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n20_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_viirs_n20_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "SST VIIRS N20 - Pacific"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n20_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_viirs_n20_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "SST VIIRS N20 - Indian"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n20_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_viirs_n20_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "SST VIIRS N20 - Arctic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n20_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_viirs_n20_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "SST VIIRS N20 - Southern"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n20_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_viirs_n20_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "SST VIIRS N21 - Global"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n21_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_viirs_n21_global_ombg_statistics.nc"
+      - name: "SST VIIRS N21 - Atlantic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n21_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_viirs_n21_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "SST VIIRS N21 - Pacific"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n21_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_viirs_n21_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "SST VIIRS N21 - Indian"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n21_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_viirs_n21_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "SST VIIRS N21 - Arctic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n21_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_viirs_n21_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "SST VIIRS N21 - Southern"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n21_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_viirs_n21_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "SST VIIRS NPP - Global"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_viirs_npp_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_viirs_npp_global_ombg_statistics.nc"
+      - name: "SST VIIRS NPP - Atlantic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_viirs_npp_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_viirs_npp_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "SST VIIRS NPP - Pacific"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_viirs_npp_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_viirs_npp_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "SST VIIRS NPP - Indian"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_viirs_npp_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_viirs_npp_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "SST VIIRS NPP - Arctic"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_viirs_npp_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_viirs_npp_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "SST VIIRS NPP - Southern"
+        ioda_data_path: "./cp4.02d-parallel-obsforge/gdas.20251022/*/analysis/ocean/diags/sst_viirs_npp_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4/sst_viirs_npp_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+  "retro-16-17":
+    observation_spaces:
+      - name: "Surface Drifters (Temp) - Global"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_surface_drifter.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/drifters_temp_global_ombg_statistics.nc"
+      - name: "Surface Drifters (Temp) - Atlantic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_surface_drifter.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/drifters_temp_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "Surface Drifters (Temp) - Pacific"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_surface_drifter.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/drifters_temp_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "Surface Drifters (Temp) - Indian"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_surface_drifter.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/drifters_temp_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "Surface Drifters (Temp) - Arctic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_surface_drifter.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/drifters_temp_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "Surface Drifters (Temp) - Southern"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_surface_drifter.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/drifters_temp_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "Argo Profiles Temp (0-10m) - Global"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_temp_0_10m_global_ombg_statistics.nc"
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Temp (0-10m) - Atlantic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_temp_0_10m_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Temp (0-10m) - Pacific"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_temp_0_10m_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Temp (0-10m) - Indian"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_temp_0_10m_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Temp (0-10m) - Arctic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_temp_0_10m_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Temp (0-10m) - Southern"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_temp_0_10m_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Temp (0-300m) - Global"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_temp_0_300m_global_ombg_statistics.nc"
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Temp (0-300m) - Atlantic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_temp_0_300m_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Temp (0-300m) - Pacific"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_temp_0_300m_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Temp (0-300m) - Indian"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_temp_0_300m_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Temp (0-300m) - Arctic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_temp_0_300m_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Temp (0-300m) - Southern"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_temp_0_300m_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Temp (300-2000m) - Global"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_temp_300_2000m_global_ombg_statistics.nc"
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Temp (300-2000m) - Atlantic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_temp_300_2000m_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Temp (300-2000m) - Pacific"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_temp_300_2000m_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Temp (300-2000m) - Indian"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_temp_300_2000m_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Temp (300-2000m) - Arctic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_temp_300_2000m_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Temp (300-2000m) - Southern"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_temp_300_2000m_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Salt (0-10m) - Global"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_salt_0_10m_global_ombg_statistics.nc"
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Salt (0-10m) - Atlantic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_salt_0_10m_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Salt (0-10m) - Pacific"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_salt_0_10m_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Salt (0-10m) - Indian"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_salt_0_10m_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Salt (0-10m) - Arctic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_salt_0_10m_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Salt (0-10m) - Southern"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_salt_0_10m_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Salt (0-300m) - Global"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_salt_0_300m_global_ombg_statistics.nc"
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Salt (0-300m) - Atlantic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_salt_0_300m_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Salt (0-300m) - Pacific"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_salt_0_300m_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Salt (0-300m) - Indian"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_salt_0_300m_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Salt (0-300m) - Arctic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_salt_0_300m_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Salt (0-300m) - Southern"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_salt_0_300m_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Salt (300-2000m) - Global"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_salt_300_2000m_global_ombg_statistics.nc"
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Salt (300-2000m) - Atlantic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_salt_300_2000m_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Salt (300-2000m) - Pacific"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_salt_300_2000m_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Salt (300-2000m) - Indian"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_salt_300_2000m_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Salt (300-2000m) - Arctic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_salt_300_2000m_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Salt (300-2000m) - Southern"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/argo_salt_300_2000m_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+        depth_min: 300
+        depth_max: 2000
+      - name: "ADT Jason-3 - Global"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_j3.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_j3_global_ombg_statistics.nc"
+      - name: "ADT Jason-3 - Atlantic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_j3.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_j3_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "ADT Jason-3 - Pacific"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_j3.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_j3_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "ADT Jason-3 - Indian"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_j3.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_j3_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "ADT Jason-3 - Arctic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_j3.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_j3_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "ADT Jason-3 - Southern"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_j3.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_j3_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "ADT Sentinel-3A - Global"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_sa.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_sa_global_ombg_statistics.nc"
+      - name: "ADT Sentinel-3A - Atlantic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_sa.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_sa_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "ADT Sentinel-3A - Pacific"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_sa.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_sa_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "ADT Sentinel-3A - Indian"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_sa.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_sa_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "ADT Sentinel-3A - Arctic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_sa.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_sa_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "ADT Sentinel-3A - Southern"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_sa.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_sa_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "ADT Sentinel-6A - Global"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_6a.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_6a_global_ombg_statistics.nc"
+      - name: "ADT Sentinel-6A - Atlantic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_6a.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_6a_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "ADT Sentinel-6A - Pacific"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_6a.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_6a_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "ADT Sentinel-6A - Indian"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_6a.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_6a_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "ADT Sentinel-6A - Arctic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_6a.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_6a_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "ADT Sentinel-6A - Southern"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_6a.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_6a_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "ADT SWOT - Global"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_sw.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_sw_global_ombg_statistics.nc"
+      - name: "ADT SWOT - Atlantic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_sw.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_sw_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "ADT SWOT - Pacific"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_sw.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_sw_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "ADT SWOT - Indian"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_sw.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_sw_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "ADT SWOT - Arctic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_sw.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_sw_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "ADT SWOT - Southern"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_sw.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_sw_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "ADT Cryosat-2 - Global"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_c2.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_c2_global_ombg_statistics.nc"
+      - name: "ADT Cryosat-2 - Atlantic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_c2.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_c2_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "ADT Cryosat-2 - Pacific"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_c2.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_c2_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "ADT Cryosat-2 - Indian"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_c2.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_c2_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "ADT Cryosat-2 - Arctic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_c2.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_c2_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "ADT Cryosat-2 - Southern"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/rads_adt_c2.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/adt_c2_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+
+      - name: "SST AVHRR F MB - Global"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mb_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_avhrrf_mb_global_ombg_statistics.nc"
+      - name: "SST AVHRR F MB - Atlantic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mb_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_avhrrf_mb_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "SST AVHRR F MB - Pacific"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mb_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_avhrrf_mb_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "SST AVHRR F MB - Indian"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mb_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_avhrrf_mb_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "SST AVHRR F MB - Arctic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mb_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_avhrrf_mb_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "SST AVHRR F MB - Southern"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mb_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_avhrrf_mb_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "SST AVHRR F MC - Global"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mc_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_avhrrf_mc_global_ombg_statistics.nc"
+      - name: "SST AVHRR F MC - Atlantic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mc_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_avhrrf_mc_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "SST AVHRR F MC - Pacific"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mc_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_avhrrf_mc_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "SST AVHRR F MC - Indian"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mc_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_avhrrf_mc_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "SST AVHRR F MC - Arctic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mc_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_avhrrf_mc_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "SST AVHRR F MC - Southern"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mc_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_avhrrf_mc_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "SST VIIRS N20 - Global"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n20_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_viirs_n20_global_ombg_statistics.nc"
+      - name: "SST VIIRS N20 - Atlantic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n20_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_viirs_n20_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "SST VIIRS N20 - Pacific"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n20_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_viirs_n20_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "SST VIIRS N20 - Indian"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n20_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_viirs_n20_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "SST VIIRS N20 - Arctic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n20_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_viirs_n20_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "SST VIIRS N20 - Southern"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n20_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_viirs_n20_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "SST VIIRS N21 - Global"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n21_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_viirs_n21_global_ombg_statistics.nc"
+      - name: "SST VIIRS N21 - Atlantic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n21_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_viirs_n21_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "SST VIIRS N21 - Pacific"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n21_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_viirs_n21_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "SST VIIRS N21 - Indian"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n21_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_viirs_n21_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "SST VIIRS N21 - Arctic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n21_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_viirs_n21_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "SST VIIRS N21 - Southern"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n21_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_viirs_n21_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "SST VIIRS NPP - Global"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_viirs_npp_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_viirs_npp_global_ombg_statistics.nc"
+      - name: "SST VIIRS NPP - Atlantic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_viirs_npp_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_viirs_npp_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "SST VIIRS NPP - Pacific"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_viirs_npp_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_viirs_npp_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "SST VIIRS NPP - Indian"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_viirs_npp_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_viirs_npp_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "SST VIIRS NPP - Arctic"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_viirs_npp_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_viirs_npp_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "SST VIIRS NPP - Southern"
+        ioda_data_path: "./retrotestgfs16_17_realtime/gdas.20251022/*/analysis/ocean/diags/sst_viirs_npp_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-retro/sst_viirs_npp_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+  "cp4.03":
+    observation_spaces:
+      - name: "Surface Drifters (Temp) - Global"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_surface_drifter.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/drifters_temp_global_ombg_statistics.nc"
+      - name: "Surface Drifters (Temp) - Atlantic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_surface_drifter.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/drifters_temp_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "Surface Drifters (Temp) - Pacific"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_surface_drifter.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/drifters_temp_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "Surface Drifters (Temp) - Indian"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_surface_drifter.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/drifters_temp_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "Surface Drifters (Temp) - Arctic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_surface_drifter.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/drifters_temp_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "Surface Drifters (Temp) - Southern"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_surface_drifter.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/drifters_temp_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "Argo Profiles Temp (0-10m) - Global"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_temp_0_10m_global_ombg_statistics.nc"
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Temp (0-10m) - Atlantic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_temp_0_10m_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Temp (0-10m) - Pacific"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_temp_0_10m_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Temp (0-10m) - Indian"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_temp_0_10m_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Temp (0-10m) - Arctic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_temp_0_10m_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Temp (0-10m) - Southern"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_temp_0_10m_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Temp (0-300m) - Global"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_temp_0_300m_global_ombg_statistics.nc"
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Temp (0-300m) - Atlantic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_temp_0_300m_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Temp (0-300m) - Pacific"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_temp_0_300m_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Temp (0-300m) - Indian"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_temp_0_300m_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Temp (0-300m) - Arctic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_temp_0_300m_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Temp (0-300m) - Southern"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_temp_0_300m_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Temp (300-2000m) - Global"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_temp_300_2000m_global_ombg_statistics.nc"
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Temp (300-2000m) - Atlantic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_temp_300_2000m_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Temp (300-2000m) - Pacific"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_temp_300_2000m_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Temp (300-2000m) - Indian"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_temp_300_2000m_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Temp (300-2000m) - Arctic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_temp_300_2000m_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Temp (300-2000m) - Southern"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_temp_profile_argo.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_temp_300_2000m_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Salt (0-10m) - Global"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_salt_0_10m_global_ombg_statistics.nc"
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Salt (0-10m) - Atlantic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_salt_0_10m_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Salt (0-10m) - Pacific"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_salt_0_10m_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Salt (0-10m) - Indian"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_salt_0_10m_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Salt (0-10m) - Arctic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_salt_0_10m_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Salt (0-10m) - Southern"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_salt_0_10m_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+        depth_min: 0
+        depth_max: 10
+      - name: "Argo Profiles Salt (0-300m) - Global"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_salt_0_300m_global_ombg_statistics.nc"
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Salt (0-300m) - Atlantic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_salt_0_300m_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Salt (0-300m) - Pacific"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_salt_0_300m_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Salt (0-300m) - Indian"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_salt_0_300m_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Salt (0-300m) - Arctic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_salt_0_300m_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Salt (0-300m) - Southern"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_salt_0_300m_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+        depth_min: 0
+        depth_max: 300
+      - name: "Argo Profiles Salt (300-2000m) - Global"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_salt_300_2000m_global_ombg_statistics.nc"
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Salt (300-2000m) - Atlantic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_salt_300_2000m_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Salt (300-2000m) - Pacific"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_salt_300_2000m_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Salt (300-2000m) - Indian"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_salt_300_2000m_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Salt (300-2000m) - Arctic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_salt_300_2000m_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+        depth_min: 300
+        depth_max: 2000
+      - name: "Argo Profiles Salt (300-2000m) - Southern"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/insitu_salt_profile_argo.nc"
+        varname: "salt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/argo_salt_300_2000m_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+        depth_min: 300
+        depth_max: 2000
+      - name: "ADT Jason-3 - Global"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_j3.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_j3_global_ombg_statistics.nc"
+      - name: "ADT Jason-3 - Atlantic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_j3.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_j3_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "ADT Jason-3 - Pacific"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_j3.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_j3_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "ADT Jason-3 - Indian"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_j3.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_j3_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "ADT Jason-3 - Arctic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_j3.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_j3_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "ADT Jason-3 - Southern"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_j3.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_j3_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "ADT Sentinel-3A - Global"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_sa.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_sa_global_ombg_statistics.nc"
+      - name: "ADT Sentinel-3A - Atlantic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_sa.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_sa_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "ADT Sentinel-3A - Pacific"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_sa.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_sa_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "ADT Sentinel-3A - Indian"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_sa.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_sa_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "ADT Sentinel-3A - Arctic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_sa.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_sa_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "ADT Sentinel-3A - Southern"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_sa.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_sa_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "ADT Sentinel-6A - Global"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_6a.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_6a_global_ombg_statistics.nc"
+      - name: "ADT Sentinel-6A - Atlantic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_6a.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_6a_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "ADT Sentinel-6A - Pacific"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_6a.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_6a_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "ADT Sentinel-6A - Indian"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_6a.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_6a_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "ADT Sentinel-6A - Arctic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_6a.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_6a_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "ADT Sentinel-6A - Southern"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_6a.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_6a_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "ADT SWOT - Global"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_sw.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_sw_global_ombg_statistics.nc"
+      - name: "ADT SWOT - Atlantic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_sw.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_sw_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "ADT SWOT - Pacific"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_sw.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_sw_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "ADT SWOT - Indian"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_sw.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_sw_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "ADT SWOT - Arctic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_sw.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_sw_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "ADT SWOT - Southern"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_sw.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_sw_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "ADT Cryosat-2 - Global"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_c2.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_c2_global_ombg_statistics.nc"
+      - name: "ADT Cryosat-2 - Atlantic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_c2.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_c2_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "ADT Cryosat-2 - Pacific"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_c2.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_c2_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "ADT Cryosat-2 - Indian"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_c2.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_c2_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "ADT Cryosat-2 - Arctic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_c2.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_c2_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "ADT Cryosat-2 - Southern"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/rads_adt_c2.nc"
+        varname: "adt"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/adt_c2_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+
+      - name: "SST AVHRR F MB - Global"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mb_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_avhrrf_mb_global_ombg_statistics.nc"
+      - name: "SST AVHRR F MB - Atlantic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mb_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_avhrrf_mb_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "SST AVHRR F MB - Pacific"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mb_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_avhrrf_mb_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "SST AVHRR F MB - Indian"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mb_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_avhrrf_mb_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "SST AVHRR F MB - Arctic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mb_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_avhrrf_mb_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "SST AVHRR F MB - Southern"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mb_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_avhrrf_mb_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "SST AVHRR F MC - Global"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mc_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_avhrrf_mc_global_ombg_statistics.nc"
+      - name: "SST AVHRR F MC - Atlantic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mc_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_avhrrf_mc_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "SST AVHRR F MC - Pacific"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mc_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_avhrrf_mc_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "SST AVHRR F MC - Indian"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mc_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_avhrrf_mc_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "SST AVHRR F MC - Arctic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mc_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_avhrrf_mc_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "SST AVHRR F MC - Southern"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_avhrrf_mc_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_avhrrf_mc_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "SST VIIRS N20 - Global"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n20_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_viirs_n20_global_ombg_statistics.nc"
+      - name: "SST VIIRS N20 - Atlantic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n20_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_viirs_n20_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "SST VIIRS N20 - Pacific"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n20_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_viirs_n20_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "SST VIIRS N20 - Indian"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n20_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_viirs_n20_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "SST VIIRS N20 - Arctic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n20_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_viirs_n20_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "SST VIIRS N20 - Southern"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n20_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_viirs_n20_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "SST VIIRS N21 - Global"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n21_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_viirs_n21_global_ombg_statistics.nc"
+      - name: "SST VIIRS N21 - Atlantic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n21_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_viirs_n21_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "SST VIIRS N21 - Pacific"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n21_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_viirs_n21_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "SST VIIRS N21 - Indian"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n21_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_viirs_n21_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "SST VIIRS N21 - Arctic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n21_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_viirs_n21_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "SST VIIRS N21 - Southern"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_viirs_n21_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_viirs_n21_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+      - name: "SST VIIRS NPP - Global"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_viirs_npp_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_viirs_npp_global_ombg_statistics.nc"
+      - name: "SST VIIRS NPP - Atlantic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_viirs_npp_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_viirs_npp_atlantic_ombg_statistics.nc"
+        ocean_basins: [1]
+      - name: "SST VIIRS NPP - Pacific"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_viirs_npp_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_viirs_npp_pacific_ombg_statistics.nc"
+        ocean_basins: [2]
+      - name: "SST VIIRS NPP - Indian"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_viirs_npp_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_viirs_npp_indian_ombg_statistics.nc"
+        ocean_basins: [3]
+      - name: "SST VIIRS NPP - Arctic"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_viirs_npp_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_viirs_npp_arctic_ombg_statistics.nc"
+        ocean_basins: [4]
+      - name: "SST VIIRS NPP - Southern"
+        ioda_data_path: "./cp4.03-parallel-hybrid/gdas.20251022/*/analysis/ocean/diags/sst_viirs_npp_l3u.nc"
+        varname: "temp"
+        geovar_group: "ombg"
+        time_interval: 21600
+        ice_edge_stats: false
+        stats_output: "./real-time-cp4-03/sst_viirs_npp_southern_ombg_statistics.nc"
+        ocean_basins: [5]
+
+output_dir: "./real-time"
+title: "Observation Statistics"
+
+# Template variables that can be customized:
+# - output_base_dir: Base directory for plots (default: './real-time')
+# - config_title: Title for the configuration (default: auto-generated)
+# - date_wildcard: Date pattern for data paths (default: '2025*', supports YYYYMMDD with wildcards)
+#
+# This template automatically generates observation spaces for:
+# - All in-situ platforms across all ocean basins (Global, Atlantic, Pacific, Indian, Arctic, Southern):
+#   * Surface Drifters (Temperature)
+#   * Argo Profiles Temperature in 3 depth bins: [0-10m], [0-300m], [300-2000m]
+#   * Argo Profiles Salinity in 3 depth bins: [0-10m], [0-300m], [300-2000m]
+#   * Altimeter ADT observations: Jason-3, Sentinel-3A, Sentinel-6A, SWOT, Cryosat-2
+# - All SST satellite platforms across all ocean basins (Global, Atlantic, Pacific, Indian, Arctic, Southern)
+#
+# Each observation space is configured with basin-specific filtering where applicable:
+# - Basin codes: 1=Atlantic, 2=Pacific, 3=Indian, 4=Arctic, 5=Southern
+# - Global observations have no basin filtering (ocean_basins parameter omitted)
+#
+# Usage examples:
+# 1. Generate with default settings: python generate_config.py -o config.yaml
+# 2. Custom output directory: python generate_config.py -o config.yaml --output-dir './my_analysis'
+# 3. Custom title: python generate_config.py -o config.yaml --title 'My Marine Analysis'
+# 4. Different date pattern: python generate_config.py -o config.yaml --date-wildcard '2024*'
