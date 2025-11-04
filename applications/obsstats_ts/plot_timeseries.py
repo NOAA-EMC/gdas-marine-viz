@@ -24,9 +24,23 @@ from glob import glob
 # Add the obsstats_maps directory to the path for importing plt_diags_maps
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'obsstats_maps'))
 # Performance optimization: Use cached loader for massive speedup (5-50x)
-from fast_loader import load_ioda_diags, IODAData, save_statistics_to_netcdf
+from fast_loader import load_ioda_diags, IODAData, save_statistics_to_netcdf as _original_save_statistics_to_netcdf
 
 
+def save_statistics_to_netcdf(filename, *args, **kwargs):
+    """
+    Wrapper for save_statistics_to_netcdf that ensures output directory exists.
+    """
+    if filename:
+        # Use absolute path to handle relative paths properly
+        abs_filename = os.path.abspath(filename)
+        output_dir = os.path.dirname(abs_filename)
+
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+            print(f"✅ Created output directory: {output_dir}")
+
+    return _original_save_statistics_to_netcdf(filename, *args, **kwargs)
 def process_observation_spaces_sequentially(obs_configs, exp_name=None):
     """
     Process multiple observation spaces sequentially.
@@ -341,8 +355,13 @@ def plot_timeseries_single(data, output_file=None, title=None):
 
 def plot_timeseries(observation_spaces_data, output_dir=None, title_prefix=None):
     """Create separate 3-panel timeseries plots for each observation space."""
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    if output_dir:
+        abs_output_dir = os.path.abspath(output_dir)
+        if not os.path.exists(abs_output_dir):
+            os.makedirs(abs_output_dir, exist_ok=True)
+            print(f"✅ Created plot output directory: {abs_output_dir}")
+        else:
+            print(f"📁 Plot output directory exists: {abs_output_dir}")
 
     for data in observation_spaces_data:
         obs_space_name = data['experiment_id']
@@ -352,7 +371,8 @@ def plot_timeseries(observation_spaces_data, output_dir=None, title_prefix=None)
             # Create a safe filename from the observation space name
             safe_name = "".join(c for c in obs_space_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
             safe_name = safe_name.replace(' ', '_')
-            output_file = os.path.join(output_dir, f"{safe_name}_timeseries.png")
+            abs_output_dir = os.path.abspath(output_dir)
+            output_file = os.path.join(abs_output_dir, f"{safe_name}_timeseries.png")
         else:
             output_file = None
 
@@ -423,8 +443,13 @@ def plot_timeseries_multi_experiment(experiments_data, output_dir=None, title_pr
         output_dir: Directory to save plots
         title_prefix: Prefix for plot titles
     """
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    if output_dir:
+        abs_output_dir = os.path.abspath(output_dir)
+        if not os.path.exists(abs_output_dir):
+            os.makedirs(abs_output_dir, exist_ok=True)
+            print(f"✅ Created multi-experiment plot output directory: {abs_output_dir}")
+        else:
+            print(f"📁 Multi-experiment plot output directory exists: {abs_output_dir}")
 
     # Validate that observation spaces are comparable across experiments
     validated_obs_spaces = validate_comparable_obs_spaces(experiments_data)
@@ -500,7 +525,8 @@ def plot_timeseries_multi_experiment(experiments_data, output_dir=None, title_pr
         if output_dir:
             safe_name = "".join(c for c in obs_space_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
             safe_name = safe_name.replace(' ', '_')
-            output_file = os.path.join(output_dir, f"{safe_name}_comparison.png")
+            abs_output_dir = os.path.abspath(output_dir)
+            output_file = os.path.join(abs_output_dir, f"{safe_name}_comparison.png")
             plt.savefig(output_file, dpi=150, bbox_inches='tight')
             print(f"Multi-experiment comparison plot saved to: {output_file}")
         else:
@@ -521,6 +547,10 @@ def process_observation_space(obs_config, exp_name=None):
     time_interval = obs_config.get('time_interval', 3600)
     ice_edge_stats = obs_config.get('ice_edge_stats', False)
     depth_bins = obs_config.get('depth_bins')
+    # Handle legacy depth_min/depth_max format for backward compatibility
+    if not depth_bins and 'depth_min' in obs_config and 'depth_max' in obs_config:
+        depth_bins = [[obs_config['depth_min'], obs_config['depth_max']]]
+
     ocean_basins = obs_config.get('ocean_basins')
     force_regenerate = obs_config.get('force_regenerate', False)  # Option to force full regeneration
 
@@ -548,6 +578,13 @@ def process_observation_space(obs_config, exp_name=None):
             # Generate a default filename
             safe_name = "".join(c for c in obs_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
             stats_output = f"{safe_name}_{varname}_statistics.nc"
+
+        # Ensure output directory exists for statistics files
+        if stats_output:
+            stats_output_dir = os.path.dirname(os.path.abspath(stats_output))
+            if stats_output_dir and not os.path.exists(stats_output_dir):
+                os.makedirs(stats_output_dir, exist_ok=True)
+                print(f"✅ Created output directory: {stats_output_dir}")
 
         # Try to load existing statistics file first (check both obs_file and stats_output)
         stats_file_to_load = obs_file or stats_output
@@ -1055,6 +1092,51 @@ def generate_statistics_from_ioda_periods(data_path, varname, missing_periods, g
         return None
 
 
+def create_directories_from_config(config):
+    """Create all necessary directories from the parsed configuration."""
+    directories = set()
+
+    # Add output directory
+    output_dir = config.get('output_dir', './timeseries_plots')
+    directories.add(output_dir)
+
+    # Extract directories from observation spaces
+    if 'experiments' in config and isinstance(config['experiments'], dict):
+        # Multi-experiment format
+        for exp_config in config['experiments'].values():
+            obs_spaces = exp_config.get('observation_spaces', [])
+            for obs_space in obs_spaces:
+                stats_output = obs_space.get('stats_output')
+                if stats_output:
+                    stats_dir = os.path.dirname(stats_output)
+                    if stats_dir and stats_dir != '.':
+                        directories.add(stats_dir)
+    else:
+        # Single experiment format
+        obs_spaces = config.get('observation_spaces', config.get('experiments', []))
+        for obs_space in obs_spaces:
+            stats_output = obs_space.get('stats_output')
+            if stats_output:
+                stats_dir = os.path.dirname(stats_output)
+                if stats_dir and stats_dir != '.':
+                    directories.add(stats_dir)
+
+    # Create directories
+    created_count = 0
+    for directory in sorted(directories):
+        if directory:
+            abs_dir = os.path.abspath(directory)
+            if not os.path.exists(abs_dir):
+                os.makedirs(abs_dir, exist_ok=True)
+                print(f"✅ Created directory: {abs_dir}")
+                created_count += 1
+            else:
+                print(f"📁 Directory exists: {abs_dir}")
+
+    if created_count > 0:
+        print(f"🎉 Created {created_count} new directories")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Plot timeseries statistics for different observation spaces in an experiment (optimized with file caching)',
@@ -1118,6 +1200,9 @@ Notes:
     # Load configuration
     with open(args.config_file, 'r') as f:
         config = yaml.safe_load(f)
+
+    # Create necessary directories from config
+    create_directories_from_config(config)
 
     # Check if this is a multi-experiment configuration
     if 'experiments' in config and isinstance(config['experiments'], dict):
