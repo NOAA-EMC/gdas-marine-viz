@@ -105,10 +105,10 @@ def parse_timeseries_filename(filename):
         variable = 'SST'
     elif platform_part.startswith('ADT_'):
         variable = 'ADT'
-    elif (platform_part.startswith('AMSR2_') or
-          'ICEC' in platform_part.upper() or
-          'Ice_Concentration' in platform_part or
-          platform_part.lower().startswith('amsr2')):
+    elif (platform_part.startswith('AMSR2_')
+          or 'ICEC' in platform_part.upper()
+          or 'Ice_Concentration' in platform_part
+          or platform_part.lower().startswith('amsr2')):
         variable = 'ICEC'
     else:
         variable = 'Temperature'  # Default assumption
@@ -185,8 +185,8 @@ def get_unique_platforms(files_data):
         elif 'SST' in platform:
             return (3, platform)
         # Put ICEC/AMSR2 platforms after SST
-        elif ('AMSR2' in platform or 'ICEC' in platform.upper() or
-              'Ice Concentration' in platform or 'amsr2' in platform.lower()):
+        elif ('AMSR2' in platform or 'ICEC' in platform.upper()
+              or 'Ice Concentration' in platform or 'amsr2' in platform.lower()):
             return (4, platform)
         else:
             return (5, platform)

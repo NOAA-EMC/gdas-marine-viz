@@ -274,7 +274,7 @@ def load_ioda_diags(netcdf_file, var_name_short, geovar_group='ObsValue'):
         depth = depth[valid_mask]
         ocean_basin = ocean_basin[valid_mask]
 
-    except Exception as e:
+    except Exception:
         # Catch any error that occurs during array processing
         ds.close()
         empty_data = IODAData()

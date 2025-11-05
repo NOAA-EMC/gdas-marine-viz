@@ -145,7 +145,7 @@ Examples:
     success = generate_config(args.template, args.output, **template_vars)
 
     if success:
-        print(f"\nTo use this configuration:")
+        print("\nTo use this configuration:")
         print(f"  python plot_timeseries.py {args.output}")
     else:
         print("\nConfiguration generation failed!")

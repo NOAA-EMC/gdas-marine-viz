@@ -24,7 +24,7 @@ from glob import glob
 # Add the obsstats_maps directory to the path for importing plt_diags_maps
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'obsstats_maps'))
 # Performance optimization: Use cached loader for massive speedup (5-50x)
-from fast_loader import load_ioda_diags, IODAData, save_statistics_to_netcdf as _original_save_statistics_to_netcdf
+from fast_loader import load_ioda_diags, IODAData, save_statistics_to_netcdf as _original_save_statistics_to_netcdf  # noqa: E402
 
 
 def save_statistics_to_netcdf(filename, *args, **kwargs):
@@ -41,6 +41,8 @@ def save_statistics_to_netcdf(filename, *args, **kwargs):
             print(f"✅ Created output directory: {output_dir}")
 
     return _original_save_statistics_to_netcdf(filename, *args, **kwargs)
+
+
 def process_observation_spaces_sequentially(obs_spaces_config, exp_name=None):
     """
     Process observation spaces sequentially with progress tracking.
@@ -151,8 +153,21 @@ def append_statistics_to_netcdf(filename, new_times, new_means, new_stds, new_n_
         except (ValueError, TypeError) as e:
             if "truth value of an array" in str(e) or "could not broadcast" in str(e) or "cannot concatenate" in str(e):
                 print(f"Warning: Array concatenation issue, shapes may be incompatible: {e}")
-                print(f"  Existing data shapes - mean: {np.asarray(existing_data['mean']).shape}, std: {np.asarray(existing_data['std']).shape}, n_obs: {np.asarray(existing_data['n_obs']).shape}")
-                print(f"  New data shapes - mean: {np.asarray(new_means).shape}, std: {np.asarray(new_stds).shape}, n_obs: {np.asarray(new_n_obs).shape}")
+                existing_mean_shape = np.asarray(existing_data['mean']).shape
+                existing_std_shape = np.asarray(existing_data['std']).shape
+                existing_n_shape = np.asarray(existing_data['n_obs']).shape
+                new_mean_shape = np.asarray(new_means).shape
+                new_std_shape = np.asarray(new_stds).shape
+                new_n_shape = np.asarray(new_n_obs).shape
+
+                print(
+                    "  Existing data shapes - mean: %s, std: %s, n_obs: %s"
+                    % (existing_mean_shape, existing_std_shape, existing_n_shape)
+                )
+                print(
+                    "  New data shapes - mean: %s, std: %s, n_obs: %s"
+                    % (new_mean_shape, new_std_shape, new_n_shape)
+                )
                 # Fall back to just saving new data (overwrite mode)
                 save_statistics_to_netcdf(filename, new_times, new_means, new_stds, new_n_obs,
                                           varname, experiment_id, new_ice_edge_means,
@@ -300,6 +315,7 @@ def format_basin_info(ocean_basins):
     else:
         return "Global"  # If all or most basins, assume global
 
+
 def validate_comparable_obs_spaces(experiments_data):
     """Group observation spaces by name for plotting."""
     obs_space_groups = {}
@@ -342,7 +358,6 @@ def plot_timeseries_multi_experiment(experiments_data, output_dir=None, title_pr
 
         variable_name = None
         plot_variable = None
-        basin_info = None
 
         for i, config_data in enumerate(configs):
             exp_name = config_data['experiment']
@@ -370,23 +385,19 @@ def plot_timeseries_multi_experiment(experiments_data, output_dir=None, title_pr
             if variable_name is None:
                 variable_name = data['variable']
                 plot_variable = data.get('geovar_group', variable_name)
-                basin_info = format_basin_info(data.get('ocean_basins'))
 
         # Set labels and titles
         ax1.set_ylabel(f"Mean {plot_variable} ({variable_name})", fontsize=12)
         ax1.grid(True, alpha=0.3)
-        #ax1.set_title(f"{obs_space_name} - Mean {plot_variable}", fontsize=10)
         ax1.legend(fontsize=10)
 
         ax2.set_ylabel(f"Std {plot_variable} ({variable_name})", fontsize=12)
         ax2.grid(True, alpha=0.3)
-        #ax2.set_title(f"{obs_space_name} - Standard Deviation {plot_variable}", fontsize=10)
         ax2.legend(fontsize=10)
 
         ax3.set_ylabel("Observation Count", fontsize=12)
         ax3.set_xlabel("Time", fontsize=12)
         ax3.grid(True, alpha=0.3)
-        #ax3.set_title(f"{obs_space_name} - Observation Count", fontsize=10)
         ax3.legend(fontsize=10)
 
         # Format x-axis
@@ -654,7 +665,7 @@ def generate_statistics_from_ioda(data_path, varname, geovar_group='ObsValue',
 
     # Check if we have any data
     if min_time is None or max_time is None:
-        print(f"WARNING: No observations found in IODA files. All files may be empty or filtered out.")
+        print("WARNING: No observations found in IODA files. All files may be empty or filtered out.")
         return None
 
     current_time = min_time
@@ -841,7 +852,7 @@ def generate_statistics_from_ioda_periods(data_path, varname, missing_periods, g
 
     # Check if we have any data
     if min_time is None or max_time is None:
-        print(f"WARNING: No observations found in IODA files. All files may be empty or filtered out.")
+        print("WARNING: No observations found in IODA files. All files may be empty or filtered out.")
         return None
 
     # Print information about depth and ocean basin data availability
@@ -1057,7 +1068,10 @@ def process_observation_space_groups(grouped_obs_spaces, output_dir, title, enab
 
             # Memory management for large configs
             if i % 10 == 0:
-                print(f"    Progress: {processed_count}/{total_groups} groups completed ({100*processed_count/total_groups:.1f}%)")
+                print(
+                    f"    Progress: {processed_count}/{total_groups} groups completed "
+                    f"({100*processed_count/total_groups:.1f}%)"
+                )
 
         except Exception as e:
             print(f"ERROR processing group {i}: {e}")
@@ -1154,9 +1168,11 @@ Notes:
             # Process observation spaces sequentially
             processed_data = process_observation_spaces_sequentially(obs_spaces_config, exp_name)
             # Convert to format expected by multi-experiment plotting
-            observation_spaces_data = [(obs_spaces_config[i], data)
-                                     for i, data in enumerate(processed_data)
-                                     if data is not None]
+            observation_spaces_data = [
+                (obs_spaces_config[i], data)
+                for i, data in enumerate(processed_data)
+                if data is not None
+            ]
 
             if observation_spaces_data:
                 experiments_data[exp_name] = observation_spaces_data
@@ -1169,46 +1185,8 @@ Notes:
         if not args.skip_plots and experiments_data:
             plot_timeseries_multi_experiment(experiments_data, output_dir, title_prefix)
 
-            # Also create individual plots for each experiment using multi-experiment function
-            #print(f"\n🎯 Creating individual plots for each experiment...")
-            #for exp_name, obs_space_data in experiments_data.items():
-            #    print(f"📊 Creating individual plots for experiment: {exp_name}")
-            #    # Create single-experiment data structure for multi-experiment function
-            #    single_exp_data = {exp_name: obs_space_data}
-            #    plot_timeseries_multi_experiment(single_exp_data, output_dir, f"{title_prefix} - {exp_name}" if title_prefix else exp_name)
-
-#    else:
-#        # Single experiment format (backward compatibility)
-#        # Support both 'observation_spaces' (new) and 'experiments' (legacy) keys
-#        obs_spaces_config = config.get('observation_spaces', config.get('experiments', []))
-#
-#        if not obs_spaces_config:
-#            print("❌ No observation spaces found in configuration")
-#            return
-#
-#        # Process observation spaces sequentially for best performance
-#        observation_spaces_data = process_observation_spaces_sequentially(obs_spaces_config)
-#
-#        if not observation_spaces_data:
-#            print("Error: No observation space data loaded successfully")
-#            return
-#
-#        # Get output settings - now using output_dir instead of single output_file
-#        output_dir = config.get('output_dir', './timeseries_plots')
-#        title_prefix = config.get('title')
-#
-#        # Skip plotting if requested
-#        if args.skip_plots:
-#            print(f"\n🚫 Skipping plot generation (--skip-plots flag enabled)")
-#            print(f"✅ Statistics processing complete for {len(observation_spaces_data)} observation spaces")
-#        else:
-#            # Create plots using multi-experiment function (single-experiment case)
-#            # Convert to multi-experiment format
-#            single_exp_name = title_prefix or "Single Experiment"
-#            single_exp_data = {single_exp_name: [({"name": data["obs_space_name"]}, data) for data in observation_spaces_data]}
-#            plot_timeseries_multi_experiment(single_exp_data, output_dir, title_prefix)
-
     print("Processing complete.")
+
 
 if __name__ == "__main__":
     main()

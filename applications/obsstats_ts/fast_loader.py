@@ -17,18 +17,25 @@ import sys
 import os
 import time
 import threading
+import importlib
 
-# Add path to access plt_diags_maps
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'obsstats_maps'))
+# Try to import plt_diags_maps normally; if unavailable, add the local obsstats_maps
+# directory to sys.path and retry.
+try:
+    plt_diags_maps = importlib.import_module('plt_diags_maps')
+except ImportError:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'obsstats_maps'))
+    plt_diags_maps = importlib.import_module('plt_diags_maps')
 
-# Import the original function and classes
-from plt_diags_maps import load_ioda_diags as _original_load_ioda_diags
-from plt_diags_maps import IODAData, save_statistics_to_netcdf
+_original_load_ioda_diags = plt_diags_maps.load_ioda_diags
+IODAData = plt_diags_maps.IODAData
+save_statistics_to_netcdf = plt_diags_maps.save_statistics_to_netcdf
 
 # Global cache for loaded IODA data with thread safety
 _CACHE = {}
 _STATS = {'hits': 0, 'misses': 0}
 _CACHE_LOCK = threading.Lock()  # Thread safety for cache operations
+
 
 def load_ioda_diags(netcdf_file, var_name_short, geovar_group='ObsValue'):
     """
@@ -70,6 +77,7 @@ def load_ioda_diags(netcdf_file, var_name_short, geovar_group='ObsValue'):
 
     return data
 
+
 def get_cache_stats():
     """Get current cache performance statistics (thread-safe)."""
     with _CACHE_LOCK:
@@ -84,10 +92,11 @@ def get_cache_stats():
             'total_calls': total
         }
 
+
 def print_cache_stats():
     """Print cache performance statistics."""
     stats = get_cache_stats()
-    print(f"\n📊 CACHE PERFORMANCE STATS")
+    print("\n📊 CACHE PERFORMANCE STATS")
     print(f"   • Files cached: {stats['cached_files']}")
     print(f"   • Cache hits: {stats['hits']}")
     print(f"   • Cache misses: {stats['misses']}")
@@ -98,6 +107,7 @@ def print_cache_stats():
         speedup = (stats['hits'] + stats['misses']) / stats['misses'] if stats['misses'] > 0 else 1
         print(f"   • Estimated speedup: {speedup:.1f}x")
 
+
 def clear_cache():
     """Clear the cache - useful between experiments (thread-safe)."""
     global _CACHE, _STATS, _CACHE_LOCK
@@ -105,6 +115,7 @@ def clear_cache():
         _CACHE.clear()
         _STATS = {'hits': 0, 'misses': 0}
     print("🗑️  Cache cleared")
+
 
 # Export everything the original module exports
 __all__ = ['load_ioda_diags', 'IODAData', 'save_statistics_to_netcdf',
