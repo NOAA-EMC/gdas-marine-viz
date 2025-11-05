@@ -41,40 +41,40 @@ def save_statistics_to_netcdf(filename, *args, **kwargs):
             print(f"✅ Created output directory: {output_dir}")
 
     return _original_save_statistics_to_netcdf(filename, *args, **kwargs)
-def process_observation_spaces_sequentially(obs_configs, exp_name=None):
+def process_observation_spaces_sequentially(obs_spaces_config, exp_name=None):
     """
-    Process multiple observation spaces sequentially.
-
-    Args:
-        obs_configs: List of observation space configurations
-        exp_name: Experiment name
-
-    Returns:
-        List of processed data
+    Process observation spaces sequentially with progress tracking.
+    For multi-experiment compatibility, this processes individual observation spaces
+    and returns data that can be grouped later.
     """
-    print(f"\n🚀 SEQUENTIAL PROCESSING")
-    print(f"   • Observation spaces: {len(obs_configs)}")
-    print(f"   • Using optimized file caching for maximum performance")
+    total_spaces = len(obs_spaces_config)
+    print(f"Processing {total_spaces} observation spaces...")
 
-    results = []
+    processed_data = []
+    processed_count = 0
 
-    for i, obs_config in enumerate(obs_configs, 1):
-        obs_name = obs_config.get('name', 'Unknown')
-        print(f"🔄 [{i}/{len(obs_configs)}] Processing: {obs_name}")
-
+    for i, obs_config in enumerate(obs_spaces_config, 1):
         try:
-            result = process_observation_space(obs_config, exp_name)
-            if result:
-                results.append(result)
-                print(f"✅ [{i}/{len(obs_configs)}] Completed: {obs_name}")
-            else:
-                print(f"❌ [{i}/{len(obs_configs)}] Failed: {obs_name}")
+            # Progress indicator for large configs
+            obs_name = obs_config.get('name', f"Space {i}")
+            print(f"[{i:3d}/{total_spaces}] Processing: {obs_name}")
+
+            # Process individual observation space
+            data = process_observation_space(obs_config, exp_name)
+            processed_data.append(data)
+            processed_count += 1
+
+            # Memory management for large configs
+            if i % 20 == 0:
+                print(f"    Progress: {processed_count}/{total_spaces} spaces completed ({100*processed_count/total_spaces:.1f}%)")
 
         except Exception as e:
-            print(f"❌ [{i}/{len(obs_configs)}] Error processing {obs_name}: {e}")
+            print(f"ERROR processing space {i}: {e}")
+            processed_data.append(None)
+            continue
 
-    print(f"✅ Sequential processing complete: {len(results)}/{len(obs_configs)} successful")
-    return results
+    print(f"Completed processing: {processed_count}/{total_spaces} spaces successful")
+    return processed_data
 
 
 def load_statistics_file(filename):
@@ -300,139 +300,22 @@ def format_basin_info(ocean_basins):
     else:
         return "Global"  # If all or most basins, assume global
 
-
-def plot_timeseries_single(data, output_file=None, title=None):
-    """Create 3-panel timeseries plot for a single observation space."""
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
-
-    times = data['times']
-    obs_space_name = data['experiment_id']
-
-    # Use geovar_group for labeling what's actually being plotted
-    plot_variable = data.get('geovar_group', data['variable'])
-
-    # Use consistent color for all panels
-    color = 'blue'
-
-    # Plot mean
-    ax1.plot(times, data['mean'], color=color, marker='o', markersize=3, linewidth=1.5)
-    ax1.set_ylabel(f"Mean {plot_variable} ({data['variable']})", fontsize=12)
-    ax1.grid(True, alpha=0.3)
-    #ax1.set_title(f"{obs_space_name} - Mean {plot_variable}", fontsize=10)
-
-    # Plot standard deviation
-    ax2.plot(times, data['std'], color=color, marker='s', markersize=3, linewidth=1.5)
-    ax2.set_ylabel(f"Std {plot_variable} ({data['variable']})", fontsize=12)
-    ax2.grid(True, alpha=0.3)
-    #ax2.set_title(f"{obs_space_name} - Standard Deviation {plot_variable}", fontsize=10)
-
-    # Plot observation count
-    ax3.plot(times, data['n_obs'], color=color, marker='^', markersize=3, linewidth=1.5)
-    ax3.set_ylabel("Observation Count", fontsize=12)
-    ax3.set_xlabel("Time", fontsize=12)
-    ax3.grid(True, alpha=0.3)
-    #ax3.set_title(f"{obs_space_name} - Observation Count", fontsize=10)
-
-    # Format x-axis
-    fig.autofmt_xdate()
-
-    # Add overall title with basin information
-    basin_info = format_basin_info(data.get('ocean_basins'))
-
-    fig.suptitle(f"{obs_space_name} - {basin_info}", fontsize=14, fontweight='bold')
-
-    plt.tight_layout()
-
-    # Save or show
-    if output_file:
-        plt.savefig(output_file, dpi=150, bbox_inches='tight')
-        print(f"Timeseries plot saved to: {output_file}")
-    else:
-        plt.show()
-
-    plt.close()
-
-
-def plot_timeseries(observation_spaces_data, output_dir=None, title_prefix=None):
-    """Create separate 3-panel timeseries plots for each observation space."""
-    if output_dir:
-        abs_output_dir = os.path.abspath(output_dir)
-        if not os.path.exists(abs_output_dir):
-            os.makedirs(abs_output_dir, exist_ok=True)
-            print(f"✅ Created plot output directory: {abs_output_dir}")
-        else:
-            print(f"📁 Plot output directory exists: {abs_output_dir}")
-
-    for data in observation_spaces_data:
-        obs_space_name = data['experiment_id']
-
-        # Generate output filename for this observation space
-        if output_dir:
-            # Create a safe filename from the observation space name
-            safe_name = "".join(c for c in obs_space_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
-            safe_name = safe_name.replace(' ', '_')
-            abs_output_dir = os.path.abspath(output_dir)
-            output_file = os.path.join(abs_output_dir, f"{safe_name}_timeseries.png")
-        else:
-            output_file = None
-
-        # Create individual plot
-        plot_timeseries_single(data, output_file, title_prefix)
-
-
 def validate_comparable_obs_spaces(experiments_data):
-    """Validate that observation spaces across experiments are comparable.
-
-    Returns dict of validated observation spaces with experiment data.
-    """
-    # Group observation spaces by name
+    """Group observation spaces by name for plotting."""
     obs_space_groups = {}
 
     for exp_name, obs_spaces in experiments_data.items():
         for obs_space_config, data in obs_spaces:
             obs_space_name = obs_space_config['name']
-
             if obs_space_name not in obs_space_groups:
                 obs_space_groups[obs_space_name] = []
-
             obs_space_groups[obs_space_name].append({
                 'experiment': exp_name,
                 'config': obs_space_config,
                 'data': data
             })
 
-    validated_groups = {}
-
-    for obs_space_name, configs in obs_space_groups.items():
-        if len(configs) < 2:
-            print(f"Warning: Observation space '{obs_space_name}' only found in one experiment, skipping comparison")
-            continue
-
-        # Check if configurations are identical except for ioda_data_path and stats_output
-        reference_config = configs[0]['config'].copy()
-        reference_config.pop('ioda_data_path', None)
-        reference_config.pop('stats_output', None)
-
-        all_compatible = True
-        for config_data in configs[1:]:
-            test_config = config_data['config'].copy()
-            test_config.pop('ioda_data_path', None)
-            test_config.pop('stats_output', None)
-
-            if reference_config != test_config:
-                print(f"Warning: Observation space '{obs_space_name}' has incompatible configurations:")
-                print(f"  Reference: {reference_config}")
-                print(f"  Experiment {config_data['experiment']}: {test_config}")
-                all_compatible = False
-                break
-
-        if all_compatible:
-            validated_groups[obs_space_name] = configs
-            print(f"✓ Observation space '{obs_space_name}' validated across {len(configs)} experiments")
-        else:
-            print(f"✗ Skipping observation space '{obs_space_name}' due to incompatible configurations")
-
-    return validated_groups
+    return obs_space_groups
 
 
 def plot_timeseries_multi_experiment(experiments_data, output_dir=None, title_prefix=None):
@@ -447,16 +330,9 @@ def plot_timeseries_multi_experiment(experiments_data, output_dir=None, title_pr
         abs_output_dir = os.path.abspath(output_dir)
         if not os.path.exists(abs_output_dir):
             os.makedirs(abs_output_dir, exist_ok=True)
-            print(f"✅ Created multi-experiment plot output directory: {abs_output_dir}")
-        else:
-            print(f"📁 Multi-experiment plot output directory exists: {abs_output_dir}")
 
-    # Validate that observation spaces are comparable across experiments
+    # Group observation spaces by name for plotting
     validated_obs_spaces = validate_comparable_obs_spaces(experiments_data)
-
-    if not validated_obs_spaces:
-        print("Error: No comparable observation spaces found across experiments")
-        return
 
     # Create comparison plots for each validated observation space
     colors = plt.cm.Set1(np.linspace(0, 1, len(experiments_data)))
@@ -528,7 +404,6 @@ def plot_timeseries_multi_experiment(experiments_data, output_dir=None, title_pr
             abs_output_dir = os.path.abspath(output_dir)
             output_file = os.path.join(abs_output_dir, f"{safe_name}_comparison.png")
             plt.savefig(output_file, dpi=150, bbox_inches='tight')
-            print(f"Multi-experiment comparison plot saved to: {output_file}")
         else:
             plt.show()
 
@@ -1137,6 +1012,61 @@ def create_directories_from_config(config):
         print(f"🎉 Created {created_count} new directories")
 
 
+def process_observation_space_groups(grouped_obs_spaces, output_dir, title, enable_plotting=True, skip_plots=False):
+    """
+    Process each group of comparable observation spaces sequentially.
+    This is used for batch processing and multi-experiment plotting.
+    """
+    total_groups = len(grouped_obs_spaces)
+    print(f"Processing {total_groups} observation space groups...")
+
+    all_plot_files = []
+    processed_count = 0
+
+    for i, group in enumerate(grouped_obs_spaces, 1):
+        try:
+            # Progress indicator for large configs
+            obs_name = group[0]['name'] if group else f"Group {i}"
+            print(f"[{i:3d}/{total_groups}] Processing group: {obs_name}")
+
+            if skip_plots:
+                # Just process statistics, no plotting
+                for obs_config in group:
+                    process_observation_space(obs_config)
+                processed_count += 1
+            elif enable_plotting:
+                # Process the group with multi-experiment plotting
+                experiments_data = {}
+
+                # Group by experiment for this observation space
+                for obs_config in group:
+                    exp_name = obs_config.get('experiment_name', 'Unknown')
+                    if exp_name not in experiments_data:
+                        experiments_data[exp_name] = []
+
+                    data = process_observation_space(obs_config, exp_name)
+                    if data:
+                        experiments_data[exp_name].append((obs_config, data))
+
+                # Create multi-experiment plot for this observation space
+                if experiments_data:
+                    plot_files = plot_timeseries_multi_experiment(experiments_data, output_dir, f"{title} - {obs_name}")
+                    all_plot_files.extend(plot_files or [])
+
+                processed_count += 1
+
+            # Memory management for large configs
+            if i % 10 == 0:
+                print(f"    Progress: {processed_count}/{total_groups} groups completed ({100*processed_count/total_groups:.1f}%)")
+
+        except Exception as e:
+            print(f"ERROR processing group {i}: {e}")
+            continue
+
+    print(f"Completed processing: {processed_count}/{total_groups} groups successful")
+    return all_plot_files
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Plot timeseries statistics for different observation spaces in an experiment (optimized with file caching)',
@@ -1144,6 +1074,7 @@ def main():
         epilog='''
 Examples:
   python plot_timeseries.py config.yaml
+  python plot_timeseries.py config.yaml --skip-plots  # Process statistics only, no plots
   python plot_timeseries.py --help
 
 Config YAML file can use either format:
@@ -1194,6 +1125,8 @@ Notes:
 
     parser.add_argument('config_file',
                         help='YAML configuration file containing experiment files')
+    parser.add_argument('--skip-plots', action='store_true',
+                        help='Skip plot generation, only process statistics files')
 
     args = parser.parse_args()
 
@@ -1228,48 +1161,54 @@ Notes:
             if observation_spaces_data:
                 experiments_data[exp_name] = observation_spaces_data
 
-        if not experiments_data:
-            print("Error: No experiment data loaded successfully")
-            return
-
         # Get output settings
         output_dir = config.get('output_dir', './timeseries_plots')
         title_prefix = config.get('title')
 
-        # Create multi-experiment comparison plots only
-        plot_timeseries_multi_experiment(experiments_data, output_dir, title_prefix)
+        # Skip plotting if requested
+        if not args.skip_plots and experiments_data:
+            plot_timeseries_multi_experiment(experiments_data, output_dir, title_prefix)
 
-    else:
-        # Single experiment format (backward compatibility)
-        # Support both 'observation_spaces' (new) and 'experiments' (legacy) keys
-        obs_spaces_config = config.get('observation_spaces', config.get('experiments', []))
+            # Also create individual plots for each experiment using multi-experiment function
+            #print(f"\n🎯 Creating individual plots for each experiment...")
+            #for exp_name, obs_space_data in experiments_data.items():
+            #    print(f"📊 Creating individual plots for experiment: {exp_name}")
+            #    # Create single-experiment data structure for multi-experiment function
+            #    single_exp_data = {exp_name: obs_space_data}
+            #    plot_timeseries_multi_experiment(single_exp_data, output_dir, f"{title_prefix} - {exp_name}" if title_prefix else exp_name)
 
-        if not obs_spaces_config:
-            print("❌ No observation spaces found in configuration")
-            return
+#    else:
+#        # Single experiment format (backward compatibility)
+#        # Support both 'observation_spaces' (new) and 'experiments' (legacy) keys
+#        obs_spaces_config = config.get('observation_spaces', config.get('experiments', []))
+#
+#        if not obs_spaces_config:
+#            print("❌ No observation spaces found in configuration")
+#            return
+#
+#        # Process observation spaces sequentially for best performance
+#        observation_spaces_data = process_observation_spaces_sequentially(obs_spaces_config)
+#
+#        if not observation_spaces_data:
+#            print("Error: No observation space data loaded successfully")
+#            return
+#
+#        # Get output settings - now using output_dir instead of single output_file
+#        output_dir = config.get('output_dir', './timeseries_plots')
+#        title_prefix = config.get('title')
+#
+#        # Skip plotting if requested
+#        if args.skip_plots:
+#            print(f"\n🚫 Skipping plot generation (--skip-plots flag enabled)")
+#            print(f"✅ Statistics processing complete for {len(observation_spaces_data)} observation spaces")
+#        else:
+#            # Create plots using multi-experiment function (single-experiment case)
+#            # Convert to multi-experiment format
+#            single_exp_name = title_prefix or "Single Experiment"
+#            single_exp_data = {single_exp_name: [({"name": data["obs_space_name"]}, data) for data in observation_spaces_data]}
+#            plot_timeseries_multi_experiment(single_exp_data, output_dir, title_prefix)
 
-        # Process observation spaces sequentially for best performance
-        observation_spaces_data = process_observation_spaces_sequentially(obs_spaces_config)
-
-        if not observation_spaces_data:
-            print("Error: No observation space data loaded successfully")
-            return
-
-        # Get output settings - now using output_dir instead of single output_file
-        output_dir = config.get('output_dir', './timeseries_plots')
-        title_prefix = config.get('title')
-
-        # Create separate plots for each observation space
-        plot_timeseries(observation_spaces_data, output_dir, title_prefix)
-
-    # Report cache performance at the end
-    print("\n📊 PERFORMANCE SUMMARY")
-    print("=" * 25)
-    try:
-        from fast_loader import print_cache_stats
-        print_cache_stats()
-    except ImportError:
-        print("📈 Caching: fast_loader not available")
+    print("Processing complete.")
 
 if __name__ == "__main__":
     main()

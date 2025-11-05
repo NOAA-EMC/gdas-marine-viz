@@ -8,9 +8,14 @@
 
 source /scratch3/NCEPDEV/da/Guillaume.Vernieres/venvs/gdas-marine-viz/bin/activate
 
-# iterate one day at a time (override START_DATE and END_DATE if desired)
-START_DATE=${START_DATE:-20250921}
-END_DATE=${END_DATE:-20250922}
+# set END_DATE to today (can be overridden by env var END_DATE)
+END_DATE=${END_DATE:-$(date +%Y%m%d)}
+
+# number of days before END_DATE for START_DATE (can be overridden by env var N_DAYS)
+N_DAYS=${N_DAYS:-2}
+
+# compute START_DATE N_DAYS before END_DATE (can be overridden by env var START_DATE)
+START_DATE=${START_DATE:-$(date -d "$END_DATE -${N_DAYS} days" +%Y%m%d)}
 
 current="$START_DATE"
 while [ "$current" -le "$END_DATE" ]; do
@@ -21,3 +26,4 @@ while [ "$current" -le "$END_DATE" ]; do
 done
 ./plot_timeseries.py full_config.yaml
 ./generate_timeseries_index.py ./stats-comparisons --config full_config.yaml
+tar cvf stats-comparisons.tar ./stats-comparisons

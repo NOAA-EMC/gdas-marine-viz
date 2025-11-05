@@ -164,6 +164,23 @@
     }
 ] %}
 
+{% set icec_platforms = [
+    {
+        'name': 'AMSR2 Ice Concentration North',
+        'file_pattern': 'icec_amsr2_north.nc',
+        'safe_name': 'amsr2_icec_north',
+        'varname': 'icec',
+        'geovar_group': 'ombg'
+    },
+    {
+        'name': 'AMSR2 Ice Concentration South',
+        'file_pattern': 'icec_amsr2_south.nc',
+        'safe_name': 'amsr2_icec_south',
+        'varname': 'icec',
+        'geovar_group': 'ombg'
+    }
+] %}
+
 {% set ocean_basins = [
     {'name': 'Global', 'codes': None, 'suffix': 'global'},
     {'name': 'Atlantic', 'codes': [1], 'suffix': 'atlantic'},
@@ -220,6 +237,21 @@ experiments:
 {% endif %}
 {% endfor %}
 {% endfor %}
+
+{% for platform in icec_platforms %}
+{% for basin in ocean_basins %}
+      - name: "{{ platform.name }} - {{ basin.name }}"
+        ioda_data_path: "./{{ exp.data_dir }}/gdas.{{ date_pattern }}/*/analysis/ocean/diags/{{ platform.file_pattern }}"
+        varname: "{{ platform.varname }}"
+        geovar_group: "{{ platform.geovar_group }}"
+        time_interval: {{ default_config.time_interval }}
+        ice_edge_stats: {{ default_config.ice_edge_stats | lower }}
+        stats_output: "./{{ exp.output_dir }}/{{ platform.safe_name }}_{{ basin.suffix }}_{{ platform.geovar_group }}_statistics.nc"
+{% if basin.codes %}
+        ocean_basins: {{ basin.codes }}
+{% endif %}
+{% endfor %}
+{% endfor %}
 {% endfor %}
 
 output_dir: "{{ output_base_dir | default('./stats-comparisons') }}"
@@ -237,6 +269,9 @@ title: "{{ config_title | default('Observation Statistics') }}"
 #   * Argo Profiles Salinity in 3 depth bins: [0-10m], [0-300m], [300-2000m]
 #   * Altimeter ADT observations: Jason-3, Sentinel-3A, Sentinel-6A, SWOT, Cryosat-2
 # - All SST satellite platforms across all ocean basins (Global, Atlantic, Pacific, Indian, Arctic, Southern)
+# - All ice concentration platforms across all ocean basins (Global, Atlantic, Pacific, Indian, Arctic, Southern):
+#   * AMSR2 Ice Concentration North
+#   * AMSR2 Ice Concentration South
 #
 # Each observation space is configured with basin-specific filtering where applicable:
 # - Basin codes: 1=Atlantic, 2=Pacific, 3=Indian, 4=Arctic, 5=Southern
