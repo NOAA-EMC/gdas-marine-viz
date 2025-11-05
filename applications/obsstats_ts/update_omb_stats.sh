@@ -8,6 +8,21 @@
 
 source /scratch3/NCEPDEV/da/Guillaume.Vernieres/venvs/gdas-marine-viz/bin/activate
 
+# Link experiments
+# Link experiments (skip if the links already exist)
+for src in \
+    "/scratch4/NCEPDEV/global/John.Steffen/hpss_arch/cp4.02d-parallel-obsforge" \
+    "/scratch3/NCEPDEV/global/Katherine.Lukens/expts/hpss/retrotestgfs16_17_realtime" \
+    "/scratch4/NCEPDEV/global/John.Steffen/hpss_arch/cp4.03-parallel-hybrid"
+do
+    name=$(basename "$src")
+    if [ -e "$name" ] || [ -L "$name" ]; then
+        echo "Skipping $name: already exists"
+    else
+        ln -s "$src" .
+    fi
+done
+
 # set END_DATE to today (can be overridden by env var END_DATE)
 END_DATE=${END_DATE:-$(date +%Y%m%d)}
 
