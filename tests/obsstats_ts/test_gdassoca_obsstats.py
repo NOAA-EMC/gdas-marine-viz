@@ -1,7 +1,7 @@
 import pytest
 import pandas as pd
 from unittest.mock import patch
-from applications.obsstats_ts.csv_ts/gdassoca_obsstats import get_inst, ObsStats
+from applications.obsstats_ts.csv_ts.gdassoca_obsstats import get_inst, ObsStats
 
 
 @pytest.fixture
