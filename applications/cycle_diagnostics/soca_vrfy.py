@@ -10,8 +10,6 @@ if not os.environ.get("DISPLAY"):
     matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import xarray as xr
-import cartopy
-cartopy.config['data_dir'] = os.getenv('cartopy_fix')
 import cartopy.crs as ccrs
 import numpy as np
 

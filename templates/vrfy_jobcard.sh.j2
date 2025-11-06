@@ -27,6 +27,9 @@ module load {{ eva_module | default("EVA/hera") }}
 # Set PYTHONPATH using HOMEgdasmv
 export PYTHONPATH="${HOMEgdasmv}:$PYTHONPATH"
 
+# on Ursa
+export CARTOPY_DATA_DIR=/scratch3/NCEPDEV/da/common/cartopy
+
 # Set flags to control plotConfig in the Python script
 export PLOT_ENSEMBLE_B={{ plot_ensemble_b | default("OFF") }}
 export PLOT_PARAMETRIC_B={{ plot_parametric_b | default("ON") }}
@@ -38,7 +41,6 @@ export EVA_PLOTS={{ eva_plots | default("OFF") }}
 export EVA_LETKF_PLOTS={{ eva_letkf_plots | default("OFF") }}
 export COMPUTE_LETKF_OBSSTATS={{ compute_letkf_obsstats | default("OFF") }}
 export NENS={{ nens | default(0) }}
-export cartopy_fix={{ cartopy_fix }}
 
 # Define and export the environment variables
 export cyc="{{ cyc }}"

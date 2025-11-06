@@ -68,7 +68,8 @@ else:
 # Check if the file exists, then decide on grid_file
 if not os.path.exists(grid_file):
     # TODO: Make this work on other HPC
-    grid_file = '/scratch1/NCEPDEV/da/common/validation/vrfy/gdas.t21z.ocngrid.nc'
+    #grid_file = '/scratch1/NCEPDEV/da/common/validation/vrfy/gdas.t21z.ocngrid.nc'
+    grid_file = '/scratch3/NCEPDEV/da/common/validation/vrfy/gdas.t21z.ocngrid.nc'
 
 # for eva
 diagdir = os.path.join(comout, 'diags')
@@ -415,7 +416,10 @@ if eva_plots:
 
     # it would be better to refrence the dirs explicitly with the comout path
     # but eva doesn't allow for specifying output directories
-    os.chdir(os.path.join(vrfyout, 'vrfy'))
+    vrfydir = os.path.join(vrfyout, 'vrfy')
+    if not os.path.exists(vrfydir):
+        os.makedirs(vrfydir)
+    os.chdir(vrfydir)
     if not os.path.exists('preevayamls'):
         os.makedirs('preevayamls')
     if not os.path.exists('evayamls'):

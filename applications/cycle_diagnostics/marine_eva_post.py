@@ -67,10 +67,18 @@ def marine_eva_post(inputyaml, outputdir, diagdir):
                         ds = Dataset(dataset['filenames'][0], mode="r")
                         vardata = ds.groups["MetaData"].variables["dateTime"]
                         # Find min/max dateTime (in seconds from epoch)
-                        tmin = np.nanmin(vardata)
-                        tmax = np.nanmax(vardata)
-                        var_min = int(np.round(tmin, decimals=-1))
-                        var_max = int(np.round(tmax, decimals=-1))
+                        # TODO(AFE): improve error handling below, which deals with empty
+                        # vardata
+                        try:
+                            tmin = np.nanmin(vardata)
+                            var_min = int(np.round(tmin, decimals=-1))
+                        except ValueError:
+                            var_min =  np.nan
+                        try:
+                            tmax = np.nanmax(vardata)
+                            var_max = int(np.round(tmax, decimals=-1))
+                        except ValueError:
+                            var_max =  np.nan
                         # Close diag file
                         ds.close()
                         break
