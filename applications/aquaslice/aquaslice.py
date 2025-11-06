@@ -13,6 +13,8 @@ def plot_vertical_profile(ix, iy, lon2d, lat2d, data, depth, ax_profile):
     print(f"iy, ix: {iy}, {ix}")
     profile = data[:, iy, ix]
     depth_profile = depth[:, iy, ix]
+    print(f"profile: f{profile}")
+    print(f"depth: f{depth_profile}")
     ax_profile.plot(profile, depth_profile, '-o')
     ax_profile.invert_yaxis()
     ax_profile.set_xlabel('Field Stddev')
@@ -254,6 +256,10 @@ def main(hfile, errfile, varname, is_variance, gridfile, obsfile=None, level=0):
             iy_grid, ix_grid = find_nearest_2d(lon2d.values, lat2d.values, obs['lon'][iobs], obs['lat'][iobs])
             model_profile = data[:, iy_grid, ix_grid]
             model_depth = depth[:, iy_grid, ix_grid]
+
+            print(f"model: f{model_profile}")
+            print(f"depth: f{model_depth}")
+
             ax_model.plot(model_profile, model_depth, '.-', color='tab:purple', label='Model')
             ax_model.invert_yaxis()
             ax_model.set_xlabel('Model Value')
@@ -262,6 +268,20 @@ def main(hfile, errfile, varname, is_variance, gridfile, obsfile=None, level=0):
             ax_model.grid()
 
             # Obs value subplot
+            np.set_printoptions(threshold=np.inf)
+
+            # Print analysis values (temperatures)
+            T_ana_valid = obs_value - oman_values
+            z_ana_valid = depth_values
+            print("T_ana_valid = [")
+            print(", ".join(f"{v:.6f}" for v in T_ana_valid))
+            print("]")
+
+            # Print analysis depths
+            print("z_ana_valid = [")
+            print(", ".join(f"{v:.1f}" for v in z_ana_valid))
+            print("]")
+
             ax_obsval.plot(obs_value, depth_values, '.-', color='tab:blue', label='Obs Value')
             ax_obsval.plot(obs_value - ombg_values, depth_values, '.-', color='tab:green', label='Background')
             ax_obsval.plot(obs_value - oman_values, depth_values, '.-', color='tab:red', label='Analysis')
