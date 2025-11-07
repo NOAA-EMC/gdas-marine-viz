@@ -13,7 +13,8 @@ source /scratch3/NCEPDEV/da/Guillaume.Vernieres/venvs/gdas-marine-viz/bin/activa
 for src in \
     "/scratch4/NCEPDEV/global/John.Steffen/hpss_arch/cp4.02d-parallel-obsforge" \
     "/scratch3/NCEPDEV/global/Katherine.Lukens/expts/hpss/retrotestgfs16_17_realtime" \
-    "/scratch4/NCEPDEV/global/John.Steffen/hpss_arch/cp4.03-parallel-hybrid"
+    "/scratch4/NCEPDEV/global/John.Steffen/hpss_arch/cp4.03-parallel-hybrid" \
+    "/scratch4/NCEPDEV/global/John.Steffen/hpss_arch/cp4.03-parallel-3dvar"
 do
     name=$(basename "$src")
     if [ -e "$name" ] || [ -L "$name" ]; then
