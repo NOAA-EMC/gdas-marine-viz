@@ -1,0 +1,290 @@
+# Configuration for depth and ocean basin binning of in-situ observations
+# Generated from Jinja2 template - simplifies multi-experiment setup
+# Basin codes: 1=Atlantic, 2=Pacific, 3=Indian, 4=Arctic, 5=Southern
+
+{# Macro to ensure directory exists - creates directories during template generation #}
+{% macro ensure_dir_exists(path) -%}
+  {%- set ns = namespace() -%}
+  {%- set ns.result = "" -%}
+  {%- if path.startswith('./') -%}
+    {%- set ns.result = path[2:] -%}
+  {%- else -%}
+    {%- set ns.result = path -%}
+  {%- endif -%}
+  {%- if ns.result and ns.result != "." -%}
+    {{- "import os; os.makedirs('" + ns.result + "', exist_ok=True)" -}}
+  {%- endif -%}
+{%- endmacro %}
+
+{% set experiments = [
+    {
+        'name': 'cp4.02d',
+        'description': '3DVAR, C384/0.25°',
+        'data_dir': 'cp4.02d-parallel-obsforge',
+        'output_dir': 'stats-cp4.02d'
+    },
+    {
+        'name': 'cp4.03.3dvar',
+        'description': '3DVAR, C384/0.25° with early cycle',
+        'data_dir': 'cp4.03-parallel-3dvar',
+        'output_dir': 'stats-cp4.02d'
+    },
+    {
+        'name': 'GFSv17 RT 16-17',
+        'description': 'Real time GFSv17 test (16-17)',
+        'data_dir': 'retrotestgfs16_17_realtime',
+        'output_dir': 'stats-gfs17-16-17'
+    },
+    {
+        'name': 'cp4.03.hyb',
+        'description': 'Parallel hybrid, C384/0.25°',
+        'data_dir': 'cp4.03-parallel-hybrid',
+        'output_dir': 'stats-cp4.03.hyb'
+    }
+] %}
+
+{% set sst_platforms = [
+    {
+        'name': 'SST AVHRR F MB',
+        'file_pattern': 'sst_avhrrf_mb_l3u.nc',
+        'safe_name': 'sst_avhrrf_mb'
+    },
+    {
+        'name': 'SST AVHRR F MC',
+        'file_pattern': 'sst_avhrrf_mc_l3u.nc',
+        'safe_name': 'sst_avhrrf_mc'
+    },
+    {
+        'name': 'SST VIIRS N20',
+        'file_pattern': 'sst_viirs_n20_l3u.nc',
+        'safe_name': 'sst_viirs_n20'
+    },
+    {
+        'name': 'SST VIIRS N21',
+        'file_pattern': 'sst_viirs_n21_l3u.nc',
+        'safe_name': 'sst_viirs_n21'
+    },
+    {
+        'name': 'SST VIIRS NPP',
+        'file_pattern': 'sst_viirs_npp_l3u.nc',
+        'safe_name': 'sst_viirs_npp'
+    }
+] %}
+
+{% set insitu_platforms = [
+    {
+        'name': 'Surface Drifters (Temp)',
+        'file_pattern': 'insitu_temp_surface_drifter.nc',
+        'safe_name': 'drifters_temp',
+        'varname': 'temp',
+        'geovar_group': 'ombg'
+    },
+    {
+        'name': 'Argo Profiles Temp (0-10m)',
+        'file_pattern': 'insitu_temp_profile_argo.nc',
+        'safe_name': 'argo_temp_0_10m',
+        'depth_min': 0,
+        'depth_max': 10,
+        'varname': 'temp',
+        'geovar_group': 'ombg'
+    },
+    {
+        'name': 'Argo Profiles Temp (0-300m)',
+        'file_pattern': 'insitu_temp_profile_argo.nc',
+        'safe_name': 'argo_temp_0_300m',
+        'depth_min': 0,
+        'depth_max': 300,
+        'varname': 'temp',
+        'geovar_group': 'ombg'
+    },
+    {
+        'name': 'Argo Profiles Temp (300-2000m)',
+        'file_pattern': 'insitu_temp_profile_argo.nc',
+        'safe_name': 'argo_temp_300_2000m',
+        'depth_min': 300,
+        'depth_max': 2000,
+        'varname': 'temp',
+        'geovar_group': 'ombg'
+    },
+    {
+        'name': 'Argo Profiles Salt (0-10m)',
+        'file_pattern': 'insitu_salt_profile_argo.nc',
+        'safe_name': 'argo_salt_0_10m',
+        'depth_min': 0,
+        'depth_max': 10,
+        'varname': 'salt',
+        'geovar_group': 'ombg'
+    },
+    {
+        'name': 'Argo Profiles Salt (0-300m)',
+        'file_pattern': 'insitu_salt_profile_argo.nc',
+        'safe_name': 'argo_salt_0_300m',
+        'depth_min': 0,
+        'depth_max': 300,
+        'varname': 'salt',
+        'geovar_group': 'ombg'
+    },
+    {
+        'name': 'Argo Profiles Salt (300-2000m)',
+        'file_pattern': 'insitu_salt_profile_argo.nc',
+        'safe_name': 'argo_salt_300_2000m',
+        'depth_min': 300,
+        'depth_max': 2000,
+        'varname': 'salt',
+        'geovar_group': 'ombg'
+    },
+    {
+        'name': 'ADT Jason-3',
+        'file_pattern': 'rads_adt_j3.nc',
+        'safe_name': 'adt_j3',
+        'varname': 'adt',
+        'geovar_group': 'ombg'
+    },
+    {
+        'name': 'ADT Sentinel-3A',
+        'file_pattern': 'rads_adt_sa.nc',
+        'safe_name': 'adt_sa',
+        'varname': 'adt',
+        'geovar_group': 'ombg'
+    },
+    {
+        'name': 'ADT Sentinel-6A',
+        'file_pattern': 'rads_adt_6a.nc',
+        'safe_name': 'adt_6a',
+        'varname': 'adt',
+        'geovar_group': 'ombg'
+    },
+    {
+        'name': 'ADT SWOT',
+        'file_pattern': 'rads_adt_sw.nc',
+        'safe_name': 'adt_sw',
+        'varname': 'adt',
+        'geovar_group': 'ombg'
+    },
+    {
+        'name': 'ADT Cryosat-2',
+        'file_pattern': 'rads_adt_c2.nc',
+        'safe_name': 'adt_c2',
+        'varname': 'adt',
+        'geovar_group': 'ombg'
+    }
+] %}
+
+{% set icec_platforms = [
+    {
+        'name': 'AMSR2 Ice Concentration North',
+        'file_pattern': 'icec_amsr2_north.nc',
+        'safe_name': 'amsr2_icec_north',
+        'varname': 'icec',
+        'geovar_group': 'ombg'
+    },
+    {
+        'name': 'AMSR2 Ice Concentration South',
+        'file_pattern': 'icec_amsr2_south.nc',
+        'safe_name': 'amsr2_icec_south',
+        'varname': 'icec',
+        'geovar_group': 'ombg'
+    }
+] %}
+
+{% set ocean_basins = [
+    {'name': 'Global', 'codes': None, 'suffix': 'global'},
+    {'name': 'Atlantic', 'codes': [1], 'suffix': 'atlantic'},
+    {'name': 'Pacific', 'codes': [2], 'suffix': 'pacific'},
+    {'name': 'Indian', 'codes': [3], 'suffix': 'indian'},
+    {'name': 'Arctic', 'codes': [4], 'suffix': 'arctic'},
+    {'name': 'Southern', 'codes': [5], 'suffix': 'southern'}
+] %}
+
+{% set default_config = {
+    'varname': 'temp',
+    'geovar_group': 'ombg',
+    'time_interval': 21600,
+    'ice_edge_stats': false
+} %}
+
+{% set date_pattern = date_wildcard | default('2025*') %}
+
+# NOTE: Directories will be created automatically by plot_timeseries.py
+
+experiments:
+{% for exp in experiments %}
+  "{{ exp.name }}":
+    observation_spaces:
+{% for platform in insitu_platforms %}
+{% for basin in ocean_basins %}
+      - name: "{{ platform.name }} - {{ basin.name }}"
+        ioda_data_path: "./{{ exp.data_dir }}/gdas.{{ date_pattern }}/*/analysis/ocean/diags/{{ platform.file_pattern }}"
+        varname: "{{ platform.varname | default(default_config.varname) }}"
+        geovar_group: "{{ platform.geovar_group | default(default_config.geovar_group) }}"
+        time_interval: {{ default_config.time_interval }}
+        ice_edge_stats: {{ default_config.ice_edge_stats | lower }}
+        stats_output: "./{{ exp.output_dir }}/{{ platform.safe_name }}_{{ basin.suffix }}_{{ platform.geovar_group | default(default_config.geovar_group) }}_statistics.nc"
+{% if basin.codes %}
+        ocean_basins: {{ basin.codes }}
+{% endif %}
+{% if platform.depth_min is defined and platform.depth_max is defined %}
+        depth_bins: [[{{ platform.depth_min }}, {{ platform.depth_max }}]]
+{% endif %}
+{% endfor %}
+{% endfor %}
+
+{% for platform in sst_platforms %}
+{% for basin in ocean_basins %}
+      - name: "{{ platform.name }} - {{ basin.name }}"
+        ioda_data_path: "./{{ exp.data_dir }}/gdas.{{ date_pattern }}/*/analysis/ocean/diags/{{ platform.file_pattern }}"
+        varname: "{{ default_config.varname }}"
+        geovar_group: "{{ default_config.geovar_group }}"
+        time_interval: {{ default_config.time_interval }}
+        ice_edge_stats: {{ default_config.ice_edge_stats | lower }}
+        stats_output: "./{{ exp.output_dir }}/{{ platform.safe_name }}_{{ basin.suffix }}_{{ default_config.geovar_group }}_statistics.nc"
+{% if basin.codes %}
+        ocean_basins: {{ basin.codes }}
+{% endif %}
+{% endfor %}
+{% endfor %}
+
+{% for platform in icec_platforms %}
+{% for basin in ocean_basins %}
+      - name: "{{ platform.name }} - {{ basin.name }}"
+        ioda_data_path: "./{{ exp.data_dir }}/gdas.{{ date_pattern }}/*/analysis/ocean/diags/{{ platform.file_pattern }}"
+        varname: "{{ platform.varname }}"
+        geovar_group: "{{ platform.geovar_group }}"
+        time_interval: {{ default_config.time_interval }}
+        ice_edge_stats: {{ default_config.ice_edge_stats | lower }}
+        stats_output: "./{{ exp.output_dir }}/{{ platform.safe_name }}_{{ basin.suffix }}_{{ platform.geovar_group }}_statistics.nc"
+{% if basin.codes %}
+        ocean_basins: {{ basin.codes }}
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% endfor %}
+
+output_dir: "{{ output_base_dir | default('./stats-comparisons') }}"
+title: "{{ config_title | default('Observation Statistics') }}"
+
+# Template variables that can be customized:
+# - output_base_dir: Base directory for plots (default: './real-time')
+# - config_title: Title for the configuration (default: auto-generated)
+# - date_wildcard: Date pattern for data paths (default: '2025*', supports YYYYMMDD with wildcards)
+#
+# This template automatically generates observation spaces for:
+# - All in-situ platforms across all ocean basins (Global, Atlantic, Pacific, Indian, Arctic, Southern):
+#   * Surface Drifters (Temperature)
+#   * Argo Profiles Temperature in 3 depth bins: [0-10m], [0-300m], [300-2000m]
+#   * Argo Profiles Salinity in 3 depth bins: [0-10m], [0-300m], [300-2000m]
+#   * Altimeter ADT observations: Jason-3, Sentinel-3A, Sentinel-6A, SWOT, Cryosat-2
+# - All SST satellite platforms across all ocean basins (Global, Atlantic, Pacific, Indian, Arctic, Southern)
+# - All ice concentration platforms across all ocean basins (Global, Atlantic, Pacific, Indian, Arctic, Southern):
+#   * AMSR2 Ice Concentration North
+#   * AMSR2 Ice Concentration South
+#
+# Each observation space is configured with basin-specific filtering where applicable:
+# - Basin codes: 1=Atlantic, 2=Pacific, 3=Indian, 4=Arctic, 5=Southern
+# - Global observations have no basin filtering (ocean_basins parameter omitted)
+#
+# Usage examples:
+# 1. Generate with default settings: python generate_config.py -o config.yaml
+# 2. Custom output directory: python generate_config.py -o config.yaml --output-dir './my_analysis'
+# 3. Custom title: python generate_config.py -o config.yaml --title 'My Marine Analysis'
+# 4. Different date pattern: python generate_config.py -o config.yaml --date-wildcard '2024*'

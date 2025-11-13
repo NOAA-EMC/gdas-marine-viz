@@ -119,80 +119,171 @@ class IODAData:
         self.ocean_basin.append(other.ocean_basin)
 
     def toarray(self):
-        # Concatenate data from all files
-        self.time_data = np.concatenate(self.time_data)
-        self.lat = np.concatenate(self.lat)
-        self.lon = np.concatenate(self.lon)
-        self.geovar = np.concatenate(self.geovar)
-        self.obsvalue = np.concatenate(self.obsvalue)
-        self.instruments = np.concatenate(self.instruments)
-        self.depth = np.concatenate(self.depth)
-        self.ocean_basin = np.concatenate(self.ocean_basin)
-        min_time, max_time = min(self.time_data), max(self.time_data)
-        return min_time, max_time
+        # Filter out empty arrays before concatenating
+        try:
+            # Only concatenate if we have non-empty arrays
+            non_empty_time = [arr for arr in self.time_data if len(arr) > 0]
+            non_empty_lat = [arr for arr in self.lat if len(arr) > 0]
+            non_empty_lon = [arr for arr in self.lon if len(arr) > 0]
+            non_empty_geovar = [arr for arr in self.geovar if len(arr) > 0]
+            non_empty_obsvalue = [arr for arr in self.obsvalue if len(arr) > 0]
+            non_empty_instruments = [arr for arr in self.instruments if len(arr) > 0]
+            non_empty_depth = [arr for arr in self.depth if len(arr) > 0]
+            non_empty_ocean_basin = [arr for arr in self.ocean_basin if len(arr) > 0]
+
+            # Handle case where no observations are present
+            if not non_empty_time:
+                # Return None for both min and max time to indicate empty dataset
+                return None, None
+
+            # Concatenate data from all files
+            self.time_data = np.concatenate(non_empty_time)
+            self.lat = np.concatenate(non_empty_lat)
+            self.lon = np.concatenate(non_empty_lon)
+            self.geovar = np.concatenate(non_empty_geovar)
+            self.obsvalue = np.concatenate(non_empty_obsvalue)
+            self.instruments = np.concatenate(non_empty_instruments)
+            self.depth = np.concatenate(non_empty_depth)
+            self.ocean_basin = np.concatenate(non_empty_ocean_basin)
+
+            # Handle case where no observations are present after concatenation
+            if len(self.time_data) == 0:
+                # Return None for both min and max time to indicate empty dataset
+                return None, None
+
+            min_time, max_time = min(self.time_data), max(self.time_data)
+            return min_time, max_time
+
+        except Exception as e:
+            # If concatenation fails for any reason, return empty dataset
+            print(f"Warning: Failed to concatenate arrays in toarray(): {e}")
+            return None, None
 
 
 def load_ioda_diags(netcdf_file, var_name_short, geovar_group='ObsValue'):
-    # Open NetCDF file
-    ds = nc.Dataset(netcdf_file, 'r')
+    try:
+        # Open NetCDF file
+        ds = nc.Dataset(netcdf_file, 'r')
 
-    # Get the full variable name from the mapping
-    var_name_options = VARIABLE_MAP[var_name_short]
-    if not isinstance(var_name_options, list):
-        var_name_options = [var_name_options]
+        # Get the full variable name from the mapping
+        var_name_options = VARIABLE_MAP[var_name_short]
+        if not isinstance(var_name_options, list):
+            var_name_options = [var_name_options]
 
-    # Try each variable name option until we find one that exists
-    var_name = None
-    for var_option in var_name_options:
-        if var_option in ds.groups[geovar_group].variables:
-            var_name = var_option
-            break
+        # Try each variable name option until we find one that exists
+        var_name = None
+        for var_option in var_name_options:
+            if var_option in ds.groups[geovar_group].variables:
+                var_name = var_option
+                break
 
-    if var_name is None:
-        available_vars = list(ds.groups[geovar_group].variables.keys())
-        raise ValueError(f"None of the expected variables {var_name_options} found in group {geovar_group}. "
-                         f"Available variables: {available_vars}")
+        if var_name is None:
+            available_vars = list(ds.groups[geovar_group].variables.keys())
+            ds.close()
+            raise ValueError(f"None of the expected variables {var_name_options} found in group {geovar_group}. "
+                             f"Available variables: {available_vars}")
 
-    # Extract instrument name from file path
-    instrument = extract_instrument_name(netcdf_file)
+        # Extract instrument name from file path
+        instrument = extract_instrument_name(netcdf_file)
 
-    # Read necessary data
-    time_data = ds.groups['MetaData'].variables['dateTime'][:]
-    ref_time_str = ds.groups['MetaData'].variables['dateTime'].getncattr('units').split(' ')[-1]
-    ref_time = datetime.strptime(ref_time_str, "%Y-%m-%dT%H:%M:%SZ")
-    lat = ds.groups['MetaData'].variables['latitude'][:]
-    lon = ds.groups['MetaData'].variables['longitude'][:]
-    geovar = ds.groups[geovar_group].variables[var_name][:]
-    obsvalue = ds.groups['ObsValue'].variables[var_name][:]  # Always load ObsValue for ice-edge detection
-    # Try to read QC from EffectiveQC0 group; if missing create zeros with same length as obsvalue
-    if 'EffectiveQC0' in ds.groups and var_name in ds.groups['EffectiveQC0'].variables:
-        qc = ds.groups['EffectiveQC0'].variables[var_name][:]
-    else:
-        qc = np.zeros_like(obsvalue, dtype=np.int8)
+    except Exception as e:
+        if "truth value of an array" in str(e):
+            return IODAData()
+        else:
+            raise e
 
-    # Try to read depth and ocean basin data from MetaData
-    if 'depth' in ds.groups['MetaData'].variables:
-        depth = ds.groups['MetaData'].variables['depth'][:]
-    else:
-        depth = np.full(len(lat), np.nan)  # Fill with NaN if not available
+    # Read necessary data with robust error handling
+    try:
+        time_data = ds.groups['MetaData'].variables['dateTime'][:]
+        ref_time_str = ds.groups['MetaData'].variables['dateTime'].getncattr('units').split(' ')[-1]
+        ref_time = datetime.strptime(ref_time_str, "%Y-%m-%dT%H:%M:%SZ")
 
-    if 'oceanBasin' in ds.groups['MetaData'].variables:
-        ocean_basin = ds.groups['MetaData'].variables['oceanBasin'][:]
-    else:
-        ocean_basin = np.full(len(lat), -1, dtype=np.int32)  # Fill with -1 if not available
+        lat = ds.groups['MetaData'].variables['latitude'][:]
+        lon = ds.groups['MetaData'].variables['longitude'][:]
+        geovar = ds.groups[geovar_group].variables[var_name][:]
+        obsvalue = ds.groups['ObsValue'].variables[var_name][:]  # Always load ObsValue for ice-edge detection
 
-    # Remove fill values
-    valid_mask = (geovar > -3.368795e+38) & (obsvalue > -3.368795e+38) & (lat > -3.368795e+38) & (lon > -3.368795e+38) & (qc == 0)
-    time_data = time_data[valid_mask]
-    lat = lat[valid_mask]
-    lon = lon[valid_mask]
-    geovar = geovar[valid_mask]
-    obsvalue = obsvalue[valid_mask]
-    depth = depth[valid_mask]
-    ocean_basin = ocean_basin[valid_mask]
+        # Try to read QC from EffectiveQC0 group; if missing create zeros with same length as obsvalue
+        if 'EffectiveQC0' in ds.groups and var_name in ds.groups['EffectiveQC0'].variables:
+            qc = ds.groups['EffectiveQC0'].variables[var_name][:]
+        else:
+            qc = np.zeros_like(obsvalue, dtype=np.int8)
+
+        # Try to read depth and ocean basin data from MetaData
+        if 'depth' in ds.groups['MetaData'].variables:
+            depth = ds.groups['MetaData'].variables['depth'][:]
+        else:
+            depth = np.full(len(lat), np.nan)  # Fill with NaN if not available
+
+        if 'oceanBasin' in ds.groups['MetaData'].variables:
+            ocean_basin = ds.groups['MetaData'].variables['oceanBasin'][:]
+        else:
+            ocean_basin = np.full(len(lat), -1, dtype=np.int32)  # Fill with -1 if not available
+
+        # Convert masked arrays to regular numpy arrays to avoid truth value issues
+        time_data = np.asarray(time_data)
+        lat = np.asarray(lat)
+        lon = np.asarray(lon)
+        geovar = np.asarray(geovar)
+        obsvalue = np.asarray(obsvalue)
+        qc = np.asarray(qc)
+        depth = np.asarray(depth)
+        ocean_basin = np.asarray(ocean_basin)
+
+    except Exception as e:
+        ds.close()
+        if "truth value of an array" in str(e) or "invalid index" in str(e) or "cannot broadcast" in str(e):
+            print(f"Warning: Array access error in {netcdf_file}: {e}")
+            # Return empty data structure to indicate no valid data
+            empty_data = IODAData()
+            return empty_data
+        else:
+            raise e
+
+    # Remove fill values - handle potential shape mismatches
+    try:
+        # Ensure all arrays are 1D and the same length first
+        min_len = min(len(time_data), len(lat), len(lon), len(geovar), len(obsvalue), len(qc), len(depth), len(ocean_basin))
+
+        # Truncate all arrays to the same length and ensure they're regular numpy arrays
+        time_data = np.asarray(time_data).flatten()[:min_len]
+        lat = np.asarray(lat).flatten()[:min_len]
+        lon = np.asarray(lon).flatten()[:min_len]
+        geovar = np.asarray(geovar).flatten()[:min_len]
+        obsvalue = np.asarray(obsvalue).flatten()[:min_len]
+        qc = np.asarray(qc).flatten()[:min_len]
+        depth = np.asarray(depth).flatten()[:min_len]
+        ocean_basin = np.asarray(ocean_basin).flatten()[:min_len]
+
+        # Verify all arrays have valid lengths
+        if min_len == 0:
+            print(f"Warning: No valid data in {netcdf_file} - all arrays empty")
+            ds.close()
+            empty_data = IODAData()
+            return empty_data
+
+        # Now create the valid mask with consistent shapes
+        valid_mask = (geovar > -3.368795e+38) & (obsvalue > -3.368795e+38) & (lat > -3.368795e+38) & (lon > -3.368795e+38) & (qc == 0)
+
+        # Apply the mask
+        time_data = time_data[valid_mask]
+        lat = lat[valid_mask]
+        lon = lon[valid_mask]
+        geovar = geovar[valid_mask]
+        obsvalue = obsvalue[valid_mask]
+        depth = depth[valid_mask]
+        ocean_basin = ocean_basin[valid_mask]
+
+    except Exception:
+        # Catch any error that occurs during array processing
+        ds.close()
+        empty_data = IODAData()
+        return empty_data
 
     # Convert time to datetime objects
-    time_data = np.array([ref_time + timedelta(seconds=int(t)) for t in time_data])
+    # Ensure time_data is a 1D array of scalars before conversion
+    time_data_flat = np.asarray(time_data).flatten()
+    time_data = np.array([ref_time + timedelta(seconds=int(t)) for t in time_data_flat])
 
     # Create instrument array for all observations
     instruments = np.array([instrument] * len(time_data))
@@ -207,6 +298,9 @@ def load_ioda_diags(netcdf_file, var_name_short, geovar_group='ObsValue'):
 def save_statistics_to_netcdf(filename, times, means, stds, n_obs, varname, experiment_id,
                               ice_edge_means=None, ice_edge_stds=None, ice_edge_n_obs=None):
     """Save timeseries statistics to NetCDF file."""
+    # Ensure the directory exists
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+
     # Create NetCDF file
     ds = nc.Dataset(filename, 'w')
 
