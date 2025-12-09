@@ -59,6 +59,7 @@ PREV_CYC_HOUR=$(echo $PREV_CYC | cut -d' ' -f2)
 
 # Define and export environment variables with paths
 export COM_OCEAN_ANALYSIS="${BASE_EXP_PATH}/gdas.{{ pdy }}/{{ cyc }}/analysis/ocean"
+export COM_ICE_ANALYSIS="${BASE_EXP_PATH}/gdas.{{ pdy }}/{{ cyc }}/analysis/ice"
 export COM_CONF="${BASE_EXP_PATH}/gdas.{{ pdy }}/{{ cyc }}/conf"
 export COM_ICE_HISTORY_PREV="${BASE_EXP_PATH}/gdas.${PREV_PDY}/${PREV_CYC_HOUR}/model/ice/history"
 export COM_OCEAN_HISTORY_PREV="${BASE_EXP_PATH}/gdas.${PREV_PDY}/${PREV_CYC_HOUR}/model/ocean/history"

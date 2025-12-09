@@ -8,6 +8,9 @@ import subprocess
 import glob
 
 comout = os.getenv('COM_OCEAN_ANALYSIS')
+com_ocean_analysis = os.getenv('COM_OCEAN_ANALYSIS')
+com_ice_analysis = os.getenv('COM_ICE_ANALYSIS')
+print("comout: ", comout)
 comconf = os.getenv('COM_CONF')
 # resolve the comout path since it may contain wild cards
 matching_paths = glob.glob(comout)
@@ -96,7 +99,8 @@ configs = []
 if plot_analysis:
     print('Plotting analysis')
     configs_ana = [plotConfig(grid_file=grid_file,
-                              data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.ocnana.nc'),
+                              #data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.ocnana.nc'),
+                              data_file=os.path.join(com_ocean_analysis, f'{RUN}.t' + cyc + 'z.jedi_analysis.a006.nc'),
                               variables_horiz={
                                   'ave_ssh': [-1.8, 1.3],
                                   'Temp': [-1.8, 34.0],
@@ -104,7 +108,8 @@ if plot_analysis:
                               colormap='nipy_spectral',
                               vrfyout=os.path.join(vrfyout, 'vrfy', 'ana')),   # ocean surface analysis
                    plotConfig(grid_file=grid_file,
-                              data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.iceana.nc'),
+                              #data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.iceana.nc'),
+                              data_file=os.path.join(com_ice_analysis, f'{RUN}.t' + cyc + 'z.jedi_analysis.a006.nc'),
                               variables_horiz={'aice_h': [0.0, 1.0],
                                                'hi_h': [0.0, 4.0],
                                                'hs_h': [0.0, 0.5]},
