@@ -81,17 +81,25 @@ def build_manifest():
                 top = 'vrfy_root'
                 obs = '_'
                 var = '_'
-            elif len(rel_parts) == 1:
-                top = rel_parts[0]
-                obs = '_'
-                var = '_'
-            elif len(rel_parts) == 2:
-                top, obs = rel_parts
-                var = '_'
             else:
                 top = rel_parts[0]
-                obs = rel_parts[1]
-                var = '/'.join(rel_parts[2:])
+                # Always treat vrfy/ana/... as obs 'analysis' and variable = remaining path
+                if top == 'ana':
+                    obs = 'analysis'
+                    if len(rel_parts) >= 2:
+                        var = '/'.join(rel_parts[1:])
+                    else:
+                        var = '_'
+                else:
+                    if len(rel_parts) == 1:
+                        obs = '_'
+                        var = '_'
+                    elif len(rel_parts) == 2:
+                        obs = rel_parts[1]
+                        var = '_'
+                    else:
+                        obs = rel_parts[1]
+                        var = '/'.join(rel_parts[2:])
             # set nested dicts
             manifest[cycle_key].setdefault(top, {}).setdefault(obs, {}).setdefault(var, [])
             for f in pngs:
