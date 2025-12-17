@@ -663,12 +663,11 @@ if __name__ == "__main__":
     reference = sys.argv[5]
     ocean_choice = sys.argv[6]
 
-    # Optional HPSS_root parameter
-    if len(sys.argv) >= 8:
-        HPSS_root = sys.argv[7]
+    # Optional HPSS_root parameter - use provided value or let function use its default
+    HPSS_root = sys.argv[7] if len(sys.argv) >= 8 else None
+    if HPSS_root is not None:
         plot_time_series_mae(yyyymmdd_s, yyyymmdd_e, outpath, var, reference, ocean_choice, HPSS_root)
     else:
-        # Use default HPSS_root
         plot_time_series_mae(yyyymmdd_s, yyyymmdd_e, outpath, var, reference, ocean_choice)
 # ##################################################################################################################
 # ##################################################################################################################
