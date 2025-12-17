@@ -55,15 +55,16 @@ def extract_last_dir(HPSS_root, hsi_output=None, result_file=None):
     # Run the command
     subprocess.run(cmd, check=True)
 
+    # Verify hsi created the output file
+    if not hsi_output.exists():
+        raise FileNotFoundError(f"{hsi_output} was not created by hsi")
+
     # Read the paths from the file written by hsi
     lines = [
         line.strip()
         for line in hsi_output.read_text().splitlines()
         if line.strip()
     ]
-
-    if not hsi_output.exists():
-        raise FileNotFoundError(f"{hsi_output} was not created by hsi")
 
     if not lines:
         raise RuntimeError(f"No paths found in {hsi_output}")
@@ -117,13 +118,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--hsi-output",
         type=str,
-        default="foo",
+        default=None,
         help="Path to temporary file for hsi output (default: foo)"
     )
     parser.add_argument(
         "--result-file",
         type=str,
-        default="last_dir.txt",
+        default=None,
         help="Path to file containing first cycle info (default: last_dir.txt)"
     )
 
