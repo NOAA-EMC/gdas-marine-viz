@@ -48,7 +48,7 @@ def extract_last_dir(HPSS_root, hsi_output=None, result_file=None):
 
     print(f"Parsed cycle datetime: {first_cycle} (UTC assumed)")
 
-    # Command to run (output goes to file "foo")
+    # Command to list directories in HPSS (output written to hsi_output file)
     cmd = [
         "hsi",
         "-O", str(hsi_output),
