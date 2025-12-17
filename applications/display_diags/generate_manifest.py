@@ -90,6 +90,13 @@ def build_manifest():
                         var = '/'.join(rel_parts[1:])
                     else:
                         var = '_'
+                 # Always treat vrfy/ana/... as obs 'analysis' and variable = remaining path
+                elif top == 'bkg':
+                    obs = 'background'
+                    if len(rel_parts) >= 2:
+                        var = '/'.join(rel_parts[1:])
+                    else:
+                        var = '_'
                 else:
                     if len(rel_parts) == 1:
                         obs = '_'
