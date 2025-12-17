@@ -29,6 +29,10 @@ def extract_last_dir(HPSS_root, hsi_output=None, result_file=None):
     # Convert HPSS_root to Path if string
     HPSS_dir = Path(HPSS_root)
 
+    # Verify result_file exists before reading
+    if not result_file.exists():
+        raise FileNotFoundError(f"{result_file} not found - this file should contain the first cycle information")
+
     with result_file.open("r", encoding="utf-8") as f:
         f.readline()  # Skip first line
         first_cycle_str = f.readline().strip()
