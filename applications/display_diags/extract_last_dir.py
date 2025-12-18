@@ -12,17 +12,17 @@ def extract_last_dir(HPSS_root, hsi_output=None, result_file=None):
 
     Args:
         HPSS_root: Root path in HPSS to search for cycle directories
-        hsi_output: Path to temporary file for hsi output (default: "foo")
-        result_file: Path to file containing first cycle info (default: "last_dir.txt")
+        hsi_output: Path to temporary file for hsi output (default: "hsi_ls_out.txt")
+        result_file: Path to file containing first cycle info (default: "cycles.txt")
     """
     # Set defaults for optional parameters
     if hsi_output is None:
-        hsi_output = Path("foo")
+        hsi_output = Path("hsi_ls_out.txt")
     else:
         hsi_output = Path(hsi_output)
 
     if result_file is None:
-        result_file = Path("last_dir.txt")
+        result_file = Path("cycles.txt")
     else:
         result_file = Path(result_file)
 
@@ -123,13 +123,13 @@ if __name__ == "__main__":
         "--hsi-output",
         type=str,
         default=None,
-        help="Path to temporary file for hsi output (default: foo)"
+        help="Path to temporary file for hsi output (default: hsi_ls_out.txt)"
     )
     parser.add_argument(
         "--result-file",
         type=str,
         default=None,
-        help="Path to file containing first cycle info (default: last_dir.txt)"
+        help="Path to file containing first cycle info (default: cycles.txt)"
     )
 
     args = parser.parse_args()
