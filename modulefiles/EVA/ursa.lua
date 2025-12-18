@@ -14,6 +14,9 @@ prepend_path("MODULEPATH", '/contrib/spack-stack/spack-stack-1.9.2/envs/ue-oneap
 -- load("python/3.10.13")
 -- load("python/3.11")
 -- load("proj/9.2.1")
+append_path("PYTHONPATH", "/scratch3/NCEPDEV/da/Andrew.Eichmann/global-workflow/develop/global-workflow/sorc/wxflow/src")
+append_path("PYTHONPATH", "/scratch3/NCEPDEV/da/Andrew.Eichmann/vrfy/gdas-marine-viz/applications")
+append_path("PYTHONPATH", "/scratch3/NCEPDEV/da/Andrew.Eichmann/vrfy/gdas-marine-viz")
 
 load("stack-oneapi/2024.2.1")
 load("stack-intel-oneapi-mpi/2021.13")

@@ -1,0 +1,14 @@
+local hpss root: /scratch3/NCEPDEV/da/Andrew.Eichmann/hpss
+experiments:
+  - pslot: cp4.03-parallel-hybrid
+    HPSS root: /NCEPDEV/emc-global/1year/john.steffen/WCOSS2/scratch/
+  - pslot: retrov17_01_realtime
+    HPSS root: /5year/NCEPDEV/emc-global/emc.glopara/WCOSS2/GFSv17
+  - pslot: retrov17_01_stream1a
+    HPSS root: /5year/NCEPDEV/emc-global/emc.glopara/GAEAC6/GFSv17/
+  - pslot: retrov17_01_stream2
+    HPSS root: /5year/NCEPDEV/emc-global/emc.glopara/WCOSS2/GFSv17/
+  - pslot: retrov17_01_stream3
+    HPSS root: /5year/NCEPDEV/emc-global/emc.glopara/WCOSS2/GFSv17/
+  - pslot: retrov17_01_stream4
+    HPSS root: /5year/NCEPDEV/emc-global/emc.glopara/GAEAC6/GFSv17/
