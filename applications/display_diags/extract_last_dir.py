@@ -1,92 +1,141 @@
 #!/usr/bin/env python3
 
+import argparse
 import subprocess
 from pathlib import Path
 from datetime import datetime, timedelta
 
-# Files
-hsi_output = Path("foo")
-result_file = Path("last_dir.txt")
-pslot = "cp4.03-parallel-hybrid"
-HPSS_root = Path("/NCEPDEV/emc-global/1year/john.steffen/WCOSS2/scratch")
-#HPSS_dir = Path(f"/NCEPDEV/emc-global/1year/john.steffen/WCOSS2/scratch/{pslot}")
-HPSS_dir = Path(f"/5year/NCEPDEV/emc-global/emc.glopara/WCOSS2/GFSv17/retrov17_01_realtime")
 
+def extract_last_dir(HPSS_root, hsi_output=None, result_file=None):
+    """
+    Extract and process cycle directories from HPSS archive.
 
-with result_file.open("r", encoding="utf-8") as f:
-    first_line = f.readline()
-    first_cycle_str = f.readline().strip()
+    Args:
+        HPSS_root: Root path in HPSS to search for cycle directories
+        hsi_output: Path to temporary file for hsi output (default: "foo")
+        result_file: Path to file containing first cycle info (default: "last_dir.txt")
+    """
+    # Set defaults for optional parameters
+    if hsi_output is None:
+        hsi_output = Path("foo")
+    else:
+        hsi_output = Path(hsi_output)
 
-# Validate
-if len(first_cycle_str) != 10 or not first_cycle_str.isdigit():
-    raise ValueError(
-        f"Invalid cycle string '{first_cycle_str}'; expected YYYYMMDDHH"
-    )
+    if result_file is None:
+        result_file = Path("last_dir.txt")
+    else:
+        result_file = Path(result_file)
 
-# Parse into datetime (UTC assumed)
-first_cycle = datetime.strptime(first_cycle_str, "%Y%m%d%H")
+    # Convert HPSS_root to Path if string
+    HPSS_dir = Path(HPSS_root)
 
-print(f"Parsed cycle datetime: {first_cycle} (UTC assumed)")
+    # Verify result_file exists before reading
+    if not result_file.exists():
+        raise FileNotFoundError(f"{result_file} not found - this file should contain the first cycle information")
 
-# Command to run (output goes to file "foo")
-cmd = [
-    "hsi",
-    "-O", str(hsi_output),
-    "ls", "-1",
-    HPSS_dir
-]
+    with result_file.open("r", encoding="utf-8") as f:
+        f.readline()  # Skip first line
+        first_cycle_str = f.readline().strip()
 
-# Run the command
-subprocess.run(cmd, check=True)
+    # Validate
+    if len(first_cycle_str) != 10 or not first_cycle_str.isdigit():
+        raise ValueError(
+            f"Invalid cycle string '{first_cycle_str}'; expected YYYYMMDDHH"
+        )
 
-# Read the paths from the file written by hsi
-lines = [
-    line.strip()
-    for line in hsi_output.read_text().splitlines()
-    if line.strip()
-]
+    # Parse into datetime (UTC assumed)
+    first_cycle = datetime.strptime(first_cycle_str, "%Y%m%d%H")
 
-if not hsi_output.exists():
-    raise FileNotFoundError(f"{hsi_output} was not created by hsi")
+    print(f"Parsed cycle datetime: {first_cycle} (UTC assumed)")
 
-if not lines:
-    raise RuntimeError(f"No paths found in {hsi_output}")
-
-# Take the last path
-last_path = lines[-1]
-
-# Extract deepest directory name
-last_cycle_str = Path(last_path.rstrip("/")).name
-
-# Validate
-if len(last_cycle_str) != 10 or not last_cycle_str.isdigit():
-    raise ValueError(
-        f"Invalid cycle string '{last_cycle_str}'; expected YYYYMMDDHH"
-    )
-
-# Parse into datetime (UTC assumed)
-last_cycle = datetime.strptime(last_cycle_str, "%Y%m%d%H")
-
-
-# Loop over cycles
-cycle = first_cycle
-while cycle <= last_cycle:
-    cycle_str = cycle.strftime("%Y%m%d%H")
-
-    print(f"Processing cycle {cycle_str} **********")
-
-    commands = [
-        ["htar", "-xf", f"{HPSS_dir}/{cycle_str}/gdasocean_analysis.tar"],
-        ["htar", "-xf", f"{HPSS_dir}/{cycle_str}/gdasocean.tar"],
-        ["htar", "-xf", f"{HPSS_dir}/{cycle_str}/gdasice.tar"],
+    # Command to list directories in HPSS (output written to hsi_output file)
+    cmd = [
+        "hsi",
+        "-O", str(hsi_output),
+        "ls", "-1",
+        str(HPSS_dir)
     ]
 
-    for cmd in commands:
-        subprocess.run(cmd, check=True)
+    # Run the command
+    subprocess.run(cmd, check=True)
 
-    cycle += timedelta(hours=6)
+    # Verify hsi created the output file
+    if not hsi_output.exists():
+        raise FileNotFoundError(f"{hsi_output} was not created by hsi")
+
+    # Read the paths from the file written by hsi
+    lines = [
+        line.strip()
+        for line in hsi_output.read_text().splitlines()
+        if line.strip()
+    ]
+
+    if not lines:
+        raise RuntimeError(f"No paths found in {hsi_output}")
+
+    # Take the last path
+    last_path = lines[-1]
+
+    # Extract deepest directory name
+    last_cycle_str = Path(last_path.rstrip("/")).name
+
+    # Validate
+    if len(last_cycle_str) != 10 or not last_cycle_str.isdigit():
+        raise ValueError(
+            f"Invalid cycle string '{last_cycle_str}'; expected YYYYMMDDHH"
+        )
+
+    # Parse into datetime (UTC assumed)
+    last_cycle = datetime.strptime(last_cycle_str, "%Y%m%d%H")
+
+    # Loop over cycles
+    cycle = first_cycle
+    while cycle <= last_cycle:
+        cycle_str = cycle.strftime("%Y%m%d%H")
+
+        print(f"Processing cycle {cycle_str} **********")
+
+        commands = [
+            ["htar", "-xf", f"{HPSS_dir}/{cycle_str}/gdasocean_analysis.tar"],
+            ["htar", "-xf", f"{HPSS_dir}/{cycle_str}/gdasocean.tar"],
+            ["htar", "-xf", f"{HPSS_dir}/{cycle_str}/gdasice.tar"],
+        ]
+
+        for cmd in commands:
+            subprocess.run(cmd, check=True)
+
+        cycle += timedelta(hours=6)
+
+    # Write result for later use
+    result_file.write_text(f"{first_cycle_str}\n{last_cycle_str}\n")
 
 
-# Write result for later use
-result_file.write_text(f"{first_cycle_str}\n{last_cycle_str}\n")
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Extract and process cycle directories from HPSS archive"
+    )
+    parser.add_argument(
+        "HPSS_root",
+        type=str,
+        help="Root path in HPSS to search for cycle directories"
+    )
+    parser.add_argument(
+        "--hsi-output",
+        type=str,
+        default=None,
+        help="Path to temporary file for hsi output (default: foo)"
+    )
+    parser.add_argument(
+        "--result-file",
+        type=str,
+        default=None,
+        help="Path to file containing first cycle info (default: last_dir.txt)"
+    )
 
+    args = parser.parse_args()
+
+    extract_last_dir(
+        HPSS_root=args.HPSS_root,
+        hsi_output=args.hsi_output,
+        result_file=args.result_file
+    )
