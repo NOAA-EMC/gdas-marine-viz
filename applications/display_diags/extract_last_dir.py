@@ -102,7 +102,12 @@ def extract_last_dir(HPSS_root, hsi_output=None, result_file=None):
         ]
 
         for cmd in commands:
-            subprocess.run(cmd, check=True)
+            try:
+                subprocess.run(cmd, check=True)
+            except subprocess.CalledProcessError as e:
+                print(f"Error while executing command: {cmd}. Error: {e}")
+                print("Breaking out of the loop without incrementing the cycle.")
+                return  # Exit the function early if the error occurs
 
         cycle += timedelta(hours=6)
 
