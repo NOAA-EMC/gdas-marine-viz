@@ -4,7 +4,6 @@ import xarray as xr
 import matplotlib.pyplot as plt
 import matplotlib.widgets as mwidgets
 from netCDF4 import Dataset
-import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import os
 
@@ -21,18 +20,8 @@ def plot_vertical_profile(ix, iy, lon2d, lat2d, data, depth, ax_profile, is_atmo
     print(f"profile: f{profile}")
     print(f"depth: f{depth_profile}")
 
-    if is_atmos:
-        # For atmosphere: plot normally without reversing or inverting
-        # Atmospheric data is stored with index 0 = top of atmosphere (low pressure)
-        # Matplotlib will plot index 0 at the bottom by default, so we need to invert
-        # to get low pressure (index 0) at the top
-        ax_profile.plot(profile, depth_profile, '-o')
-        ax_profile.invert_yaxis()  # Invert so low pressure (small values) at top
-    else:
-        # For ocean: plot normally and invert y-axis (depth increases downward)
-        ax_profile.plot(profile, depth_profile, '-o')
-        ax_profile.invert_yaxis()
-
+    ax_profile.plot(profile, depth_profile, '-o')
+    ax_profile.invert_yaxis()
     ax_profile.set_xlabel('Field Value')
     ylabel = 'Pressure (hPa)' if is_atmos else 'Depth (m)'
     ax_profile.set_ylabel(ylabel)
@@ -588,8 +577,8 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
 
                 # Plot observations on the same axes (will be behind model profile)
                 ax_profile.plot(obs_values, obs_depths, 'o-', color='red',
-                               label=f'Obs (lon={obs["lon"][iobs]:.2f}, lat={obs["lat"][iobs]:.2f})',
-                               markersize=6, linewidth=2, alpha=0.5)
+                                label=f'Obs (lon={obs["lon"][iobs]:.2f}, lat={obs["lat"][iobs]:.2f})',
+                                markersize=6, linewidth=2, alpha=0.5)
 
             # Plot model profile on top
             plot_vertical_profile(ix, iy, lon2d_to_use, lat2d_to_use, data_to_use, depth_to_use, ax_profile, is_atmos=is_atmos_to_use)
@@ -764,8 +753,8 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
 
                 # Plot observations on the same axes (will be behind model profiles)
                 ax_combined.plot(obs_values, obs_norm, 'o-', color='red',
-                                label=f'Obs (lon={obs["lon"][iobs]:.2f}, lat={obs["lat"][iobs]:.2f})',
-                                markersize=6, linewidth=2, alpha=0.5)
+                                 label=f'Obs (lon={obs["lon"][iobs]:.2f}, lat={obs["lat"][iobs]:.2f})',
+                                 markersize=6, linewidth=2, alpha=0.5)
 
             # Plot atmospheric profile (top half: 0 to 0.5) - on top
             ax_combined.plot(atmos_profile_to_plot, atmos_norm, '-o', color='tab:red',
@@ -972,7 +961,6 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
 
             # Get zonal slices
             ocean_zonal = ocean_data[:, iy_ocean, :]  # shape: (z_levels, x)
-            ocean_zonal_depth = ocean_depth[:, iy_ocean, :]  # shape: (z_levels, x)
             ocean_zonal_lon = ocean_lon2d[iy_ocean, :]  # shape: (x,)
             # Convert to numpy if xarray
             if hasattr(ocean_zonal_lon, 'values'):
@@ -993,7 +981,6 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
             n_atmos_lev = atmos_zonal.shape[0]
             n_atmos_lon = atmos_zonal.shape[1]
             n_ocean_lev = ocean_zonal.shape[0]
-            n_ocean_lon = ocean_zonal.shape[1]
 
             # Create normalized vertical coordinates
             atmos_norm_vert = np.linspace(0, 0.5, n_atmos_lev)
