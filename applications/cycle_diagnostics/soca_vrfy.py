@@ -182,7 +182,8 @@ def plotZonalSlice(config):
     depth = np.cumsum(depth, axis=0)
     bounds = config['zonal variables'][variable]
     slice_data = np.clip(slice_data, bounds[0], bounds[1])
-    x = np.tile(np.squeeze(grid.lon[:, lat_index]), (np.shape(depth)[0], 1))
+    lons = grid.lon[:, lat_index]
+    x = np.tile(np.squeeze(lons), (np.shape(depth)[0], 1))
 
     fig, ax = plt.subplots(figsize=(8, 5))
 
@@ -208,6 +209,7 @@ def plotZonalSlice(config):
     contourf_plot.set_clim(bounds[0], bounds[1])
 
     ax.set_ylim(-config['max depth'], 0)
+    ax.set_xlim(lons.min(), lons.max())
     title = f"{exp} {PDY} {cyc} {variable} lat {int(lat)}"
     ax.set_title(title)
     dirname = os.path.join(config['vrfyout'], config['variable'])
@@ -240,7 +242,8 @@ def plotMeridionalSlice(config):
     depth = np.cumsum(depth, axis=0)
     bounds = config['meridional variables'][variable]
     slice_data = np.clip(slice_data, bounds[0], bounds[1])
-    y = np.tile(np.squeeze(grid.lat)[:, lon_index], (np.shape(depth)[0], 1))
+    lats = np.squeeze(grid.lat)[:, lon_index]
+    y = np.tile(lats, (np.shape(depth)[0], 1))
 
     fig, ax = plt.subplots(figsize=(8, 5))
 
@@ -266,6 +269,7 @@ def plotMeridionalSlice(config):
     contourf_plot.set_clim(bounds[0], bounds[1])
 
     ax.set_ylim(-config['max depth'], 0)
+    ax.set_xlim(lats.min(), lats.max())
     title = f"{exp} {PDY} {cyc} {variable} lon {int(lon)}"
     ax.set_title(title)
     dirname = os.path.join(config['vrfyout'], config['variable'])
@@ -289,6 +293,7 @@ class statePlotter:
         #######################################
         # zonal slices
 
+        print("self.config: ",self.config)
         for lat in self.config['lats']:
             self.config['lat'] = lat
 

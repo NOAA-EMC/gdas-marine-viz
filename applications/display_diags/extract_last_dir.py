@@ -43,8 +43,8 @@ def extract_last_dir(HPSS_root, hsi_output=None, result_file=None):
             f"Invalid cycle string '{first_cycle_str}'; expected YYYYMMDDHH"
         )
 
-    # Parse into datetime (UTC assumed)
-    first_cycle = datetime.strptime(first_cycle_str, "%Y%m%d%H")
+    # Parse into datetime (UTC assumed) and start on the next cycle
+    first_cycle = datetime.strptime(first_cycle_str, "%Y%m%d%H") + timedelta(hours=6)
 
     print(f"Parsed cycle datetime: {first_cycle} (UTC assumed)")
 
