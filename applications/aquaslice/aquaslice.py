@@ -6,6 +6,8 @@ import matplotlib.widgets as mwidgets
 from netCDF4 import Dataset
 import cartopy.feature as cfeature
 import os
+import tarfile
+from tqdm import tqdm
 
 
 def plot_vertical_profile(ix, iy, lon2d, lat2d, data, depth, ax_profile, is_atmos=False):
@@ -32,7 +34,7 @@ def plot_vertical_profile(ix, iy, lon2d, lat2d, data, depth, ax_profile, is_atmo
 def load_obsfile(obsfile, longitude_max=None, variable='Temp'):
     print(f"Loading observation file: {obsfile}")
     print(f"Longitude min: {longitude_max}")
-    var_map = {'Temp': 'waterTemperature', 'Salt': 'salinity'}
+    var_map = {'Temp': 'waterTemperature', 'Salt': 'salinity', 'u': 'waterU', 'v': 'waterV'}
     nc_var = var_map[variable]
     with Dataset(obsfile, 'r') as f:
         lat_obs = f.groups['MetaData'].variables['latitude'][:]
@@ -44,7 +46,18 @@ def load_obsfile(obsfile, longitude_max=None, variable='Temp'):
         obsval = f.groups['ObsValue'].variables[nc_var][:]
         hofx = f.groups['hofx0'].variables[nc_var][:]
 
-        valid = np.isfinite(lat_obs) & np.isfinite(lon_obs) & np.isfinite(depth_obs)
+        # Load EffectiveQC
+        effective_qc = f.groups['EffectiveQC1'].variables[nc_var][:]
+
+        # Filter: only valid coordinates (keep both accepted and rejected obs)
+        valid = (np.isfinite(lat_obs) & np.isfinite(lon_obs) & np.isfinite(depth_obs))
+
+        n_total = len(lat_obs)
+        n_valid = np.sum(valid)
+        n_accepted = np.sum(valid & (effective_qc == 0))
+        n_rejected = np.sum(valid & (effective_qc != 0))
+        print(f"Loaded {n_valid} observations: {n_accepted} accepted (QC=0), {n_rejected} rejected (QC≠0)")
+
         lat_obs = lat_obs[valid]
         lon_obs = lon_obs[valid]
         depth_obs = depth_obs[valid]
@@ -52,6 +65,7 @@ def load_obsfile(obsfile, longitude_max=None, variable='Temp'):
         oman = oman[valid]
         obsval = obsval[valid]
         hofx = hofx[valid]
+        effective_qc = effective_qc[valid]
 
         obs = {'lon': lon_obs,
                'lat': lat_obs,
@@ -59,7 +73,8 @@ def load_obsfile(obsfile, longitude_max=None, variable='Temp'):
                'ombg': ombg,
                'oman': oman,
                'obsval': obsval,
-               'hofx': hofx}
+               'hofx': hofx,
+               'qc': effective_qc}
     return obs
 
 
@@ -173,8 +188,566 @@ def load_atmospheric_data(atmfile, varname, level=0):
     return data, lon, lat, pressure
 
 
+def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_variance, gridfile, obsfile,
+                                      output_dir='obs_profiles', plot_background=True):
+    """
+    Create observation profiles for all unique observation locations and save as PNG files.
+
+    Parameters:
+    -----------
+    hfile : str
+        NetCDF file containing h variable
+    oceanfile : str
+        NetCDF file containing ocean variable
+    oceanvarname : str
+        Ocean variable name to plot (e.g., Temp, Salt)
+    is_variance : bool
+        Whether the file contains variance instead of standard deviation
+    gridfile : str
+        NetCDF file containing 2D lon/lat variables
+    obsfile : str
+        IODA observation file with ombg and oman
+    output_dir : str
+        Directory to save PNG files (default: 'obs_profiles')
+    plot_background : bool
+        Whether to plot the model background (default: True)
+
+    Returns:
+    --------
+    tarfile_path : str
+        Path to the created tar archive
+    """
+    print(f"\n{'='*70}")
+    print(f"BATCH PROCESSING: Creating observation profiles for all locations")
+    print(f"Plot background: {plot_background}")
+    print(f"{'='*70}\n")
+
+    # Extract base filename from obsfile (without path and suffix)
+    obs_basename = os.path.splitext(os.path.basename(obsfile))[0]
+
+    # Create output directory
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Load ocean data
+    print("Loading ocean data...")
+    dsg = xr.open_dataset(hfile)
+    if 'time' in dsg.dims:
+        h = dsg['h'].isel(time=0)
+    elif 'Time' in dsg.dims:
+        h = dsg['h'].isel(Time=0)
+    else:
+        raise ValueError("Could not find time dimension (tried both 'time' and 'Time')")
+
+    mask3d = np.where(h >= 0.01, 1, np.nan)
+    h = h * mask3d
+    if 'z_l' in h.dims:
+        depth = h.cumsum(dim='z_l')
+    elif 'zl' in h.dims:
+        depth = h.cumsum(dim='zl')
+    elif 'zaxis_1' in h.dims:
+        depth = h.cumsum(dim='zaxis_1')
+    else:
+        raise ValueError("Could not find vertical dimension (tried 'z_l', 'zl', and 'zaxis_1')")
+    dsg.close()
+
+    ds = xr.open_dataset(oceanfile)
+    if 'time' in ds.dims:
+        data = ds[oceanvarname].isel(time=0)
+    elif 'Time' in ds.dims:
+        data = ds[oceanvarname].isel(Time=0)
+    else:
+        raise ValueError("Could not find time dimension (tried both 'time' and 'Time')")
+    data = data * mask3d
+    if is_variance:
+        data = np.sqrt(data)
+
+    grid = xr.open_dataset(gridfile)
+    lon2d = grid['lon'].isel(Time=0)
+    lat2d = grid['lat'].isel(Time=0)
+    grid.close()
+
+    # Load observations
+    print("Loading observations...")
+    obs = load_obsfile(obsfile, longitude_max=np.max(lon2d.values), variable=oceanvarname)
+
+    # Find unique observation locations (lon, lat pairs)
+    unique_locations = {}
+    for i in range(len(obs['lon'])):
+        key = (obs['lon'][i], obs['lat'][i])
+        if key not in unique_locations:
+            unique_locations[key] = []
+        unique_locations[key].append(i)
+
+    print(f"Found {len(unique_locations)} unique observation locations")
+    print(f"Output directory: {output_dir}/")
+    print(f"\nCreating profiles...\n")
+
+    # Function to find nearest neighbor index
+    def find_nearest_2d(lon2d_vals, lat2d_vals, lon0, lat0):
+        dist2 = (lon2d_vals - lon0)**2 + (lat2d_vals - lat0)**2
+        iy, ix = np.unravel_index(np.argmin(dist2), dist2.shape)
+        return iy, ix
+
+    lon2d_vals = lon2d.values if hasattr(lon2d, 'values') else lon2d
+    lat2d_vals = lat2d.values if hasattr(lat2d, 'values') else lat2d
+
+    # Process each unique location with progress bar
+    png_files = []
+    for idx, (location, indices) in enumerate(tqdm(unique_locations.items(), desc="Processing locations", unit="profile")):
+        obs_lon, obs_lat = location
+
+        # Extract all values at this location
+        obs_depths = obs['depth'][indices]
+        obs_values = obs['obsval'][indices]
+        ombg_values = obs['ombg'][indices]
+        oman_values = obs['oman'][indices]
+        qc_values = obs['qc'][indices]
+
+        # Sort by depth
+        sort_idx = np.argsort(obs_depths)
+        obs_depths = obs_depths[sort_idx]
+        obs_values = obs_values[sort_idx]
+        ombg_values = ombg_values[sort_idx]
+        oman_values = oman_values[sort_idx]
+        qc_values = qc_values[sort_idx]
+
+        # Find nearest grid point for model profile
+        iy_grid, ix_grid = find_nearest_2d(lon2d_vals, lat2d_vals, obs_lon, obs_lat)
+        model_profile = data[:, iy_grid, ix_grid]
+        model_depth = depth[:, iy_grid, ix_grid]
+
+        # Create figure with two subplots
+        fig_obs, (ax_obs, ax_obsval) = plt.subplots(1, 2, figsize=(12, 10), sharey=True)
+
+        # Determine units based on variable type
+        units = 'PSU' if oceanvarname == 'Salt' else '°C'
+
+        # Separate accepted and rejected observations
+        accepted_mask = (qc_values == 0)
+        rejected_mask = (qc_values != 0)
+
+        # OMBG/OMAN subplot with increment (analysis - background)
+        increment = ombg_values - oman_values  # O-B - O-A = A-B
+
+        # Plot accepted observations
+        if np.any(accepted_mask):
+            ax_obs.plot(ombg_values[accepted_mask], obs_depths[accepted_mask], '.-',
+                       color='tab:green', label='O-B Accepted', markersize=8)
+            ax_obs.plot(oman_values[accepted_mask], obs_depths[accepted_mask], '.-',
+                       color='tab:red', label='O-A Accepted', markersize=8)
+            ax_obs.plot(increment[accepted_mask], obs_depths[accepted_mask], '.-',
+                       color='tab:orange', label='A-B Accepted', markersize=8)
+
+        # Plot rejected observations with X markers
+        if np.any(rejected_mask):
+            ax_obs.scatter(ombg_values[rejected_mask], obs_depths[rejected_mask],
+                          marker='x', s=80, color='darkgreen', label='O-B Rejected',
+                          alpha=0.7, linewidths=2)
+            ax_obs.scatter(oman_values[rejected_mask], obs_depths[rejected_mask],
+                          marker='x', s=80, color='darkred', label='O-A Rejected',
+                          alpha=0.7, linewidths=2)
+            ax_obs.scatter(increment[rejected_mask], obs_depths[rejected_mask],
+                          marker='x', s=80, color='darkorange', label='A-B Rejected',
+                          alpha=0.7, linewidths=2)
+
+        ax_obs.axvline(x=0, color='black', linestyle='--', linewidth=0.8, alpha=0.5)
+        ax_obs.invert_yaxis()
+        ax_obs.set_xlabel(f'Innovation / Increment ({units})')
+        ax_obs.set_ylabel('Depth (m)')
+        ax_obs.set_title(f'OMB/OMA/Increment at lon={obs_lon:.2f}, lat={obs_lat:.2f}')
+        ax_obs.legend(fontsize=8)
+        ax_obs.grid()
+
+        # Obs value subplot
+        # Plot Background and Analysis for all observations (always with solid lines)
+        ax_obsval.plot(obs_values - ombg_values, obs_depths, '.-',
+                      color='tab:green', label='Background', markersize=8)
+        ax_obsval.plot(obs_values - oman_values, obs_depths, '.-',
+                      color='tab:red', label='Analysis', markersize=8)
+
+        # Plot accepted observations
+        if np.any(accepted_mask):
+            ax_obsval.plot(obs_values[accepted_mask], obs_depths[accepted_mask], '.-',
+                          color='tab:blue', label='Obs Accepted', markersize=8)
+
+        # Plot rejected observations with X markers (smaller size)
+        if np.any(rejected_mask):
+            ax_obsval.scatter(obs_values[rejected_mask], obs_depths[rejected_mask],
+                             marker='x', s=50, color='darkblue', label='Obs Rejected',
+                             alpha=0.7, linewidths=1.5)
+
+        if plot_background:
+            ax_obsval.plot(model_profile, model_depth, '.-', color='tab:purple',
+                          label="QC'ed Analysis", markersize=8)
+        ax_obsval.set_xlabel(f'Obs Value ({units})')
+        ax_obsval.set_title('Obs Value')
+        ax_obsval.legend(fontsize=8)
+        ax_obsval.grid()
+
+        plt.tight_layout()
+
+        # Normalize longitude to -180 to 180 range for filename
+        filename_lon = obs_lon
+        while filename_lon > 180:
+            filename_lon -= 360
+        while filename_lon < -180:
+            filename_lon += 360
+
+        # Save figure with obs filename prepended
+        filename = f"{obs_basename}_obs_profile_{idx:05d}_lon{filename_lon:.2f}_lat{obs_lat:.2f}.png"
+        filepath = os.path.join(output_dir, filename)
+        plt.savefig(filepath, dpi=100, bbox_inches='tight')
+        plt.close(fig_obs)
+        png_files.append(filename)
+
+    ds.close()
+
+    # Create tar archive
+    print(f"\nCreating tar archive...")
+    tarfile_path = f"{output_dir}.tar.gz"
+    with tarfile.open(tarfile_path, "w:gz") as tar:
+        for png_file in tqdm(png_files, desc="Archiving files", unit="file"):
+            tar.add(os.path.join(output_dir, png_file), arcname=png_file)
+
+    print(f"\n{'='*70}")
+    print(f"COMPLETED!")
+    print(f"Created {len(png_files)} profile plots")
+    print(f"Saved to: {output_dir}/")
+    print(f"Tar archive: {tarfile_path}")
+    print(f"{'='*70}\n")
+
+    return tarfile_path
+
+
+def batch_create_zonal_sections(hfile, oceanfile, oceanvarname, is_variance, gridfile,
+                                lat_start, lat_end, lat_step, output_dir='sections',
+                                vmin=None, vmax=None):
+    """
+    Create zonal section plots for specified latitudes.
+
+    Parameters:
+    -----------
+    hfile : str
+        NetCDF file containing h variable
+    oceanfile : str
+        NetCDF file containing ocean variable
+    oceanvarname : str
+        Ocean variable name to plot
+    is_variance : bool
+        Whether the file contains variance instead of standard deviation
+    gridfile : str
+        NetCDF file containing 2D lon/lat variables
+    lat_start : float
+        Starting latitude
+    lat_end : float
+        Ending latitude
+    lat_step : float
+        Latitude step
+    output_dir : str
+        Directory to save PNG files
+    vmin, vmax : float, optional
+        Color bounds
+    """
+    print(f"\n{'='*70}")
+    print(f"BATCH PROCESSING: Creating zonal section plots")
+    print(f"Latitude range: {lat_start}° to {lat_end}° (step: {lat_step}°)")
+    print(f"{'='*70}\n")
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Load ocean data
+    print("Loading ocean data...")
+    dsg = xr.open_dataset(hfile)
+    if 'time' in dsg.dims:
+        h = dsg['h'].isel(time=0)
+    elif 'Time' in dsg.dims:
+        h = dsg['h'].isel(Time=0)
+    else:
+        raise ValueError("Could not find time dimension")
+
+    mask3d = np.where(h >= 0.01, 1, np.nan)
+    h = h * mask3d
+    if 'z_l' in h.dims:
+        depth = h.cumsum(dim='z_l')
+    elif 'zl' in h.dims:
+        depth = h.cumsum(dim='zl')
+    elif 'zaxis_1' in h.dims:
+        depth = h.cumsum(dim='zaxis_1')
+    else:
+        raise ValueError("Could not find vertical dimension")
+    dsg.close()
+
+    ds = xr.open_dataset(oceanfile)
+    if 'time' in ds.dims:
+        data = ds[oceanvarname].isel(time=0)
+    elif 'Time' in ds.dims:
+        data = ds[oceanvarname].isel(Time=0)
+    else:
+        raise ValueError("Could not find time dimension")
+    data = data * mask3d
+    if is_variance:
+        data = np.sqrt(data)
+
+    grid = xr.open_dataset(gridfile)
+    lon2d = grid['lon'].isel(Time=0)
+    lat2d = grid['lat'].isel(Time=0)
+    grid.close()
+
+    # Convert to numpy arrays
+    lon2d_vals = lon2d.values if hasattr(lon2d, 'values') else lon2d
+    lat2d_vals = lat2d.values if hasattr(lat2d, 'values') else lat2d
+
+    # Function to find nearest latitude index
+    def find_nearest_lat(lat2d_vals, target_lat):
+        # Find the row with latitude closest to target
+        lat_diffs = np.abs(lat2d_vals - target_lat)
+        iy = np.unravel_index(np.argmin(lat_diffs), lat2d_vals.shape)[0]
+        return iy
+
+    # Generate latitudes
+    latitudes = np.arange(lat_start, lat_end + lat_step/2, lat_step)
+
+    png_files = []
+    for target_lat in tqdm(latitudes, desc="Creating zonal sections", unit="section"):
+        # Round to nearest integer
+        target_lat = round(target_lat)
+
+        iy = find_nearest_lat(lat2d_vals, target_lat)
+        actual_lat = lat2d_vals[iy, 0]
+
+        # Extract zonal slice
+        zonal_profile = data[:, iy, :]
+        zonal_lon = lon2d[iy, :]
+        zonal_depth = depth[:, iy, :]
+
+        # Create plot
+        fig, ax = plt.subplots(figsize=(14, 8))
+
+        pcm = ax.pcolormesh(zonal_lon, zonal_depth, zonal_profile,
+                           vmin=vmin, vmax=vmax, shading='auto', cmap='gist_ncar')
+        ax.invert_yaxis()
+        ax.set_xlabel('Longitude')
+        ax.set_ylabel('Depth (m)')
+        ax.set_title(f'Zonal Section at {target_lat:+d}°N - {oceanvarname}')
+        fig.colorbar(pcm, ax=ax, label=oceanvarname)
+        ax.grid(True, alpha=0.3)
+
+        # Save figure
+        filename = f"zonal_section_{oceanvarname}_lat{target_lat:+04d}.png"
+        filepath = os.path.join(output_dir, filename)
+        plt.savefig(filepath, dpi=150, bbox_inches='tight')
+        plt.close(fig)
+        png_files.append(filename)
+
+    ds.close()
+
+    print(f"\n{'='*70}")
+    print(f"COMPLETED!")
+    print(f"Created {len(png_files)} zonal section plots")
+    print(f"Saved to: {output_dir}/")
+    print(f"{'='*70}\n")
+
+    return output_dir
+
+
+def batch_create_meridional_sections(hfile, oceanfile, oceanvarname, is_variance, gridfile,
+                                     lon_start, lon_end, lon_step, output_dir='sections',
+                                     vmin=None, vmax=None):
+    """
+    Create meridional section plots for specified longitudes.
+
+    Parameters:
+    -----------
+    hfile : str
+        NetCDF file containing h variable
+    oceanfile : str
+        NetCDF file containing ocean variable
+    oceanvarname : str
+        Ocean variable name to plot
+    is_variance : bool
+        Whether the file contains variance instead of standard deviation
+    gridfile : str
+        NetCDF file containing 2D lon/lat variables
+    lon_start : float
+        Starting longitude
+    lon_end : float
+        Ending longitude
+    lon_step : float
+        Longitude step
+    output_dir : str
+        Directory to save PNG files
+    vmin, vmax : float, optional
+        Color bounds
+    """
+    print(f"\n{'='*70}")
+    print(f"BATCH PROCESSING: Creating meridional section plots")
+    print(f"Longitude range: {lon_start}° to {lon_end}° (step: {lon_step}°)")
+    print(f"{'='*70}\n")
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Load ocean data
+    print("Loading ocean data...")
+    dsg = xr.open_dataset(hfile)
+    if 'time' in dsg.dims:
+        h = dsg['h'].isel(time=0)
+    elif 'Time' in dsg.dims:
+        h = dsg['h'].isel(Time=0)
+    else:
+        raise ValueError("Could not find time dimension")
+
+    mask3d = np.where(h >= 0.01, 1, np.nan)
+    h = h * mask3d
+    if 'z_l' in h.dims:
+        depth = h.cumsum(dim='z_l')
+    elif 'zl' in h.dims:
+        depth = h.cumsum(dim='zl')
+    elif 'zaxis_1' in h.dims:
+        depth = h.cumsum(dim='zaxis_1')
+    else:
+        raise ValueError("Could not find vertical dimension")
+    dsg.close()
+
+    ds = xr.open_dataset(oceanfile)
+    if 'time' in ds.dims:
+        data = ds[oceanvarname].isel(time=0)
+    elif 'Time' in ds.dims:
+        data = ds[oceanvarname].isel(Time=0)
+    else:
+        raise ValueError("Could not find time dimension")
+    data = data * mask3d
+    if is_variance:
+        data = np.sqrt(data)
+
+    grid = xr.open_dataset(gridfile)
+    lon2d = grid['lon'].isel(Time=0)
+    lat2d = grid['lat'].isel(Time=0)
+    grid.close()
+
+    # Convert to numpy arrays
+    lon2d_vals = lon2d.values if hasattr(lon2d, 'values') else lon2d
+    lat2d_vals = lat2d.values if hasattr(lat2d, 'values') else lat2d
+
+    # Function to find nearest longitude index
+    def find_nearest_lon(lon2d_vals, target_lon):
+        # Handle longitude wrapping
+        lon_diff = np.abs(lon2d_vals - target_lon)
+        # Also check wrapped difference
+        lon_diff_wrapped = np.abs((lon2d_vals - target_lon + 180) % 360 - 180)
+        lon_diff = np.minimum(lon_diff, lon_diff_wrapped)
+        ix = np.unravel_index(np.argmin(lon_diff), lon2d_vals.shape)[1]
+        return ix
+
+    # Generate longitudes
+    longitudes = np.arange(lon_start, lon_end + lon_step/2, lon_step)
+
+    png_files = []
+    for target_lon in tqdm(longitudes, desc="Creating meridional sections", unit="section"):
+        # Round to nearest integer
+        target_lon = round(target_lon)
+
+        ix = find_nearest_lon(lon2d_vals, target_lon)
+        actual_lon = lon2d_vals[0, ix]
+
+        # Extract meridional slice
+        meridional_profile = data[:, :, ix]
+        meridional_lat = lat2d[:, ix]
+        meridional_depth = depth[:, :, ix]
+
+        # Create plot
+        fig, ax = plt.subplots(figsize=(14, 8))
+
+        pcm = ax.pcolormesh(meridional_lat, meridional_depth, meridional_profile,
+                           vmin=vmin, vmax=vmax, shading='auto', cmap='gist_ncar')
+        ax.invert_yaxis()
+        ax.set_xlabel('Latitude')
+        ax.set_ylabel('Depth (m)')
+        ax.set_title(f'Meridional Section at {target_lon:+d}°E - {oceanvarname}')
+        fig.colorbar(pcm, ax=ax, label=oceanvarname)
+        ax.grid(True, alpha=0.3)
+
+        # Save figure
+        filename = f"meridional_section_{oceanvarname}_lon{target_lon:+04d}.png"
+        filepath = os.path.join(output_dir, filename)
+        plt.savefig(filepath, dpi=150, bbox_inches='tight')
+        plt.close(fig)
+        png_files.append(filename)
+
+    ds.close()
+
+    print(f"\n{'='*70}")
+    print(f"COMPLETED!")
+    print(f"Created {len(png_files)} meridional section plots")
+    print(f"Saved to: {output_dir}/")
+    print(f"{'='*70}\n")
+
+    return output_dir
+
+
 def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, gridfile, obsfile=None, level=None,
-         vmin=None, vmax=None, ocean_vmin=None, ocean_vmax=None, atmos_vmin=None, atmos_vmax=None, atmos_to_celsius=False):
+         vmin=None, vmax=None, ocean_vmin=None, ocean_vmax=None, atmos_vmin=None, atmos_vmax=None, atmos_to_celsius=False,
+         batch_obs_profiles=False, plot_background=True, batch_zonal_sections=False, batch_meridional_sections=False,
+         lat_start=None, lat_end=None, lat_step=5.0, lon_start=None, lon_end=None, lon_step=5.0, sections_output_dir='sections'):
+    # Handle batch observation profile mode
+    if batch_obs_profiles:
+        if not (oceanfile and obsfile and hfile and gridfile and oceanvarname):
+            print("ERROR: Batch observation profile mode requires:")
+            print("  --oceanfile, --obsfile, --hfile, --gridfile, and --oceanvarname")
+            return
+        print(f"DEBUG: plot_background = {plot_background}")
+        batch_create_observation_profiles(
+            hfile, oceanfile, oceanvarname, is_variance, gridfile, obsfile, plot_background=plot_background
+        )
+        return
+
+    # Handle batch zonal sections mode
+    if batch_zonal_sections:
+        if not (oceanfile and hfile and gridfile and oceanvarname):
+            print("ERROR: Batch zonal sections mode requires:")
+            print("  --oceanfile, --hfile, --gridfile, and --oceanvarname")
+            return
+        if lat_start is None or lat_end is None:
+            print("ERROR: Batch zonal sections mode requires --lat_start and --lat_end")
+            return
+        # Validate lat_step
+        if lat_step < 1.0:
+            print(f"ERROR: --lat_step must be >= 1 degree (got {lat_step})")
+            return
+        if abs(lat_step - round(lat_step)) > 1e-6:
+            print(f"ERROR: --lat_step must be an integer (got {lat_step})")
+            return
+        batch_create_zonal_sections(
+            hfile, oceanfile, oceanvarname, is_variance, gridfile,
+            lat_start, lat_end, int(round(lat_step)), output_dir=sections_output_dir,
+            vmin=ocean_vmin if ocean_vmin is not None else vmin,
+            vmax=ocean_vmax if ocean_vmax is not None else vmax
+        )
+        return
+
+    # Handle batch meridional sections mode
+    if batch_meridional_sections:
+        if not (oceanfile and hfile and gridfile and oceanvarname):
+            print("ERROR: Batch meridional sections mode requires:")
+            print("  --oceanfile, --hfile, --gridfile, and --oceanvarname")
+            return
+        if lon_start is None or lon_end is None:
+            print("ERROR: Batch meridional sections mode requires --lon_start and --lon_end")
+            return
+        # Validate lon_step
+        if lon_step < 1.0:
+            print(f"ERROR: --lon_step must be >= 1 degree (got {lon_step})")
+            return
+        if abs(lon_step - round(lon_step)) > 1e-6:
+            print(f"ERROR: --lon_step must be an integer (got {lon_step})")
+            return
+        batch_create_meridional_sections(
+            hfile, oceanfile, oceanvarname, is_variance, gridfile,
+            lon_start, lon_end, int(round(lon_step)), output_dir=sections_output_dir,
+            vmin=ocean_vmin if ocean_vmin is not None else vmin,
+            vmax=ocean_vmax if ocean_vmax is not None else vmax
+        )
+        return
+
     # Determine mode based on which file is provided
     ocean_mode = oceanfile is not None
     atmos_mode = atmosfile is not None
@@ -233,11 +806,13 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
         # Check which vertical dimension name exists in the dataset
         if 'z_l' in h.dims:
             depth = h.cumsum(dim='z_l')      # cumulative sum along vertical
+        elif 'zl' in h.dims:
+            depth = h.cumsum(dim='zl')       # cumulative sum along vertical
         elif 'zaxis_1' in h.dims:
             depth = h.cumsum(dim='zaxis_1')  # cumulative sum along vertical
         else:
             print('...')
-            raise ValueError("Could not find vertical dimension (tried both 'z_l' and 'zaxis_1')")
+            raise ValueError("Could not find vertical dimension (tried 'z_l', 'zl', and 'zaxis_1')")
         dsg.close()
 
         # --- Step 2: Open ocean file and extract variable
@@ -319,10 +894,12 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
         h = h * mask3d
         if 'z_l' in h.dims:
             ocean_depth = h.cumsum(dim='z_l')
+        elif 'zl' in h.dims:
+            ocean_depth = h.cumsum(dim='zl')
         elif 'zaxis_1' in h.dims:
             ocean_depth = h.cumsum(dim='zaxis_1')
         else:
-            raise ValueError("Could not find vertical dimension (tried both 'z_l' and 'zaxis_1')")
+            raise ValueError("Could not find vertical dimension (tried 'z_l', 'zl', and 'zaxis_1')")
         dsg.close()
 
         # --- Step 2: Open ocean file
@@ -445,9 +1022,19 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
         fig, ax = plt.subplots(figsize=(14, 8))
         masked_field = np.ma.masked_where(~surface_mask, surface_field)
 
-        # Initial color bounds
-        vmin_init = vmin if vmin is not None else float(np.nanmin(masked_field))
-        vmax_init = vmax if vmax is not None else float(np.nanmax(masked_field))
+        # Initial color bounds - use mode-specific bounds if available
+        if ocean_mode and not atmos_mode:
+            # Ocean-only mode: use ocean_vmin/ocean_vmax if provided, otherwise fall back to vmin/vmax
+            vmin_init = ocean_vmin if ocean_vmin is not None else (vmin if vmin is not None else float(np.nanmin(masked_field)))
+            vmax_init = ocean_vmax if ocean_vmax is not None else (vmax if vmax is not None else float(np.nanmax(masked_field)))
+        elif atmos_mode and not ocean_mode:
+            # Atmos-only mode: use atmos_vmin/atmos_vmax if provided, otherwise fall back to vmin/vmax
+            vmin_init = atmos_vmin if atmos_vmin is not None else (vmin if vmin is not None else float(np.nanmin(masked_field)))
+            vmax_init = atmos_vmax if atmos_vmax is not None else (vmax if vmax is not None else float(np.nanmax(masked_field)))
+        else:
+            # Fallback (shouldn't reach here in single mode, but just in case)
+            vmin_init = vmin if vmin is not None else float(np.nanmin(masked_field))
+            vmax_init = vmax if vmax is not None else float(np.nanmax(masked_field))
 
         pcm = ax.pcolormesh(lon2d, lat2d, masked_field, vmin=vmin_init, vmax=vmax_init, cmap='gist_ncar', shading='auto', alpha=0.5)
 
@@ -469,6 +1056,7 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
         menu_options.append('Combined Zonal Slice')
     if ocean_mode and not atmos_mode and obs is not None:
         menu_options.append('Observation Profile')
+        menu_options.append('OMB/OMA Density by Depth')
 
     # Add domain selector for combined mode
     if ocean_mode and atmos_mode:
@@ -569,16 +1157,32 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
 
                 obs_depths = obs['depth'][matching_indices]
                 obs_values = obs['obsval'][matching_indices]
+                obs_qc = obs['qc'][matching_indices]
 
-                # Sort by depth
-                sort_idx = np.argsort(obs_depths)
-                obs_depths = obs_depths[sort_idx]
-                obs_values = obs_values[sort_idx]
+                # Separate accepted and rejected observations
+                accepted_mask = (obs_qc == 0)
+                rejected_mask = (obs_qc != 0)
 
-                # Plot observations on the same axes (will be behind model profile)
-                ax_profile.plot(obs_values, obs_depths, 'o-', color='red',
-                                label=f'Obs (lon={obs["lon"][iobs]:.2f}, lat={obs["lat"][iobs]:.2f})',
-                                markersize=6, linewidth=2, alpha=0.5)
+                # Sort accepted by depth
+                if np.any(accepted_mask):
+                    accepted_depths = obs_depths[accepted_mask]
+                    accepted_values = obs_values[accepted_mask]
+                    sort_idx = np.argsort(accepted_depths)
+                    accepted_depths = accepted_depths[sort_idx]
+                    accepted_values = accepted_values[sort_idx]
+
+                    # Plot accepted observations
+                    ax_profile.plot(accepted_values, accepted_depths, 'o-', color='red',
+                                    label=f'Obs Accepted (QC=0)',
+                                    markersize=6, linewidth=2, alpha=0.5)
+
+                # Plot rejected observations with different marker
+                if np.any(rejected_mask):
+                    rejected_depths = obs_depths[rejected_mask]
+                    rejected_values = obs_values[rejected_mask]
+                    ax_profile.scatter(rejected_values, rejected_depths, marker='x', s=80,
+                                      color='gray', label=f'Obs Rejected (QC≠0)',
+                                      alpha=0.7, linewidths=2)
 
             # Plot model profile on top
             plot_vertical_profile(ix, iy, lon2d_to_use, lat2d_to_use, data_to_use, depth_to_use, ax_profile, is_atmos=is_atmos_to_use)
@@ -593,11 +1197,21 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
             lat_val = lat2d_to_use[iy, ix].values if hasattr(lat2d_to_use[iy, ix], 'values') else lat2d_to_use[iy, ix]
             print(f"Zonal slice at lat={lat_val:.2f}")
             print(f"iy, ix: {iy}, {ix}")
-            zonal_profile = data_to_use[:, iy, :]
+            zonal_profile = data[:, iy, :]
             zonal_lon = lon2d_to_use[iy, :]
             fig_zonal, ax_zonal = plt.subplots()
             ax_zonal.set_xlim(zonal_lon.min(), zonal_lon.max())
-            pcm_zonal = ax_zonal.pcolormesh(zonal_lon, depth_to_use[:, iy, :], zonal_profile, shading='auto', cmap='gist_ncar')
+
+            # Determine color bounds based on mode
+            if is_atmos_to_use:
+                vmin_slice = atmos_vmin if atmos_vmin is not None else (vmin if vmin is not None else None)
+                vmax_slice = atmos_vmax if atmos_vmax is not None else (vmax if vmax is not None else None)
+            else:
+                vmin_slice = ocean_vmin if ocean_vmin is not None else (vmin if vmin is not None else None)
+                vmax_slice = ocean_vmax if ocean_vmax is not None else (vmax if vmax is not None else None)
+
+            pcm_zonal = ax_zonal.pcolormesh(zonal_lon, depth_to_use[:, iy, :], zonal_profile,
+                                            vmin=vmin_slice, vmax=vmax_slice, shading='auto', cmap='gist_ncar')
             # Always invert y-axis: ocean depth increases down, atmos pressure decreases up
             ax_zonal.invert_yaxis()
             ax_zonal.set_xlabel('Longitude')
@@ -610,11 +1224,20 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
             lon_val = lon2d_to_use[iy, ix].values if hasattr(lon2d_to_use[iy, ix], 'values') else lon2d_to_use[iy, ix]
             print(f"Meridional slice at lon={lon_val:.2f}")
             print(f"iy, ix: {iy}, {ix}")
-            meridional_profile = data_to_use[:, :, ix]
+            meridional_profile = data[:, :, ix]
             meridional_lat = lat2d_to_use[:, ix]
             fig_merid, ax_merid = plt.subplots()
+
+            # Determine color bounds based on mode
+            if is_atmos_to_use:
+                vmin_slice = atmos_vmin if atmos_vmin is not None else (vmin if vmin is not None else None)
+                vmax_slice = atmos_vmax if atmos_vmax is not None else (vmax if vmax is not None else None)
+            else:
+                vmin_slice = ocean_vmin if ocean_vmin is not None else (vmin if vmin is not None else None)
+                vmax_slice = ocean_vmax if ocean_vmax is not None else (vmax if vmax is not None else None)
+
             pcm_merid = ax_merid.pcolormesh(meridional_lat, depth_to_use[:, :, ix], meridional_profile,
-                                            shading='auto', cmap='gist_ncar')
+                                            vmin=vmin_slice, vmax=vmax_slice, shading='auto', cmap='gist_ncar')
             # Always invert y-axis: ocean depth increases down, atmos pressure decreases up
             ax_merid.invert_yaxis()
             ax_merid.set_xlabel('Latitude')
@@ -680,8 +1303,8 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
                              hasattr(ocean_lon2d[iy_ocean, ix_ocean], 'values') else
                              ocean_lon2d[iy_ocean, ix_ocean])
             ocean_lat_val = (ocean_lat2d[iy_ocean, ix_ocean].values if
-                             hasattr(ocean_lat2d[iy_ocean, ix_ocean], 'values') else
-                             ocean_lat2d[iy_ocean, ix_ocean])
+                             hasattr(lat2d[iy_ocean, ix_ocean], 'values') else
+                             lat2d[iy_ocean, ix_ocean])
 
             atmos_profile = atmos_data[:, iy_atmos, ix_atmos]
             atmos_depth_profile = atmos_depth[:, iy_atmos, ix_atmos]
@@ -739,22 +1362,36 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
 
                 obs_depths = obs['depth'][matching_indices]
                 obs_values = obs['obsval'][matching_indices]
-
-                # Sort by depth
-                sort_idx = np.argsort(obs_depths)
-                obs_depths = obs_depths[sort_idx]
-                obs_values = obs_values[sort_idx]
+                obs_qc = obs['qc'][matching_indices]
 
                 # Normalize observation depths to 0.5-1.0 range using the same scaling as model
-                # This ensures observations align with the depth axis
                 obs_norm = 0.5 + (obs_depths / max_ocean_depth) * 0.5
                 # Clip to valid range (but allow observations deeper than model grid)
                 obs_norm = np.clip(obs_norm, 0.5, 1.0)
 
-                # Plot observations on the same axes (will be behind model profiles)
-                ax_combined.plot(obs_values, obs_norm, 'o-', color='red',
-                                 label=f'Obs (lon={obs["lon"][iobs]:.2f}, lat={obs["lat"][iobs]:.2f})',
-                                 markersize=6, linewidth=2, alpha=0.5)
+                # Separate accepted and rejected observations
+                accepted_mask = (obs_qc == 0)
+                rejected_mask = (obs_qc != 0)
+
+                # Plot accepted observations
+                if np.any(accepted_mask):
+                    accepted_norm = obs_norm[accepted_mask]
+                    accepted_values = obs_values[accepted_mask]
+                    sort_idx = np.argsort(accepted_norm)
+                    accepted_norm = accepted_norm[sort_idx]
+                    accepted_values = accepted_values[sort_idx]
+
+                    ax_combined.plot(accepted_values, accepted_norm, 'o-', color='red',
+                                     label='Obs Accepted (QC=0)',
+                                     markersize=6, linewidth=2, alpha=0.5)
+
+                # Plot rejected observations with different marker
+                if np.any(rejected_mask):
+                    rejected_norm = obs_norm[rejected_mask]
+                    rejected_values = obs_values[rejected_mask]
+                    ax_combined.scatter(rejected_values, rejected_norm, marker='x', s=80,
+                                       color='gray', label='Obs Rejected (QC≠0)',
+                                       alpha=0.7, linewidths=2)
 
             # Plot atmospheric profile (top half: 0 to 0.5) - on top
             ax_combined.plot(atmos_profile_to_plot, atmos_norm, '-o', color='tab:red',
@@ -841,6 +1478,7 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
             oman_values = obs['oman'][matching_indices]
             depth_values = obs['depth'][matching_indices]
             obs_value = obs['obsval'][matching_indices]
+            qc_values = obs['qc'][matching_indices]
 
             # Sort by increasing depth
             sort_idx = np.argsort(depth_values)
@@ -848,60 +1486,254 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
             ombg_values = ombg_values[sort_idx]
             oman_values = oman_values[sort_idx]
             obs_value = obs_value[sort_idx]
+            qc_values = qc_values[sort_idx]
 
             # Plot the extracted values
-            fig_obs, (ax_obs, ax_obsval, ax_model) = plt.subplots(1, 3, figsize=(15, 10), sharey=True)
-            # OMBG/OMAN subplot
-            ax_obs.plot(ombg_values, depth_values, '.-', color='tab:green', label='ombg')
-            ax_obs.plot(oman_values, depth_values, '.-', color='tab:red', label='oman')
+            fig_obs, ((ax_obs, ax_obsval), (ax_qc, ax_stats)) = plt.subplots(2, 2, figsize=(14, 12))
+
+            # Determine units based on variable type
+            units = 'PSU' if oceanvarname == 'Salt' else '°C'
+
+            # Separate accepted and rejected observations
+            accepted_mask = (qc_values == 0)
+            rejected_mask = (qc_values != 0)
+
+            # OMBG/OMAN subplot with increment (analysis - background)
+            increment = ombg_values - oman_values  # O-B - O-A = A-B
+
+            # Plot accepted observations
+            if np.any(accepted_mask):
+                ax_obs.plot(ombg_values[accepted_mask], depth_values[accepted_mask], '.-',
+                           color='tab:green', label='O-B Accepted', markersize=8)
+                ax_obs.plot(oman_values[accepted_mask], depth_values[accepted_mask], '.-',
+                           color='tab:red', label='O-A Accepted', markersize=8)
+                ax_obs.plot(increment[accepted_mask], depth_values[accepted_mask], '.-',
+                           color='tab:orange', label='A-B Accepted', markersize=8)
+
+            # Plot rejected observations with X markers
+            if np.any(rejected_mask):
+                ax_obs.scatter(ombg_values[rejected_mask], depth_values[rejected_mask],
+                              marker='x', s=80, color='darkgreen', label='O-B Rejected', alpha=0.7, linewidths=2)
+                ax_obs.scatter(oman_values[rejected_mask], depth_values[rejected_mask],
+                              marker='x', s=80, color='darkred', label='O-A Rejected', alpha=0.7, linewidths=2)
+                ax_obs.scatter(increment[rejected_mask], depth_values[rejected_mask],
+                              marker='x', s=80, color='darkorange', label='A-B Rejected', alpha=0.7, linewidths=2)
+
+            ax_obs.axvline(x=0, color='black', linestyle='--', linewidth=0.8, alpha=0.5)
             ax_obs.invert_yaxis()
-            ax_obs.set_xlabel('O-B (K)')
+            ax_obs.set_xlabel(f'Innovation / Increment ({units})')
             ax_obs.set_ylabel('Depth (m)')
-            ax_obs.set_title(f'OMB/OMA at lon={obs["lon"][iobs]:.2f}, lat={obs["lat"][iobs]:.2f}')
-            ax_obs.legend()
+            ax_obs.set_title(f'OMB/OMA/Increment at lon={obs["lon"][iobs]:.2f}, lat={obs["lat"][iobs]:.2f}')
+            ax_obs.legend(fontsize=8)
             ax_obs.grid()
 
-            # Model profile subplot (nearest grid point)
-            # Find nearest grid point to obs location
+            # Obs value subplot
+            # Find nearest grid point to obs location for model profile
             iy_grid, ix_grid = find_nearest_2d(lon2d.values, lat2d.values, obs['lon'][iobs], obs['lat'][iobs])
             model_profile = data[:, iy_grid, ix_grid]
             model_depth = depth[:, iy_grid, ix_grid]
 
-            print(f"model: f{model_profile}")
-            print(f"depth: f{model_depth}")
+            # Plot Background and Analysis for all observations (always with solid lines)
+            ax_obsval.plot(obs_value - ombg_values, depth_values, '.-',
+                          color='tab:green', label='Background', markersize=8)
+            ax_obsval.plot(obs_value - oman_values, depth_values, '.-',
+                          color='tab:red', label='Analysis', markersize=8)
 
-            ax_model.plot(model_profile, model_depth, '.-', color='tab:purple', label='Model')
-            ax_model.invert_yaxis()
-            ax_model.set_xlabel('Model Value')
-            ax_model.set_title(f'Model Profile\n(lon={lon2d[iy_grid, ix_grid].values:.2f}, lat={lat2d[iy_grid, ix_grid].values:.2f})')
-            ax_model.legend()
-            ax_model.grid()
+            # Plot accepted observations
+            if np.any(accepted_mask):
+                ax_obsval.plot(obs_value[accepted_mask], depth_values[accepted_mask], '.-',
+                              color='tab:blue', label='Obs Accepted', markersize=8)
 
-            # Obs value subplot
-            np.set_printoptions(threshold=np.inf)
+            # Plot rejected observations with X markers (smaller size)
+            if np.any(rejected_mask):
+                ax_obsval.scatter(obs_value[rejected_mask], depth_values[rejected_mask],
+                                 marker='x', s=50, color='darkblue', label='Obs Rejected',
+                                 alpha=0.7, linewidths=1.5)
 
-            # Print analysis values (temperatures)
-            T_ana_valid = obs_value - oman_values
-            z_ana_valid = depth_values
-            print("T_ana_valid = [")
-            print(", ".join(f"{v:.6f}" for v in T_ana_valid))
-            print("]")
-
-            # Print analysis depths
-            print("z_ana_valid = [")
-            print(", ".join(f"{v:.1f}" for v in z_ana_valid))
-            print("]")
-
-            ax_obsval.plot(obs_value, depth_values, '.-', color='tab:blue', label='Obs Value')
-            ax_obsval.plot(obs_value - ombg_values, depth_values, '.-', color='tab:green', label='Background')
-            ax_obsval.plot(obs_value - oman_values, depth_values, '.-', color='tab:red', label='Analysis')
-            ax_obsval.plot(model_profile, model_depth, '.-', color='tab:purple', label="QC'ed Analysis")
+            if plot_background:
+                ax_obsval.plot(model_profile, model_depth, '.-', color='tab:purple', label="QC'ed Analysis", markersize=8)
             ax_obsval.invert_yaxis()
-            ax_obsval.set_xlabel('Obs Value (K)')
+            ax_obsval.set_xlabel(f'Obs Value ({units})')
+            ax_obsval.set_ylabel('Depth (m)')
             ax_obsval.set_title('Obs Value')
             ax_obsval.legend()
             ax_obsval.grid()
 
+            # QC flag subplot
+            # Use scatter plot to show QC values at each depth
+            ax_qc.scatter(qc_values, depth_values, c='tab:cyan', s=50, alpha=0.7, edgecolors='black')
+            ax_qc.invert_yaxis()
+            ax_qc.set_xlabel('QC Flag')
+            ax_qc.set_ylabel('Depth (m)')
+            ax_qc.set_title('Effective QC Flag')
+            ax_qc.grid()
+            ax_qc.set_xlim(-0.5, max(1, np.max(qc_values) + 0.5))
+
+            # Statistics table subplot
+            ax_stats.axis('off')
+
+            # Calculate statistics (only for accepted observations)
+            n_obs = len(obs_value)
+            n_accepted = np.sum(accepted_mask)
+            n_rejected = np.sum(rejected_mask)
+
+            if n_accepted > 0:
+                ombg_mean = np.mean(ombg_values[accepted_mask])
+                ombg_std = np.std(ombg_values[accepted_mask])
+                ombg_rmsd = np.sqrt(np.mean(ombg_values[accepted_mask]**2))
+
+                oman_mean = np.mean(oman_values[accepted_mask])
+                oman_std = np.std(oman_values[accepted_mask])
+                oman_rmsd = np.sqrt(np.mean(oman_values[accepted_mask]**2))
+
+                increment_accepted = increment[accepted_mask]
+                increment_mean = np.mean(increment_accepted)
+                increment_std = np.std(increment_accepted)
+
+                # Create statistics table
+                stats_text = f"""
+Statistics for Profile at ({obs["lon"][iobs]:.2f}°, {obs["lat"][iobs]:.2f}°)
+{'='*50}
+
+Total observations: {n_obs}
+  Accepted (QC=0): {n_accepted}
+  Rejected (QC≠0): {n_rejected}
+
+Statistics for Accepted Observations:
+
+O-B (ombg):
+  Mean:  {ombg_mean:>8.4f} {units}
+  Std:   {ombg_std:>8.4f} {units}
+  RMSD:  {ombg_rmsd:>8.4f} {units}
+
+O-A (oman):
+  Mean:  {oman_mean:>8.4f} {units}
+  Std:   {oman_std:>8.4f} {units}
+  RMSD:  {oman_rmsd:>8.4f} {units}
+
+Increment (A-B):
+  Mean:  {increment_mean:>8.4f} {units}
+  Std:   {increment_std:>8.4f} {units}
+                """
+            else:
+                stats_text = f"""
+Statistics for Profile at ({obs["lon"][iobs]:.2f}°, {obs["lat"][iobs]:.2f}°)
+{'='*50}
+
+Total observations: {n_obs}
+  Accepted (QC=0): {n_accepted}
+  Rejected (QC≠0): {n_rejected}
+
+No accepted observations available for statistics.
+                """
+
+            ax_stats.text(0.1, 0.95, stats_text, transform=ax_stats.transAxes,
+                         fontsize=10, verticalalignment='top', family='monospace',
+                         bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
+
+            plt.tight_layout()
+            plt.show()
+
+        elif plot_type['value'] == 'OMB/OMA Density by Depth':
+            # Only available in ocean-only mode with observations
+            if not (ocean_mode and not atmos_mode and obs is not None):
+                print("OMB/OMA Density by Depth only available in ocean-only mode with observations loaded")
+                return
+
+            # Get all observations (already filtered for EffectiveQC=0)
+            ombg_all = obs['ombg']
+            oman_all = obs['oman']
+            depth_all = obs['depth']
+
+            # Filter observations to max depth of 2000m
+            max_depth = 2000.0
+            depth_mask = depth_all <= max_depth
+            ombg_all = ombg_all[depth_mask]
+            oman_all = oman_all[depth_mask]
+            depth_all = depth_all[depth_mask]
+
+            # Calculate statistics
+            # OMBG stats
+            ombg_mean = np.nanmean(ombg_all)
+            ombg_rmsd = np.sqrt(np.nanmean(ombg_all**2))
+            ombg_count = np.sum(np.isfinite(ombg_all))
+
+            # OMAN stats
+            oman_mean = np.nanmean(oman_all)
+            oman_rmsd = np.sqrt(np.nanmean(oman_all**2))
+            oman_count = np.sum(np.isfinite(oman_all))
+
+            # Create figure with two subplots side by side
+            fig_density, (ax_ombg, ax_oman) = plt.subplots(1, 2, figsize=(14, 8), sharey=True)
+
+            # Define bins with higher resolution
+            n_depth_bins = 100  # Increased from 50
+            n_error_bins = 100  # Increased from 50
+            # Use negative depth so that 0 is at top and depth increases downward
+            depth_bins = np.linspace(-max_depth, 0, n_depth_bins + 1)
+
+            # Determine error range based on variable type
+            if oceanvarname == 'Temp':
+                error_limit = 0.3
+            elif oceanvarname == 'Salt':
+                error_limit = 0.1
+            else:
+                # For other variables, use 99th percentile approach
+                error_abs_max = max(abs(np.nanpercentile(ombg_all, 99)),
+                                    abs(np.nanpercentile(oman_all, 99)))
+                error_limit = error_abs_max * 0.5
+
+            error_bins = np.linspace(-error_limit, error_limit, n_error_bins + 1)
+
+            # Create 2D histograms
+            # OMBG density
+            H_ombg, xedges_ombg, yedges_ombg = np.histogram2d(
+                ombg_all, -depth_all, bins=[error_bins, depth_bins]
+            )
+            # Transpose to get depth on y-axis
+            H_ombg = H_ombg.T
+            # Set bins with zero density to NaN for transparency
+            H_ombg = np.where(H_ombg == 0, np.nan, H_ombg)
+
+            # OMAN density
+            H_oman, xedges_oman, yedges_oman = np.histogram2d(
+                oman_all, -depth_all, bins=[error_bins, depth_bins]
+            )
+            # Transpose to get depth on y-axis
+            H_oman = H_oman.T
+            # Set bins with zero density to NaN for transparency
+            H_oman = np.where(H_oman == 0, np.nan, H_oman)
+
+            # Plot OMBG density
+            ax_ombg.pcolormesh(xedges_ombg, yedges_ombg, H_ombg,
+                               cmap='jet', shading='auto')
+            ax_ombg.axvline(x=0, color='black', linestyle='--', linewidth=1.5, alpha=0.7)
+            ax_ombg.set_xlabel('O-B', fontsize=11)
+            ax_ombg.set_ylabel('Depth (m)', fontsize=11)
+            ax_ombg.set_xlim(-error_limit, error_limit)
+            ax_ombg.invert_yaxis()  # Invert so 0 (surface) is at top, depth increases downward
+            # Add statistics and variable name to title
+            title_ombg = (f'{oceanvarname} OMB Density by Depth (0-{max_depth:.0f}m)\n'
+                          f'N={ombg_count} | Bias={ombg_mean:.3f} | '
+                          f'RMSD={ombg_rmsd:.3f}')
+            ax_ombg.set_title(title_ombg, fontsize=11)
+            ax_ombg.grid(True, alpha=0.3)
+
+            # Plot OMAN density
+            ax_oman.pcolormesh(xedges_oman, yedges_oman, H_oman,
+                               cmap='jet', shading='auto')
+            ax_oman.axvline(x=0, color='black', linestyle='--', linewidth=1.5, alpha=0.7)
+            ax_oman.set_xlabel('O-A', fontsize=11)
+            ax_oman.set_xlim(-error_limit, error_limit)
+            ax_oman.invert_yaxis()  # Invert so 0 (surface) is at top, depth increases downward
+            # Add statistics and variable name to title
+            title_oman = (f'{oceanvarname} OMA Density by Depth (0-{max_depth:.0f}m)\n'
+                          f'N={oman_count} | Bias={oman_mean:.3f} | '
+                          f'RMSD={oman_rmsd:.3f}')
+            ax_oman.set_title(title_oman, fontsize=11)
+            ax_oman.grid(True, alpha=0.3)
+
+            plt.tight_layout()
             plt.show()
 
         elif plot_type['value'] == 'Combined Zonal Slice':
@@ -1063,8 +1895,8 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
                                     levels=[level], colors='black', linewidths=linewidth,
                                     linestyles=linestyle, alpha=0.5)
                 ax_combined.contour(ocean_lon_mesh + 360, ocean_norm_mesh, ocean_zonal,
-                                    levels=[level], colors='black', linewidths=linewidth,
-                                    linestyles=linestyle, alpha=0.5)
+                                levels=[level], colors='black', linewidths=linewidth,
+                                linestyles=linestyle, alpha=0.5)
             ax_combined.contour(ocean_lon_mesh, ocean_norm_mesh, ocean_zonal,
                                 levels=contour_levels_ocean, colors='black', linewidths=0.5, alpha=0.5)
             ax_combined.contour(ocean_lon_mesh + 360, ocean_norm_mesh, ocean_zonal,
@@ -1170,6 +2002,28 @@ if __name__ == "__main__":
                         help='Atmospheric colorbar bounds as vmin,vmax. Use = or quotes: --atmos_bounds="-2,2"')
     parser.add_argument('--atmos_to_celsius', action='store_true',
                         help='Convert atmospheric temperature from Kelvin to Celsius')
+    parser.add_argument('--batch_obs_profiles', action='store_true',
+                        help='Create observation profiles for all locations (batch mode)')
+    parser.add_argument('--no_plot_background', action='store_true',
+                        help='Do not plot model background in observation profile plots')
+    parser.add_argument('--batch_zonal_sections', action='store_true',
+                        help='Create zonal section plots for specified latitudes (batch mode)')
+    parser.add_argument('--lat_start', required=False, type=float, default=None,
+                        help='Starting latitude for zonal sections (requires --batch_zonal_sections)')
+    parser.add_argument('--lat_end', required=False, type=float, default=None,
+                        help='Ending latitude for zonal sections (requires --batch_zonal_sections)')
+    parser.add_argument('--lat_step', required=False, type=float, default=5.0,
+                        help='Latitude step for zonal sections (default: 5.0)')
+    parser.add_argument('--batch_meridional_sections', action='store_true',
+                        help='Create meridional section plots for specified longitudes (batch mode)')
+    parser.add_argument('--lon_start', required=False, type=float, default=None,
+                        help='Starting longitude for meridional sections (requires --batch_meridional_sections)')
+    parser.add_argument('--lon_end', required=False, type=float, default=None,
+                        help='Ending longitude for meridional sections (requires --batch_meridional_sections)')
+    parser.add_argument('--lon_step', required=False, type=float, default=5.0,
+                        help='Longitude step for meridional sections (default: 5.0)')
+    parser.add_argument('--sections_output_dir', required=False, type=str, default='sections',
+                        help='Output directory for section plots (default: sections)')
     args = parser.parse_args()
 
     # Parse bounds arguments
@@ -1221,4 +2075,9 @@ if __name__ == "__main__":
     main(args.hfile, args.oceanfile, args.atmosfile, args.oceanvarname, args.atmosvarname,
          args.variance, args.gridfile, obsfile=args.obsfile, level=args.level,
          vmin=vmin, vmax=vmax, ocean_vmin=ocean_vmin, ocean_vmax=ocean_vmax,
-         atmos_vmin=atmos_vmin, atmos_vmax=atmos_vmax, atmos_to_celsius=args.atmos_to_celsius)
+         atmos_vmin=atmos_vmin, atmos_vmax=atmos_vmax, atmos_to_celsius=args.atmos_to_celsius,
+         batch_obs_profiles=args.batch_obs_profiles, plot_background=not args.no_plot_background,
+         batch_zonal_sections=args.batch_zonal_sections, batch_meridional_sections=args.batch_meridional_sections,
+         lat_start=args.lat_start, lat_end=args.lat_end, lat_step=args.lat_step,
+         lon_start=args.lon_start, lon_end=args.lon_end, lon_step=args.lon_step,
+         sections_output_dir=args.sections_output_dir)

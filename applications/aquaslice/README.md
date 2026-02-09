@@ -196,11 +196,81 @@ python aquaslice.py \
 
 Note: `--atmos_to_celsius` converts atmospheric temperature from Kelvin to Celsius for easier comparison with ocean temperature. Combined mode displays both domains with a unified vertical profile view.
 
+### Batch Mode: Generate Observation Profiles
+
+Create PNG plots for all observation locations without interactive mode:
+
+```bash
+python aquaslice.py \
+    --oceanfile gdas.t00z.inst.f006.nc \
+    --gridfile soca_gridspec_025.nc \
+    --oceanvarname Salt \
+    --hfile gdas.t00z.inst.f006.nc \
+    --obsfile insitu_salt_profile_argo.nc \
+    --batch_obs_profiles \
+    --no_plot_background
+```
+
+This creates a `obs_profiles/` directory with PNG files and a `obs_profiles.tar.gz` archive.
+
+### Batch Mode: Generate Zonal Sections
+
+Create zonal (constant latitude) section plots for a range of latitudes:
+
+```bash
+python aquaslice.py \
+    --oceanfile gdas.t00z.inst.f006.nc \
+    --gridfile soca_gridspec_025.nc \
+    --oceanvarname Temp \
+    --hfile gdas.t00z.inst.f006.nc \
+    --batch_zonal_sections \
+    --lat_start -60 \
+    --lat_end 60 \
+    --lat_step 10 \
+    --ocean_bounds="-2,31" \
+    --sections_output_dir zonal_sections
+```
+
+This creates zonal section plots at latitudes: -60°, -50°, ..., 50°, 60°.
+
+### Batch Mode: Generate Meridional Sections
+
+Create meridional (constant longitude) section plots for a range of longitudes:
+
+```bash
+python aquaslice.py \
+    --oceanfile gdas.t00z.inst.f006.nc \
+    --gridfile soca_gridspec_025.nc \
+    --oceanvarname Temp \
+    --hfile gdas.t00z.inst.f006.nc \
+    --batch_meridional_sections \
+    --lon_start -180 \
+    --lon_end 180 \
+    --lon_step 30 \
+    --ocean_bounds="-2,31" \
+    --sections_output_dir meridional_sections
+```
+
+This creates meridional section plots at longitudes: -180°, -150°, ..., 150°, 180°.
+
+**Batch Section Options:**
+- `--lat_start`, `--lat_end`, `--lat_step`: Define latitude range for zonal sections (step must be integer ≥ 1°)
+- `--lon_start`, `--lon_end`, `--lon_step`: Define longitude range for meridional sections (step must be integer ≥ 1°)
+- `--sections_output_dir`: Output directory for section plots (default: `sections`)
+- `--ocean_bounds` or `--bounds`: Color scale bounds for the plots
+
+**Notes:**
+- Step sizes (`--lat_step` and `--lon_step`) must be integers of 1 degree or more
+- Latitude/longitude values are rounded to the nearest integer in the output
+- Filenames include variable name and use integer format: `zonal_section_Temp_lat+045.png`, `meridional_section_Salt_lon-120.png`
+
 ## Output
 
 The tool creates interactive matplotlib figures with:
 - Main window: 2D horizontal slice with interactive controls
 - Secondary windows: Vertical profiles/slices based on user clicks
+
+**Batch modes** create PNG files saved to disk instead of interactive plots.
 
 ## Requirements
 
