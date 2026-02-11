@@ -17,7 +17,7 @@ numpy
 packaging==24.2
 panda==0.3.1
 pandas==2.2.3
-pillow==11.1.0
+pillow==12.1.1
 pluggy==1.5.0
 pycodestyle==2.12.1
 pyflakes==3.2.0
