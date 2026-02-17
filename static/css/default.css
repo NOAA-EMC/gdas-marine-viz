@@ -3,15 +3,25 @@
 		height: 100%;
 	}
 
-	body
+
+:root {
+	--page-bg: #f4f6f8;
+	--panel-bg: #ffffff;
+	--accent: #2a6fb0;
+	--muted: #6b7785;
+	--text: #1b2b3a;
+	--meta: #53677f;
+}
+
+body
 	{
 		margin: 0px;
 		padding: 0px;
-		background: #202020;
+		background: var(--page-bg);
 		font-family: 'Source Sans Pro', sans-serif;
 		font-size: 12pt;
 		font-weight: 300;
-		color: #444444;
+		color: var(--text);
 	}
 
 
@@ -20,7 +30,8 @@
 		margin: 0;
 		padding: 0;
 		font-weight: 600;
-		color: #333333;
+		font-family: Georgia, 'Times New Roman', serif;
+		color: var(--text);
 	}
 
 	p, ol, ul
@@ -57,7 +68,7 @@
 	{
 		overflow: hidden;
 		margin: 0em auto;
-		width: 1350px;
+		width: 1150px;
 	}
 
 /*********************************************************************************/
@@ -112,7 +123,7 @@
 		overflow: hidden;
 		list-style: none;
 		text-align: left;
-		color: #6c6c6c
+		color: var(--muted);
 	}
 
 	ul.style1 li
@@ -136,12 +147,11 @@
 	{
 		display: block;
 		text-decoration: none;
-		color: #2D2D2D;
+		color: #ffffff;
 	}
-
-	ul.style1 a:hover
+	a
 	{
-		text-decoration: underline;
+		color: var(--accent);
 	}
 
 	ul.style1 h3
@@ -241,7 +251,7 @@
 	ul.contact li a:before
 	{
 		display: inline-block;
-		background: #3f3f3f;
+		background: #173248; /* dark blue tile */
 		width: 40px;
 		height: 40px;
 		line-height: 40px;
@@ -269,20 +279,22 @@
 		text-transform: uppercase;
 		font-weight: 400;
 		font-size: 0.90em;
-		color: #FFF;
+		color: #0b1b2b;
+		background: #ff66cc; /* accent */
+		border-radius: 6px;
 	}
 
 	.button:before
 	{
 		display: inline-block;
-		background: #FFC31F;
+		background: rgba(255,255,255,0.08);
 		margin-right: 1em;
 		width: 40px;
 		height: 40px;
 		line-height: 40px;
 		border-radius: 20px;
 		text-align: center;
-		color: #272925;
+		color: #ffffff;
 	}
 
 /*********************************************************************************/
@@ -578,7 +590,7 @@
 
 	#page
 	{
-		background: #112e51;
+		background: transparent;
 /*		background: #2a2a2a;	*/
 	}
 
@@ -591,10 +603,11 @@
 		overflow: hidden;
 		float: right;
 		width: 1125px;
-		padding: 1em 0px 2em 0px;
-		background: #FFF;
-		border-top: 6px solid #2980b9;
-		text-align: center;
+		padding: 1.5em 2em 2em 2em;
+		background: var(--panel-bg);
+		box-shadow: 0 2px 8px rgba(27,43,58,0.06);
+		border-top: 6px solid var(--accent);
+		text-align: left;
 	}
 
 /*********************************************************************************/
@@ -672,19 +685,21 @@
 		text-align: center;
 		text-transform: uppercase;
 		font-size: 0.8em;
-                font-weight: normal;
-		color: rgba(0,0,0,0.7);
+		        font-weight: normal;
+		color: rgba(255,255,255,0.7);
 	}
 
 	#copyright a
 	{
 		text-decoration: none;
-		color: rgba(0,0,0,0.9);
+		color: rgba(255,255,255,0.9);
 	}
 
 	.fa
 	{
 		display: block;
-		color: #000;
-		background: red;
+		color: #ffffff;
+		background: #173248;
+		padding: 0.4em;
+		border-radius: 4px;
 	}
