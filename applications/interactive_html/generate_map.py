@@ -9,18 +9,11 @@ import json
 import argparse
 import base64
 import shutil
-import glob
 import numpy as np
 try:
     import netCDF4 as nc
 except ImportError:
     nc = None
-
-try:
-    from PIL import Image, ImageDraw
-    PIL_AVAILABLE = True
-except ImportError:
-    PIL_AVAILABLE = False
 
 
 def parse_filename(filename):
@@ -506,6 +499,14 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
             '</script>'
         )
 
+    # Prepare section data
+    zonal_sections_dict = {str(k): v for k, v in (
+        section_images.get('zonal', {}) if section_images else {}).items()}
+    meridional_sections_dict = {str(k): v for k, v in (
+        section_images.get('meridional', {}) if section_images else {}).items()}
+    zonal_sections_json = json.dumps(zonal_sections_dict)
+    meridional_sections_json = json.dumps(meridional_sections_dict)
+
     html_content = f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -848,8 +849,8 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
         const satelliteRasters = {json.dumps(satellite_rasters_js)};
 
         // Section images data - relative paths, loaded on demand in popups
-        const zonalSections = {json.dumps({str(k): v for k, v in (section_images.get('zonal', {}) if section_images else {}).items()})};
-        const meridionalSections = {json.dumps({str(k): v for k, v in (section_images.get('meridional', {}) if section_images else {}).items()})};
+        const zonalSections = {zonal_sections_json};
+        const meridionalSections = {meridional_sections_json};
 
         // Initialize the map
         const map = L.map('map', {{
@@ -989,7 +990,7 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
 
             for (const key in meridionalSections) {{
                 // Parse the key string like "('Temp', 120)" to extract varname and lon
-                const match = key.match(/\('(\w+)',\s*([+-]?\d+)\)/);
+                const match = key.match(/\\('(\\w+)',\\s*([+-]?\\d+)\\)/);
                 if (match) {{
                     const keyVarName = match[1];
                     const keyLon = parseInt(match[2]);
@@ -1089,7 +1090,7 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
 
             for (const key in zonalSections) {{
                 // Parse the key string like "('Temp', 45)" to extract varname and lat
-                const match = key.match(/\('(\w+)',\s*([+-]?\d+)\)/);
+                const match = key.match(/\\('(\\w+)',\\s*([+-]?\\d+)\\)/);
                 if (match) {{
                     const keyVarName = match[1];
                     const keyLat = parseInt(match[2]);
@@ -1146,7 +1147,9 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
 
         // Function to create colored circle marker icon
         function createMarkerIcon(color) {{
-            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="${{color}}" stroke="white" stroke-width="2"/></svg>`;
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" ` +
+                `viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="${{color}}" ` +
+                `stroke="white" stroke-width="2"/></svg>`;
             return L.icon({{
                 iconUrl: 'data:image/svg+xml;base64,' + btoa(svg),
                 iconSize: [16, 16],
@@ -1157,7 +1160,9 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
 
         // Function to create smaller drifter marker icon (no border)
         function createDrifterIcon(color) {{
-            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="6" height="6" viewBox="0 0 6 6"><circle cx="3" cy="3" r="2.5" fill="${{color}}" stroke="${{color}}" stroke-width="0.5"/></svg>`;
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="6" height="6" ` +
+                `viewBox="0 0 6 6"><circle cx="3" cy="3" r="2.5" fill="${{color}}" ` +
+                `stroke="${{color}}" stroke-width="0.5"/></svg>`;
             return L.icon({{
                 iconUrl: 'data:image/svg+xml;base64,' + btoa(svg),
                 iconSize: [6, 6],
@@ -1217,7 +1222,9 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
                 minWidth: 200
             }});
 
-            marker.bindTooltip(`Drifter OMB: ${{drifter.ombg.toFixed(2)}}°C<br>Lon: ${{drifter.lon.toFixed(2)}}°, Lat: ${{drifter.lat.toFixed(2)}}°`, {{
+            marker.bindTooltip(
+                `Drifter OMB: ${{drifter.ombg.toFixed(2)}}°C<br>` +
+                `Lon: ${{drifter.lon.toFixed(2)}}°, Lat: ${{drifter.lat.toFixed(2)}}°`, {{
                 permanent: false,
                 direction: 'top',
                 offset: [0, -8]
@@ -1269,7 +1276,9 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
 
             // Add tooltip with platform and variables
             const varList = profile.variable_list.join(', ');
-            marker.bindTooltip(`${{profile.platform}}: ${{varList}}<br>Lon: ${{profile.lon.toFixed(2)}}°, Lat: ${{profile.lat.toFixed(2)}}°`, {{
+            marker.bindTooltip(
+                `${{profile.platform}}: ${{varList}}<br>` +
+                `Lon: ${{profile.lon.toFixed(2)}}°, Lat: ${{profile.lat.toFixed(2)}}°`, {{
                 permanent: false,
                 direction: 'top',
                 offset: [0, -8],
