@@ -412,7 +412,7 @@ def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_varianc
         ax_qc.set_xlim(-0.5, max(1, np.max(qc_values) + 0.5))
 
         # Statistics table subplot
-        ax_stats.axis('of')
+        ax_stats.axis('off')
 
         # Calculate statistics (only for accepted observations)
         n_obs = len(obs_values)
@@ -1459,8 +1459,8 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
                              hasattr(ocean_lon2d[iy_ocean, ix_ocean], 'values') else
                              ocean_lon2d[iy_ocean, ix_ocean])
             ocean_lat_val = (ocean_lat2d[iy_ocean, ix_ocean].values if
-                             hasattr(lat2d[iy_ocean, ix_ocean], 'values') else
-                             lat2d[iy_ocean, ix_ocean])
+                             hasattr(ocean_lat2d[iy_ocean, ix_ocean], 'values') else
+                             ocean_lat2d[iy_ocean, ix_ocean])
 
             atmos_profile = atmos_data[:, iy_atmos, ix_atmos]
             atmos_depth_profile = atmos_depth[:, iy_atmos, ix_atmos]
@@ -1747,7 +1747,7 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
             ax_qc.set_xlim(-0.5, max(1, np.max(qc_values) + 0.5))
 
             # Statistics table subplot
-            ax_stats.axis('of')
+            ax_stats.axis('off')
 
             # Calculate statistics (only for accepted observations)
             n_obs = len(obs_value)
