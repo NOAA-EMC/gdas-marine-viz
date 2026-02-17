@@ -7,11 +7,20 @@ import os
 import re
 import json
 import argparse
+import base64
+import shutil
+import glob
 import numpy as np
 try:
     import netCDF4 as nc
 except ImportError:
     nc = None
+
+try:
+    from PIL import Image, ImageDraw
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
 
 
 def parse_filename(filename):
@@ -69,10 +78,13 @@ def get_all_profiles(profile_dir='obs_profiles'):
                 if var_display not in profiles_by_location[location_key]['variables']:
                     profiles_by_location[location_key]['variables'][var_display] = []
 
+                # Store relative path - images will be copied to output dir
+                # and loaded on-demand when popup opens (no CORS issue for
+                # same-origin files). This avoids embedding ~200MB of base64.
                 profiles_by_location[location_key]['variables'][var_display].append({
                     'id': profile_id,
                     'filename': filename,
-                    'path': f'{profile_dir}/{filename}'
+                    'path': f'obs_profiles/{filename}'  # Relative to HTML
                 })
                 profiles_by_location[location_key]['profile_ids'].add(profile_id)
 
@@ -132,10 +144,10 @@ def get_drifter_data(nc_file='obs_profiles/insitu_temp_surface_drifter.nc'):
             # Convert temperature from Kelvin to Celsius (assuming data is in K)
             # OMB and OMA values remain the same (they're already temperature differences)
             drifters.append({
-                'lon': float(lons[i]),
-                'lat': float(lats[i]),
-                'ombg': float(ombg[i]),  # Already a difference, no conversion needed
-                'oman': float(oman[i]) if not np.ma.is_masked(oman[i]) and np.isfinite(oman[i]) else None,
+                'lon': round(float(lons[i]), 3),
+                'lat': round(float(lats[i]), 3),
+                'ombg': round(float(ombg[i]), 4),
+                'oman': round(float(oman[i]), 4) if not np.ma.is_masked(oman[i]) and np.isfinite(oman[i]) else None,
                 'qc': int(qc_flags[i]) if not np.ma.is_masked(qc_flags[i]) else None
             })
 
@@ -173,6 +185,132 @@ def load_satellite_rasters_metadata(metadata_file='output/satellite_rasters_meta
 
     with open(metadata_file, 'r') as f:
         return json.load(f)
+
+
+def image_to_base64_data_url(image_path):
+    """
+    Convert an image file to a base64-encoded data URL.
+    This eliminates CORS issues by embedding the image data directly in the HTML.
+
+    Args:
+        image_path: Path to the image file (PNG)
+
+    Returns:
+        str: Base64 data URL in format 'data:image/png;base64,...'
+    """
+    try:
+        with open(image_path, 'rb') as img_file:
+            encoded = base64.b64encode(img_file.read()).decode('utf-8')
+            return f'data:image/png;base64,{encoded}'
+    except Exception as e:
+        print(f"Warning: Could not convert {image_path} to base64: {e}")
+        return image_path  # Fall back to original path
+
+
+def create_simple_land_overlay(output_file='output/land_overlay.png', width=3600, height=None):
+    """
+    Create a land overlay using matplotlib and cartopy in Web Mercator projection.
+
+    IMPORTANT: The satellite rasters are generated in Web Mercator (EPSG:3857) space,
+    then displayed with Leaflet's L.imageOverlay using lat/lon bounds [[-85, -180], [85, 180]].
+    Leaflet internally projects these bounds to Web Mercator to position the image.
+    Therefore, the land overlay must ALSO be rendered in Web Mercator space so that
+    latitudes align correctly with the satellite data and observation markers.
+
+    Args:
+        output_file: Path to save the land overlay PNG
+        width: Width of the image in pixels (default: 3600)
+        height: Height of the image in pixels (auto-calculated from Web Mercator aspect ratio if None)
+
+    Returns:
+        str: Path to the generated land overlay image, or None if dependencies not available
+    """
+    try:
+        import matplotlib
+        matplotlib.use('Agg')  # Use non-interactive backend
+        import matplotlib.pyplot as plt
+        import cartopy.crs as ccrs
+        import cartopy.feature as cfeature
+    except ImportError as e:
+        print(f"Warning: Cannot create land overlay. Missing dependencies: {e}")
+        print("Install with: pip install matplotlib cartopy")
+        return None
+
+    try:
+        # Ensure output directory exists
+        os.makedirs(os.path.dirname(output_file) if os.path.dirname(output_file) else '.', exist_ok=True)
+
+        # Use Web Mercator projection to match satellite rasters
+        # The satellite rasters use lonlat_to_web_mercator() to project data,
+        # then Leaflet displays them with [[-85, -180], [85, 180]] bounds.
+        # We must do the same for the land overlay.
+
+        # Web Mercator bounds for -85 to +85 latitude
+        # x = lon * 20037508.34 / 180
+        # y = log(tan((90 + lat) * pi / 360)) * (20037508.34 / pi)
+        x_min = -180.0 * 20037508.34 / 180.0  # = -20037508.34
+        x_max = 180.0 * 20037508.34 / 180.0   # = +20037508.34
+        y_min = np.log(np.tan((90.0 + (-85.0)) * np.pi / 360.0)) * (20037508.34 / np.pi)
+        y_max = np.log(np.tan((90.0 + 85.0) * np.pi / 360.0)) * (20037508.34 / np.pi)
+
+        # Calculate height from Web Mercator aspect ratio if not provided
+        mercator_aspect = (x_max - x_min) / (y_max - y_min)
+        if height is None:
+            height = int(width / mercator_aspect)
+
+        print(f"  Web Mercator bounds: x=[{x_min:.0f}, {x_max:.0f}], y=[{y_min:.0f}, {y_max:.0f}]")
+        print(f"  Mercator aspect ratio: {mercator_aspect:.4f}")
+        print(f"  Image dimensions: {width} x {height} pixels")
+
+        # Set figure size to match pixel dimensions at 100 DPI
+        dpi = 100
+        fig_width_inches = width / dpi
+        fig_height_inches = height / dpi
+
+        # Create figure with Web Mercator projection (epsg:3857)
+        web_mercator = ccrs.epsg(3857)
+        fig = plt.figure(figsize=(fig_width_inches, fig_height_inches), dpi=dpi, frameon=False)
+        ax = fig.add_axes([0, 0, 1, 1], projection=web_mercator)
+
+        # Set extent in Web Mercator coordinates
+        ax.set_extent([-180, 180, -85, 85], crs=ccrs.PlateCarree())
+
+        # Make background transparent
+        ax.patch.set_alpha(0.0)
+        fig.patch.set_alpha(0.0)
+
+        # Add land features with nice styling
+        land = cfeature.LAND.with_scale('50m')  # 50m resolution
+        ax.add_feature(land, facecolor='#d2b48c', edgecolor='#8b7355',
+                       linewidth=0.5, alpha=0.8, zorder=1)
+
+        # Add coastlines for better definition
+        ax.coastlines(resolution='50m', color='#5a4a3a', linewidth=0.8, zorder=2)
+
+        # Optionally add borders and lakes for more detail
+        borders = cfeature.BORDERS.with_scale('50m')
+        ax.add_feature(borders, edgecolor='#8b7355', linewidth=0.3,
+                       alpha=0.5, zorder=1)
+
+        lakes = cfeature.LAKES.with_scale('50m')
+        ax.add_feature(lakes, facecolor='none', edgecolor='#4a657a',
+                       linewidth=0.3, alpha=0.6, zorder=1)
+
+        # Turn off axis
+        ax.axis('off')
+
+        # Save without any padding or cropping to preserve exact dimensions
+        plt.savefig(output_file, dpi=dpi, pad_inches=0, transparent=True, format='png')
+        plt.close(fig)
+
+        print(f"Created land overlay: {output_file}")
+        return output_file
+
+    except Exception as e:
+        print(f"Warning: Could not create land overlay: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 
 def get_section_images(sections_dir='sections'):
@@ -223,8 +361,58 @@ def get_section_images(sections_dir='sections'):
     return sections
 
 
+def load_leaflet_inline(lib_dir=None):
+    """
+    Load Leaflet CSS and JS from local files and return them as inline strings.
+    CSS image references (layers.png, marker-icon.png, etc.) are replaced with
+    base64 data URLs so the HTML is 100% self-contained with zero external requests.
+
+    Args:
+        lib_dir: Directory containing leaflet.css, leaflet.js, and images/ subfolder.
+                 Defaults to 'lib' next to this script.
+
+    Returns:
+        tuple: (leaflet_css_inline, leaflet_js_inline) strings ready to embed
+    """
+    if lib_dir is None:
+        lib_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lib')
+
+    css_path = os.path.join(lib_dir, 'leaflet.css')
+    js_path = os.path.join(lib_dir, 'leaflet.js')
+
+    if not os.path.exists(css_path) or not os.path.exists(js_path):
+        print(f"Warning: Leaflet files not found in {lib_dir}")
+        print("  Falling back to CDN links (will not work offline)")
+        return None, None
+
+    # Read JS
+    with open(js_path, 'r') as f:
+        leaflet_js = f.read()
+
+    # Read CSS and replace image references with base64 data URLs
+    with open(css_path, 'r') as f:
+        leaflet_css = f.read()
+
+    images_dir = os.path.join(lib_dir, 'images')
+    image_files = {
+        'images/layers.png': os.path.join(images_dir, 'layers.png'),
+        'images/layers-2x.png': os.path.join(images_dir, 'layers-2x.png'),
+        'images/marker-icon.png': os.path.join(images_dir, 'marker-icon.png'),
+    }
+
+    for ref, filepath in image_files.items():
+        if os.path.exists(filepath):
+            with open(filepath, 'rb') as img_f:
+                b64 = base64.b64encode(img_f.read()).decode('utf-8')
+                data_url = f'data:image/png;base64,{b64}'
+                leaflet_css = leaflet_css.replace(ref, data_url)
+
+    return leaflet_css, leaflet_js
+
+
 def generate_html(profiles, drifters, satellite_metadata=None, section_images=None,
-                  output_file='output/ocean-observations-map.html', cycle_name=None):
+                  output_file='output/ocean-observations-map.html', cycle_name=None,
+                  land_overlay=None):
     """Generate HTML map with all features"""
 
     # Convert satellite metadata to the format expected by HTML
@@ -246,14 +434,77 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
             elif 'sst_' in nc_file or nc_file.startswith('sst'):
                 sst_count += 1
 
+            # Convert image file path to base64 data URL to avoid CORS issues
+            image_file = data['file']
+            # Resolve relative paths against the output directory
+            # (metadata stores bare filenames like 'satellite_raster_sst_viirs_npp_l3u.png'
+            #  but the files live alongside the metadata in the output dir)
+            if not os.path.isabs(image_file) and not os.path.exists(image_file):
+                output_dir = os.path.dirname(output_file)
+                candidate = os.path.join(output_dir, image_file)
+                if os.path.exists(candidate):
+                    image_file = candidate
+            if os.path.exists(image_file):
+                image_data_url = image_to_base64_data_url(image_file)
+            else:
+                print(f"Warning: Image file not found: {image_file}")
+                image_data_url = image_file  # Fall back to path
+
             satellite_rasters_js[nc_file] = {
                 'name': data['name'],
                 'description': data['description'],
-                'file': data['file'],
+                'file': image_data_url,  # Now contains base64 data URL
                 'bounds': data['bounds'],
                 'n_obs': data['n_obs'],
                 'color': data.get('color', '#666666')
             }
+
+    # Keep section image paths as relative paths (loaded on-demand in popups)
+    # They'll be copied to output dir alongside the HTML
+    if section_images:
+        for section_type in ['zonal', 'meridional']:
+            if section_type in section_images:
+                for key, filepath in section_images[section_type].items():
+                    if not os.path.exists(filepath):
+                        print(f"Warning: Section image not found: {filepath}")
+
+    # Convert land overlay to base64 data URL if provided
+    land_overlay_data_url = None
+    land_overlay_js = '// No land overlay provided'
+    if land_overlay and os.path.exists(land_overlay):
+        land_overlay_data_url = image_to_base64_data_url(land_overlay)
+        # Use format() instead of f-string to avoid curly brace escaping issues
+        # Leaflet expects [[southLat, westLon], [northLat, eastLon]]
+        # Match the bounds format used by satellite rasters: [[minLat, minLon], [maxLat, maxLon]]
+        land_overlay_js = '''const landOverlay = L.imageOverlay(
+            '{}',
+            [[-85.0, -180.0], [85.0, 180.0]],
+            {{
+                opacity: 0.7,
+                interactive: false
+            }}
+        ).addTo(map);'''.format(land_overlay_data_url)
+
+    # Load Leaflet CSS/JS inline (no CDN dependency)
+    leaflet_css_inline, leaflet_js_inline = load_leaflet_inline()
+
+    if leaflet_css_inline and leaflet_js_inline:
+        leaflet_head = (
+            '<style>/* Leaflet 1.9.3 */\n'
+            + leaflet_css_inline
+            + '\n</style>\n'
+            + '    <script>/* Leaflet 1.9.3 */\n'
+            + leaflet_js_inline
+            + '\n</script>'
+        )
+    else:
+        # Fallback to CDN (won't work on restrictive servers)
+        leaflet_head = (
+            '<link rel="stylesheet" '
+            'href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />\n'
+            '    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js">'
+            '</script>'
+        )
 
     html_content = f'''<!DOCTYPE html>
 <html lang="en">
@@ -261,18 +512,19 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ocean Observations Interactive Map</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+    {leaflet_head}
     <style>
         body {{
             margin: 0;
             padding: 0;
             font-family: Arial, sans-serif;
+            background-color: #e0f0ff;
         }}
 
         #map {{
             height: 100vh;
             width: 100%;
+            background-color: #e0f0ff;
         }}
 
         .info {{
@@ -586,18 +838,18 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
     </div>
 
     <script>
-        // Profile data
-        const profiles = {json.dumps(profiles, indent=8)};
+        // Profile data (coordinates and relative image paths only - images loaded on demand)
+        const profiles = {json.dumps(profiles)};
 
         // Drifter data
-        const drifters = {json.dumps(drifters, indent=8)};
+        const drifters = {json.dumps(drifters)};
 
-        // Satellite raster data (SST and sea ice)
-        const satelliteRasters = {json.dumps(satellite_rasters_js, indent=8)};
+        // Satellite raster data (SST and sea ice) - base64 embedded for map overlays
+        const satelliteRasters = {json.dumps(satellite_rasters_js)};
 
-        // Section images data - convert tuple keys to nested objects
-        const zonalSections = {json.dumps({str(k): v for k, v in (section_images.get('zonal', {}) if section_images else {}).items()}, indent=8)};
-        const meridionalSections = {json.dumps({str(k): v for k, v in (section_images.get('meridional', {}) if section_images else {}).items()}, indent=8)};
+        // Section images data - relative paths, loaded on demand in popups
+        const zonalSections = {json.dumps({str(k): v for k, v in (section_images.get('zonal', {}) if section_images else {}).items()})};
+        const meridionalSections = {json.dumps({str(k): v for k, v in (section_images.get('meridional', {}) if section_images else {}).items()})};
 
         // Initialize the map
         const map = L.map('map', {{
@@ -607,11 +859,49 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
             minZoom: 2
         }});
 
-        // Add OpenStreetMap tile layer
-        L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-            maxZoom: 18
-        }}).addTo(map);
+        // Create a static canvas-based base layer (no external requests)
+        // This avoids CORS issues on restrictive servers
+        const CanvasLayer = L.GridLayer.extend({{
+            createTile: function(coords) {{
+                const tile = document.createElement('canvas');
+                const tileSize = this.getTileSize();
+                tile.width = tileSize.x;
+                tile.height = tileSize.y;
+
+                const ctx = tile.getContext('2d');
+
+                // Light blue background (ocean color)
+                ctx.fillStyle = '#e0f0ff';
+                ctx.fillRect(0, 0, tile.width, tile.height);
+
+                // Draw grid lines for reference
+                ctx.strokeStyle = '#c0d8e8';
+                ctx.lineWidth = 0.5;
+
+                // Draw tile border
+                ctx.strokeRect(0, 0, tile.width, tile.height);
+
+                // Draw grid lines (4x4 grid per tile)
+                ctx.beginPath();
+                for (let i = tile.width / 4; i < tile.width; i += tile.width / 4) {{
+                    ctx.moveTo(i, 0);
+                    ctx.lineTo(i, tile.height);
+                }}
+                for (let i = tile.height / 4; i < tile.height; i += tile.height / 4) {{
+                    ctx.moveTo(0, i);
+                    ctx.lineTo(tile.width, i);
+                }}
+                ctx.stroke();
+
+                return tile;
+            }}
+        }});
+
+        // Add the static canvas layer to the map
+        new CanvasLayer().addTo(map);
+
+        // Add land overlay if provided
+        {land_overlay_js}
 
         // Section selection state
         let activeMeridionalSection = null;
@@ -1152,11 +1442,88 @@ Examples:
     print(f"  - {seaice_count} sea ice datasets")
     print(f"  - {sss_count} salinity datasets")
 
+    # Create land overlay
+    print("\nCreating land overlay...")
+    land_overlay_file = os.path.join(args.output_dir, 'land_overlay.png')
+    land_overlay = create_simple_land_overlay(output_file=land_overlay_file)
+    if land_overlay:
+        print(f"  Land overlay created: {land_overlay}")
+    else:
+        print("  Land overlay skipped (PIL not available or error occurred)")
+
+    # Generate drifter raster (same approach as satellite rasters)
+    print("\nGenerating drifter raster...")
+    if os.path.exists(args.drifter_file):
+        try:
+            from generate_generic_raster import generate_observation_raster
+            drifter_raster_file = os.path.join(
+                args.output_dir, 'satellite_raster_drifters_sst.png')
+            drifter_result = generate_observation_raster(
+                args.drifter_file,
+                drifter_raster_file,
+                variable_name='seaSurfaceTemperature',
+                vmin=-1.0,
+                vmax=1.0,
+                resolution=0.5
+            )
+            if drifter_result:
+                # Add drifter raster to satellite metadata so it appears
+                # as a toggleable overlay alongside the other satellites
+                satellite_metadata['insitu_temp_surface_drifter'] = {
+                    'name': 'Surface Drifters SST',
+                    'description': 'In-situ surface drifter SST OMB',
+                    'file': drifter_raster_file,
+                    'bounds': drifter_result['bounds'],
+                    'n_obs': drifter_result['n_obs'],
+                    'color': '#666666'
+                }
+                print(f"  Drifter raster created: {drifter_raster_file}")
+                print(f"  {drifter_result['n_obs']} observations")
+            else:
+                print("  Warning: Could not generate drifter raster")
+        except ImportError:
+            print("  Warning: generate_generic_raster not available, "
+                  "skipping drifter raster")
+    else:
+        print(f"  Drifter file not found: {args.drifter_file}")
+
+    # Copy profile and section images to output directory
+    # (they'll be referenced by relative path instead of base64-embedded,
+    #  reducing HTML size from ~250MB to ~5MB)
+    print("\nCopying images to output directory...")
+    out_profiles_dir = os.path.join(args.output_dir, 'obs_profiles')
+    os.makedirs(out_profiles_dir, exist_ok=True)
+    profile_copy_count = 0
+    for f in os.listdir(args.profile_dir):
+        if f.endswith('.png') and 'profile' in f:
+            src = os.path.join(args.profile_dir, f)
+            dst = os.path.join(out_profiles_dir, f)
+            if not os.path.exists(dst) or \
+               os.path.getmtime(src) > os.path.getmtime(dst):
+                shutil.copy2(src, dst)
+            profile_copy_count += 1
+    print(f"  Synced {profile_copy_count} profile images to {out_profiles_dir}")
+
+    out_sections_dir = os.path.join(args.output_dir, 'sections')
+    os.makedirs(out_sections_dir, exist_ok=True)
+    section_copy_count = 0
+    if os.path.exists(args.sections_dir):
+        for f in os.listdir(args.sections_dir):
+            if f.endswith('.png'):
+                src = os.path.join(args.sections_dir, f)
+                dst = os.path.join(out_sections_dir, f)
+                if not os.path.exists(dst) or \
+                   os.path.getmtime(src) > os.path.getmtime(dst):
+                    shutil.copy2(src, dst)
+                section_copy_count += 1
+    print(f"  Synced {section_copy_count} section images to {out_sections_dir}")
+
     # Generate HTML
     print("\nGenerating HTML file...")
     output_path = os.path.join(args.output_dir, args.html_name)
     generate_html(profiles, drifters, satellite_metadata, section_images,
-                  output_file=output_path, cycle_name=args.cycle_name)
+                  output_file=output_path, cycle_name=args.cycle_name,
+                  land_overlay=land_overlay)
 
     print(f"\nDone! Open {output_path} in a web browser.")
 

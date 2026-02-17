@@ -11,6 +11,7 @@ set -e  # Exit on error
 # ------------------
 marineviz_dir=/home/gvernier/sandboxes/gdas-marine-viz-combined
 diags_dir="./rt-3dvar"
+#diags_dir="./newqc"
 cycle="gdas.2026020300"
 ocn_bkg="${diags_dir}/bkg/gdas.t00z.inst.f006.nc"
 soca_grid="soca_gridspec_025.nc"
@@ -23,7 +24,10 @@ for var in Salt Temp; do
     else
         obsfile="insitu_temp_profile_argo.nc"
     fi
-
+    if [ ! -f "${diags_dir}/${obsfile}" ]; then
+        echo "Skipping ${obsfile} as it does not exist."
+        continue
+    fi
     python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
         --oceanfile ${ocn_bkg} \
         --gridfile ${soca_grid} \
@@ -70,7 +74,11 @@ echo "Copy the output of aquaslice (obs_profiles) to output/obs_profiles..."
 cp -r obs_profiles ./output/obs_profiles
 
 echo "Copy the sections directory to output/sections..."
-cp -r sections ./output/sections
+if [ -d "sections" ]; then
+    cp -r sections ./output/sections
+else
+    echo "Skipping copy: sections directory does not exist."
+fi
 
 echo "Step 3/3: Generating HTML map..."
 python3 "${marineviz_dir}/applications/interactive_html/generate_map.py" \

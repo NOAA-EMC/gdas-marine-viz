@@ -47,7 +47,10 @@ def load_obsfile(obsfile, longitude_max=None, variable='Temp'):
         hofx = f.groups['hofx0'].variables[nc_var][:]
 
         # Load EffectiveQC
-        effective_qc = f.groups['EffectiveQC1'].variables[nc_var][:]
+        effective_qc = f.groups['EffectiveQC0'].variables[nc_var][:]
+
+        # Load EffectiveError
+        effective_error = f.groups['EffectiveError0'].variables[nc_var][:]
 
         # Filter: only valid coordinates (keep both accepted and rejected obs)
         valid = (np.isfinite(lat_obs) & np.isfinite(lon_obs) & np.isfinite(depth_obs))
@@ -66,6 +69,7 @@ def load_obsfile(obsfile, longitude_max=None, variable='Temp'):
         obsval = obsval[valid]
         hofx = hofx[valid]
         effective_qc = effective_qc[valid]
+        effective_error = effective_error[valid]
 
         obs = {'lon': lon_obs,
                'lat': lat_obs,
@@ -74,7 +78,8 @@ def load_obsfile(obsfile, longitude_max=None, variable='Temp'):
                'oman': oman,
                'obsval': obsval,
                'hofx': hofx,
-               'qc': effective_qc}
+               'qc': effective_qc,
+               'error': effective_error}
     return obs
 
 
@@ -302,6 +307,7 @@ def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_varianc
         ombg_values = obs['ombg'][indices]
         oman_values = obs['oman'][indices]
         qc_values = obs['qc'][indices]
+        obs_errors = obs['error'][indices]
 
         # Sort by depth
         sort_idx = np.argsort(obs_depths)
@@ -310,14 +316,15 @@ def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_varianc
         ombg_values = ombg_values[sort_idx]
         oman_values = oman_values[sort_idx]
         qc_values = qc_values[sort_idx]
+        obs_errors = obs_errors[sort_idx]
 
         # Find nearest grid point for model profile
         iy_grid, ix_grid = find_nearest_2d(lon2d_vals, lat2d_vals, obs_lon, obs_lat)
         model_profile = data[:, iy_grid, ix_grid]
         model_depth = depth[:, iy_grid, ix_grid]
 
-        # Create figure with two subplots
-        fig_obs, (ax_obs, ax_obsval) = plt.subplots(1, 2, figsize=(12, 10), sharey=True)
+        # Create figure with four subplots (2x2 layout matching interactive mode)
+        fig_obs, ((ax_obs, ax_obsval), (ax_qc, ax_stats)) = plt.subplots(2, 2, figsize=(14, 12))
 
         # Determine units based on variable type
         units = 'PSU' if oceanvarname == 'Salt' else '°C'
@@ -365,12 +372,21 @@ def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_varianc
         ax_obsval.plot(obs_values - oman_values, obs_depths, '.-',
                       color='tab:red', label='Analysis', markersize=8)
 
-        # Plot accepted observations
+        # Plot accepted observations with error bounds (thin dashed lines)
         if np.any(accepted_mask):
+            # Main observation line
             ax_obsval.plot(obs_values[accepted_mask], obs_depths[accepted_mask], '.-',
                           color='tab:blue', label='Obs Accepted', markersize=8)
+            # Upper error bound (obs + error)
+            ax_obsval.plot(obs_values[accepted_mask] + obs_errors[accepted_mask],
+                          obs_depths[accepted_mask], '--',
+                          color='tab:blue', linewidth=0.8, alpha=0.5)
+            # Lower error bound (obs - error)
+            ax_obsval.plot(obs_values[accepted_mask] - obs_errors[accepted_mask],
+                          obs_depths[accepted_mask], '--',
+                          color='tab:blue', linewidth=0.8, alpha=0.5)
 
-        # Plot rejected observations with X markers (smaller size)
+        # Plot rejected observations with X markers (no error bounds)
         if np.any(rejected_mask):
             ax_obsval.scatter(obs_values[rejected_mask], obs_depths[rejected_mask],
                              marker='x', s=50, color='darkblue', label='Obs Rejected',
@@ -379,10 +395,84 @@ def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_varianc
         if plot_background:
             ax_obsval.plot(model_profile, model_depth, '.-', color='tab:purple',
                           label="QC'ed Analysis", markersize=8)
+        ax_obsval.invert_yaxis()
         ax_obsval.set_xlabel(f'Obs Value ({units})')
+        ax_obsval.set_ylabel('Depth (m)')
         ax_obsval.set_title('Obs Value')
         ax_obsval.legend(fontsize=8)
         ax_obsval.grid()
+
+        # QC flag subplot
+        # Use scatter plot to show QC values at each depth
+        ax_qc.scatter(qc_values, obs_depths, c='tab:cyan', s=50, alpha=0.7, edgecolors='black')
+        ax_qc.invert_yaxis()
+        ax_qc.set_xlabel('QC Flag')
+        ax_qc.set_ylabel('Depth (m)')
+        ax_qc.set_title('Effective QC Flag')
+        ax_qc.grid()
+        ax_qc.set_xlim(-0.5, max(1, np.max(qc_values) + 0.5))
+
+        # Statistics table subplot
+        ax_stats.axis('off')
+
+        # Calculate statistics (only for accepted observations)
+        n_obs = len(obs_values)
+        n_accepted = np.sum(accepted_mask)
+        n_rejected = np.sum(rejected_mask)
+
+        if n_accepted > 0:
+            ombg_mean = np.mean(ombg_values[accepted_mask])
+            ombg_std = np.std(ombg_values[accepted_mask])
+            ombg_rmsd = np.sqrt(np.mean(ombg_values[accepted_mask]**2))
+
+            oman_mean = np.mean(oman_values[accepted_mask])
+            oman_std = np.std(oman_values[accepted_mask])
+            oman_rmsd = np.sqrt(np.mean(oman_values[accepted_mask]**2))
+
+            increment_accepted = increment[accepted_mask]
+            increment_mean = np.mean(increment_accepted)
+            increment_std = np.std(increment_accepted)
+
+            # Create statistics table
+            stats_text = f"""
+Statistics for Profile at ({obs_lon:.2f}°, {obs_lat:.2f}°)
+{'='*50}
+
+Total observations: {n_obs}
+  Accepted (QC=0): {n_accepted}
+  Rejected (QC≠0): {n_rejected}
+
+Statistics for Accepted Observations:
+
+O-B (ombg):
+  Mean:  {ombg_mean:>8.4f} {units}
+  Std:   {ombg_std:>8.4f} {units}
+  RMSD:  {ombg_rmsd:>8.4f} {units}
+
+O-A (oman):
+  Mean:  {oman_mean:>8.4f} {units}
+  Std:   {oman_std:>8.4f} {units}
+  RMSD:  {oman_rmsd:>8.4f} {units}
+
+Increment (A-B):
+  Mean:  {increment_mean:>8.4f} {units}
+  Std:   {increment_std:>8.4f} {units}
+            """
+        else:
+            stats_text = f"""
+Statistics for Profile at ({obs_lon:.2f}°, {obs_lat:.2f}°)
+{'='*50}
+
+Total observations: {n_obs}
+  Accepted (QC=0): {n_accepted}
+  Rejected (QC≠0): {n_rejected}
+
+No accepted observations available for statistics.
+            """
+
+        ax_stats.text(0.1, 0.95, stats_text, transform=ax_stats.transAxes,
+                     fontsize=10, verticalalignment='top', family='monospace',
+                     bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
 
         plt.tight_layout()
 
@@ -1002,10 +1092,42 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
         ax_ocean.set_xlim(-180, 180)
 
         if obs is not None:
+            # Categorize observations by QC status at each unique location
+            # Find unique locations and check if they have any rejected observations
+            unique_locations = {}
+            for i in range(len(obs['lon'])):
+                key = (obs['lon'][i], obs['lat'][i])
+                if key not in unique_locations:
+                    unique_locations[key] = []
+                unique_locations[key].append(i)
+
+            # Separate locations into all-accepted vs has-rejected
+            lons_all_accepted = []
+            lats_all_accepted = []
+            lons_has_rejected = []
+            lats_has_rejected = []
+
+            for (lon, lat), indices in unique_locations.items():
+                qc_at_location = obs['qc'][indices]
+                if np.all(qc_at_location == 0):
+                    lons_all_accepted.append(lon)
+                    lats_all_accepted.append(lat)
+                else:
+                    lons_has_rejected.append(lon)
+                    lats_has_rejected.append(lat)
+
             # Plot observations twice: once at original longitude, once shifted by +360
             # This ensures observations appear correctly across the -180 to 180 longitude range
-            ax_ocean.scatter(obs['lon'], obs['lat'], s=2, c='black', label='Observations', alpha=1.0)
-            ax_ocean.scatter(obs['lon'] + 360, obs['lat'], s=2, c='black', alpha=1.0)
+            if lons_all_accepted:
+                ax_ocean.scatter(lons_all_accepted, lats_all_accepted, s=2, c='green',
+                                label='All Obs Accepted', alpha=1.0, zorder=3)
+                ax_ocean.scatter(np.array(lons_all_accepted) + 360, lats_all_accepted, s=2, c='green',
+                                alpha=1.0, zorder=3)
+            if lons_has_rejected:
+                ax_ocean.scatter(lons_has_rejected, lats_has_rejected, s=2, c='red',
+                                label='Has Rejected Obs', alpha=1.0, zorder=3)
+                ax_ocean.scatter(np.array(lons_has_rejected) + 360, lats_has_rejected, s=2, c='red',
+                                alpha=1.0, zorder=3)
             ax_ocean.legend(loc='lower left')
         ax_ocean.set_title(f'Ocean: {os.path.basename(oceanfile)} - {oceanvarname} (Level {ocean_level})')
         fig.colorbar(pcm_ocean, ax=ax_ocean, label=f'{oceanvarname}', shrink=0.5, pad=0.02)
@@ -1039,7 +1161,37 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
         pcm = ax.pcolormesh(lon2d, lat2d, masked_field, vmin=vmin_init, vmax=vmax_init, cmap='gist_ncar', shading='auto', alpha=0.5)
 
         if obs is not None:
-            ax.scatter(obs['lon'], obs['lat'], s=2, c='black', label='Observations', alpha=1.0)
+            # Categorize observations by QC status at each unique location
+            # Find unique locations and check if they have any rejected observations
+            unique_locations = {}
+            for i in range(len(obs['lon'])):
+                key = (obs['lon'][i], obs['lat'][i])
+                if key not in unique_locations:
+                    unique_locations[key] = []
+                unique_locations[key].append(i)
+
+            # Separate locations into all-accepted vs has-rejected
+            lons_all_accepted = []
+            lats_all_accepted = []
+            lons_has_rejected = []
+            lats_has_rejected = []
+
+            for (lon, lat), indices in unique_locations.items():
+                qc_at_location = obs['qc'][indices]
+                if np.all(qc_at_location == 0):
+                    lons_all_accepted.append(lon)
+                    lats_all_accepted.append(lat)
+                else:
+                    lons_has_rejected.append(lon)
+                    lats_has_rejected.append(lat)
+
+            # Plot with different colors
+            if lons_all_accepted:
+                ax.scatter(lons_all_accepted, lats_all_accepted, s=2, c='green',
+                          label='All Obs Accepted', alpha=1.0, zorder=3)
+            if lons_has_rejected:
+                ax.scatter(lons_has_rejected, lats_has_rejected, s=2, c='red',
+                          label='Has Rejected Obs', alpha=1.0, zorder=3)
             ax.legend(loc='lower left')
 
         filename = os.path.basename(atmosfile if is_atmos else oceanfile)
@@ -1158,6 +1310,7 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
                 obs_depths = obs['depth'][matching_indices]
                 obs_values = obs['obsval'][matching_indices]
                 obs_qc = obs['qc'][matching_indices]
+                obs_errors = obs['error'][matching_indices]
 
                 # Separate accepted and rejected observations
                 accepted_mask = (obs_qc == 0)
@@ -1167,14 +1320,22 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
                 if np.any(accepted_mask):
                     accepted_depths = obs_depths[accepted_mask]
                     accepted_values = obs_values[accepted_mask]
+                    accepted_errors = obs_errors[accepted_mask]
                     sort_idx = np.argsort(accepted_depths)
                     accepted_depths = accepted_depths[sort_idx]
                     accepted_values = accepted_values[sort_idx]
+                    accepted_errors = accepted_errors[sort_idx]
 
-                    # Plot accepted observations
+                    # Plot accepted observations - main line
                     ax_profile.plot(accepted_values, accepted_depths, 'o-', color='red',
                                     label=f'Obs Accepted (QC=0)',
                                     markersize=6, linewidth=2, alpha=0.5)
+                    # Upper error bound (obs + error)
+                    ax_profile.plot(accepted_values + accepted_errors, accepted_depths, '--',
+                                   color='red', linewidth=0.8, alpha=0.4)
+                    # Lower error bound (obs - error)
+                    ax_profile.plot(accepted_values - accepted_errors, accepted_depths, '--',
+                                   color='red', linewidth=0.8, alpha=0.4)
 
                 # Plot rejected observations with different marker
                 if np.any(rejected_mask):
@@ -1363,6 +1524,7 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
                 obs_depths = obs['depth'][matching_indices]
                 obs_values = obs['obsval'][matching_indices]
                 obs_qc = obs['qc'][matching_indices]
+                obs_errors = obs['error'][matching_indices]
 
                 # Normalize observation depths to 0.5-1.0 range using the same scaling as model
                 obs_norm = 0.5 + (obs_depths / max_ocean_depth) * 0.5
@@ -1373,17 +1535,26 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
                 accepted_mask = (obs_qc == 0)
                 rejected_mask = (obs_qc != 0)
 
-                # Plot accepted observations
+                # Plot accepted observations with error bounds (thin dashed lines)
                 if np.any(accepted_mask):
                     accepted_norm = obs_norm[accepted_mask]
                     accepted_values = obs_values[accepted_mask]
+                    accepted_errors = obs_errors[accepted_mask]
                     sort_idx = np.argsort(accepted_norm)
                     accepted_norm = accepted_norm[sort_idx]
                     accepted_values = accepted_values[sort_idx]
+                    accepted_errors = accepted_errors[sort_idx]
 
+                    # Main observation line
                     ax_combined.plot(accepted_values, accepted_norm, 'o-', color='red',
-                                     label='Obs Accepted (QC=0)',
-                                     markersize=6, linewidth=2, alpha=0.5)
+                                    label='Obs Accepted (QC=0)',
+                                    markersize=6, linewidth=2, alpha=0.5)
+                    # Upper error bound (obs + error)
+                    ax_combined.plot(accepted_values + accepted_errors, accepted_norm, '--',
+                                    color='red', linewidth=0.8, alpha=0.4)
+                    # Lower error bound (obs - error)
+                    ax_combined.plot(accepted_values - accepted_errors, accepted_norm, '--',
+                                    color='red', linewidth=0.8, alpha=0.4)
 
                 # Plot rejected observations with different marker
                 if np.any(rejected_mask):
@@ -1479,6 +1650,7 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
             depth_values = obs['depth'][matching_indices]
             obs_value = obs['obsval'][matching_indices]
             qc_values = obs['qc'][matching_indices]
+            obs_errors = obs['error'][matching_indices]
 
             # Sort by increasing depth
             sort_idx = np.argsort(depth_values)
@@ -1487,6 +1659,7 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
             oman_values = oman_values[sort_idx]
             obs_value = obs_value[sort_idx]
             qc_values = qc_values[sort_idx]
+            obs_errors = obs_errors[sort_idx]
 
             # Plot the extracted values
             fig_obs, ((ax_obs, ax_obsval), (ax_qc, ax_stats)) = plt.subplots(2, 2, figsize=(14, 12))
@@ -1539,12 +1712,21 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
             ax_obsval.plot(obs_value - oman_values, depth_values, '.-',
                           color='tab:red', label='Analysis', markersize=8)
 
-            # Plot accepted observations
+            # Plot accepted observations with error bounds (thin dashed lines)
             if np.any(accepted_mask):
+                # Main observation line
                 ax_obsval.plot(obs_value[accepted_mask], depth_values[accepted_mask], '.-',
                               color='tab:blue', label='Obs Accepted', markersize=8)
+                # Upper error bound (obs + error)
+                ax_obsval.plot(obs_value[accepted_mask] + obs_errors[accepted_mask],
+                              depth_values[accepted_mask], '--',
+                              color='tab:blue', linewidth=0.8, alpha=0.5)
+                # Lower error bound (obs - error)
+                ax_obsval.plot(obs_value[accepted_mask] - obs_errors[accepted_mask],
+                              depth_values[accepted_mask], '--',
+                              color='tab:blue', linewidth=0.8, alpha=0.5)
 
-            # Plot rejected observations with X markers (smaller size)
+            # Plot rejected observations with X markers (no error bounds)
             if np.any(rejected_mask):
                 ax_obsval.scatter(obs_value[rejected_mask], depth_values[rejected_mask],
                                  marker='x', s=50, color='darkblue', label='Obs Rejected',
