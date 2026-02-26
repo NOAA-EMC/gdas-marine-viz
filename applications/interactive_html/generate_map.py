@@ -361,14 +361,131 @@ def get_section_images(sections_dir='sections'):
     return sections
 
 
+def get_surface_plot_images(surface_dir='surface_plots'):
+    """
+    Scan for surface plot PNG files (Temp, Salt, SSH) and their matching colorbar PNGs.
+
+    Returns:
+        dict: Dictionary mapping variable names to image file paths
+              e.g., {'Temperature': 'surface_plots/surface_temp.png', ...}
+    """
+    surface_plots = {}
+
+    if not os.path.exists(surface_dir):
+        print(f"Warning: {surface_dir} directory not found")
+        return surface_plots
+
+    # Pattern: surface_temp.png, surface_salt.png, surface_ave_ssh.png
+    surface_pattern = r'surface_(\w+)\.png'
+
+    for filename in os.listdir(surface_dir):
+        if not filename.endswith('.png'):
+            continue
+        # Skip colorbar files — they are picked up via get_colorbar_images()
+        if filename.startswith('colorbar_'):
+            continue
+
+        match = re.match(surface_pattern, filename)
+        if match:
+            varname_lower = match.group(1)
+            # Map to display names
+            if varname_lower == 'temp':
+                display_name = 'Temperature'
+            elif varname_lower == 'salt':
+                display_name = 'Salinity'
+            elif varname_lower == 'ave_ssh':
+                display_name = 'SSH'
+            else:
+                display_name = varname_lower.title()
+
+            surface_plots[display_name] = os.path.join(surface_dir, filename)
+
+    return surface_plots
+
+
+def get_colorbar_images(surface_dir='surface_plots'):
+    """
+    Scan for colorbar PNG files generated alongside surface plots.
+
+    Returns:
+        dict: Dictionary mapping display names to colorbar file paths
+              e.g., {'Temperature': 'surface_plots/colorbar_temp.png', ...}
+    """
+    colorbars = {}
+
+    if not os.path.exists(surface_dir):
+        return colorbars
+
+    colorbar_pattern = r'colorbar_(\w+)\.png'
+
+    for filename in os.listdir(surface_dir):
+        if not filename.endswith('.png'):
+            continue
+
+        match = re.match(colorbar_pattern, filename)
+        if match:
+            varname_lower = match.group(1)
+            if varname_lower == 'temp':
+                display_name = 'Temperature'
+            elif varname_lower == 'salt':
+                display_name = 'Salinity'
+            elif varname_lower == 'ave_ssh':
+                display_name = 'SSH'
+            else:
+                display_name = varname_lower.title()
+
+            colorbars[display_name] = os.path.join(surface_dir, filename)
+
+    return colorbars
+
+
+def get_surface_stats(surface_dir='surface_plots'):
+    """
+    Scan for stats_<varname>.json sidecar files written by aquaslice alongside each
+    surface plot, containing the actual data min/max (unclipped by colorbar bounds).
+
+    Returns:
+        dict: mapping display name -> {'data_min': float, 'data_max': float}
+              e.g., {'Temperature': {'data_min': -1.8, 'data_max': 30.2}, ...}
+    """
+    stats = {}
+
+    if not os.path.exists(surface_dir):
+        return stats
+
+    stats_pattern = r'stats_(\w+)\.json'
+
+    for filename in sorted(os.listdir(surface_dir)):
+        if not filename.endswith('.json'):
+            continue
+
+        match = re.match(stats_pattern, filename)
+        if match:
+            varname_lower = match.group(1)
+            if varname_lower == 'temp':
+                display_name = 'Temperature'
+            elif varname_lower == 'salt':
+                display_name = 'Salinity'
+            elif varname_lower == 'ave_ssh':
+                display_name = 'SSH'
+            else:
+                display_name = varname_lower.title()
+
+            try:
+                with open(os.path.join(surface_dir, filename)) as f:
+                    stats[display_name] = json.load(f)
+            except Exception as e:
+                print(f"Warning: could not read {filename}: {e}")
+
+    return stats
+
+
 def load_leaflet_inline(lib_dir=None):
     """
     Load Leaflet CSS and JS from local files and return them as inline strings.
-    CSS image references (layers.png, marker-icon.png, etc.) are replaced with
-    base64 data URLs so the HTML is 100% self-contained with zero external requests.
 
     Args:
-        lib_dir: Directory containing leaflet.css, leaflet.js, and images/ subfolder.
+        lib_dir: Directory containing leaflet.css and leaflet.js.
                  Defaults to 'lib' next to this script.
 
     Returns:
@@ -389,30 +506,25 @@ def load_leaflet_inline(lib_dir=None):
     with open(js_path, 'r') as f:
         leaflet_js = f.read()
 
-    # Read CSS and replace image references with base64 data URLs
+    # Read CSS
     with open(css_path, 'r') as f:
         leaflet_css = f.read()
-
-    images_dir = os.path.join(lib_dir, 'images')
-    image_files = {
-        'images/layers.png': os.path.join(images_dir, 'layers.png'),
-        'images/layers-2x.png': os.path.join(images_dir, 'layers-2x.png'),
-        'images/marker-icon.png': os.path.join(images_dir, 'marker-icon.png'),
-    }
-
-    for ref, filepath in image_files.items():
-        if os.path.exists(filepath):
-            with open(filepath, 'rb') as img_f:
-                b64 = base64.b64encode(img_f.read()).decode('utf-8')
-                data_url = f'data:image/png;base64,{b64}'
-                leaflet_css = leaflet_css.replace(ref, data_url)
 
     return leaflet_css, leaflet_js
 
 
 def generate_html(profiles, drifters, satellite_metadata=None, section_images=None,
-                  output_file='output/ocean-observations-map.html', cycle_name=None,
-                  land_overlay=None):
+                  surface_plots=None, output_file='output/ocean-observations-map.html',
+                  cycle_name=None, land_overlay=None,
+                  section_images_jedi_inc=None, section_images_mom6_inc=None,
+                  surface_plots_jedi_inc=None, surface_plots_mom6_inc=None,
+                  surface_plots_ice_bkg=None, surface_plots_ice_jedi_inc=None,
+                  surface_plots_ocn_bkgerr=None, surface_plots_ice_bkgerr=None,
+                  surface_plots_recentering_err=None,
+                  section_images_ocn_bkgerr=None,
+                  surface_plots_ocn_ens_spread=None, surface_plots_ice_ens_spread=None,
+                  section_images_ocn_ens_spread=None,
+                  colorbars=None, surface_stats=None):
     """Generate HTML map with all features"""
 
     # Convert satellite metadata to the format expected by HTML
@@ -421,6 +533,145 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
     seaice_count = 0
     altimetry_count = 0
     sss_count = 0
+
+    # Process surface plots
+    surface_plots_js = {}
+    if surface_plots:
+        for var_name, image_path in surface_plots.items():
+            if os.path.exists(image_path):
+                surface_plots_js[f"Background: {var_name}"] = image_to_base64_data_url(image_path)
+            else:
+                print(f"Warning: Surface plot image not found: {image_path}")
+
+    # Process JEDI increment surface plots
+    if surface_plots_jedi_inc:
+        for var_name, image_path in surface_plots_jedi_inc.items():
+            if os.path.exists(image_path):
+                surface_plots_js[f"JEDI Increment: {var_name}"] = image_to_base64_data_url(image_path)
+            else:
+                print(f"Warning: JEDI increment surface plot image not found: {image_path}")
+
+    # Process MOM6 increment surface plots
+    if surface_plots_mom6_inc:
+        for var_name, image_path in surface_plots_mom6_inc.items():
+            if os.path.exists(image_path):
+                surface_plots_js[f"MOM6 Increment: {var_name}"] = image_to_base64_data_url(image_path)
+            else:
+                print(f"Warning: MOM6 increment surface plot image not found: {image_path}")
+
+    # Process sea ice background surface plots
+    if surface_plots_ice_bkg:
+        for var_name, image_path in surface_plots_ice_bkg.items():
+            if os.path.exists(image_path):
+                surface_plots_js[f"Sea Ice Background: {var_name}"] = image_to_base64_data_url(image_path)
+            else:
+                print(f"Warning: Sea ice background surface plot image not found: {image_path}")
+
+    # Process sea ice JEDI increment surface plots
+    if surface_plots_ice_jedi_inc:
+        for var_name, image_path in surface_plots_ice_jedi_inc.items():
+            if os.path.exists(image_path):
+                surface_plots_js[f"Sea Ice JEDI Increment: {var_name}"] = image_to_base64_data_url(image_path)
+            else:
+                print(f"Warning: Sea ice JEDI increment surface plot image not found: {image_path}")
+
+    # Process ocean parametric background error surface plots
+    if surface_plots_ocn_bkgerr:
+        for var_name, image_path in surface_plots_ocn_bkgerr.items():
+            if os.path.exists(image_path):
+                surface_plots_js[f"Ocean Bkg Error: {var_name}"] = image_to_base64_data_url(image_path)
+            else:
+                print(f"Warning: Ocean bkg error surface plot image not found: {image_path}")
+
+    # Process ice parametric background error surface plots
+    if surface_plots_ice_bkgerr:
+        for var_name, image_path in surface_plots_ice_bkgerr.items():
+            if os.path.exists(image_path):
+                surface_plots_js[f"Ice Bkg Error: {var_name}"] = image_to_base64_data_url(image_path)
+            else:
+                print(f"Warning: Ice bkg error surface plot image not found: {image_path}")
+
+    # Process recentering error surface plots (SSH only)
+    if surface_plots_recentering_err:
+        for var_name, image_path in surface_plots_recentering_err.items():
+            if os.path.exists(image_path):
+                surface_plots_js[f"Recentering Error: {var_name}"] = image_to_base64_data_url(image_path)
+            else:
+                print(f"Warning: Recentering error surface plot image not found: {image_path}")
+
+    # Process ocean ensemble spread surface plots
+    if surface_plots_ocn_ens_spread:
+        for var_name, image_path in surface_plots_ocn_ens_spread.items():
+            if os.path.exists(image_path):
+                surface_plots_js[f"Ocean Ens Spread: {var_name}"] = image_to_base64_data_url(image_path)
+            else:
+                print(f"Warning: Ocean ensemble spread surface plot image not found: {image_path}")
+
+    # Process ice ensemble spread surface plots
+    if surface_plots_ice_ens_spread:
+        for var_name, image_path in surface_plots_ice_ens_spread.items():
+            if os.path.exists(image_path):
+                surface_plots_js[f"Ice Ens Spread: {var_name}"] = image_to_base64_data_url(image_path)
+            else:
+                print(f"Warning: Ice ensemble spread surface plot image not found: {image_path}")
+
+    # Embed colorbar PNGs keyed by the same full display name used in surface_plots_js
+    # e.g. "Background: Temperature" -> base64 colorbar PNG
+    colorbars_js = {}
+    if colorbars:
+        for full_key, cb_path in colorbars.items():
+            if os.path.exists(cb_path):
+                colorbars_js[full_key] = image_to_base64_data_url(cb_path)
+            else:
+                print(f"Warning: Colorbar image not found: {cb_path}")
+
+    # Build surface stats dict keyed by full display name, e.g.
+    # "Background: Temperature" -> {"data_min": -1.8, "data_max": 30.2}
+    surface_stats_js = {}
+    if surface_stats:
+        for full_key, st in surface_stats.items():
+            surface_stats_js[full_key] = st
+
+    # Create metadata for surface plots (includes color bounds and units)
+    surface_plot_metadata = {
+        # Ocean background (keys use display names from get_surface_plot_images)
+        "Background: Temperature": {"bounds": [-2, 31], "units": "°C", "label": "Temperature"},
+        "Background: Salinity": {"bounds": [32, 40], "units": "psu", "label": "Salinity"},
+        "Background: SSH": {"bounds": [-2, 1.5], "units": "m", "label": "SSH"},
+        # Ocean JEDI increments
+        "JEDI Increment: Temperature": {"bounds": [-2, 2], "units": "°C", "label": "Temperature Increment"},
+        "JEDI Increment: Salinity": {"bounds": [-0.5, 0.5], "units": "psu", "label": "Salinity Increment"},
+        # Ocean MOM6 increments
+        "MOM6 Increment: Temperature": {"bounds": [-2, 2], "units": "°C", "label": "Temperature Increment"},
+        "MOM6 Increment: Salinity": {"bounds": [-0.5, 0.5], "units": "psu", "label": "Salinity Increment"},
+        # Sea ice background (keys use .title() names from get_surface_plot_images)
+        "Sea Ice Background: Aice_H": {"bounds": [0, 1], "units": "", "label": "Ice Concentration"},
+        "Sea Ice Background: Sice_H": {"bounds": [0, 35], "units": "psu", "label": "Ice Salinity"},
+        "Sea Ice Background: Hi_H": {"bounds": [0, 5], "units": "m", "label": "Ice Thickness"},
+        "Sea Ice Background: Hs_H": {"bounds": [0, 2], "units": "m", "label": "Snow Depth"},
+        # Sea ice JEDI increments
+        "Sea Ice JEDI Increment: Aice_H": {"bounds": [-0.2, 0.2], "units": "", "label": "Ice Concentration Increment"},
+        "Sea Ice JEDI Increment: Hi_H": {"bounds": [-0.5, 0.5], "units": "m", "label": "Ice Thickness Increment"},
+        "Sea Ice JEDI Increment: Hs_H": {"bounds": [-0.2, 0.2], "units": "m", "label": "Snow Depth Increment"},
+        # Ocean parametric background error
+        "Ocean Bkg Error: Temperature": {"bounds": [0, 2], "units": "°C", "label": "Temperature Bkg Error"},
+        "Ocean Bkg Error: Salinity": {"bounds": [0, 1], "units": "psu", "label": "Salinity Bkg Error"},
+        "Ocean Bkg Error: SSH": {"bounds": [0, 0.2], "units": "m", "label": "SSH Bkg Error"},
+        # Ice parametric background error
+        "Ice Bkg Error: Aice_H": {"bounds": [0, 0.2], "units": "", "label": "Ice Concentration Bkg Error"},
+        "Ice Bkg Error: Hi_H": {"bounds": [0, 1], "units": "m", "label": "Ice Thickness Bkg Error"},
+        "Ice Bkg Error: Hs_H": {"bounds": [0, 0.5], "units": "m", "label": "Snow Depth Bkg Error"},
+        # Recentering error
+        "Recentering Error: SSH": {"bounds": [0, 0.2], "units": "m", "label": "SSH Recentering Error"},
+        # Ocean ensemble spread
+        "Ocean Ens Spread: Temperature": {"bounds": [0, 2], "units": "°C", "label": "Temperature Ens Spread"},
+        "Ocean Ens Spread: Salinity": {"bounds": [0, 1], "units": "psu", "label": "Salinity Ens Spread"},
+        "Ocean Ens Spread: SSH": {"bounds": [0, 0.2], "units": "m", "label": "SSH Ens Spread"},
+        # Ice ensemble spread
+        "Ice Ens Spread: Aice_H": {"bounds": [0, 0.2], "units": "", "label": "Ice Concentration Ens Spread"},
+        "Ice Ens Spread: Hi_H": {"bounds": [0, 1], "units": "m", "label": "Ice Thickness Ens Spread"},
+        "Ice Ens Spread: Hs_H": {"bounds": [0, 0.5], "units": "m", "label": "Snow Depth Ens Spread"},
+    }
 
     if satellite_metadata:
         for nc_file, data in satellite_metadata.items():
@@ -450,10 +701,25 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
                 print(f"Warning: Image file not found: {image_file}")
                 image_data_url = image_file  # Fall back to path
 
+            # Embed colorbar PNG as base64 if available
+            colorbar_data_url = None
+            colorbar_file = data.get('colorbar_file', '')
+            if colorbar_file:
+                if not os.path.isabs(colorbar_file) and not os.path.exists(colorbar_file):
+                    output_dir = os.path.dirname(output_file)
+                    candidate = os.path.join(output_dir, colorbar_file)
+                    if os.path.exists(candidate):
+                        colorbar_file = candidate
+                if os.path.exists(colorbar_file):
+                    colorbar_data_url = image_to_base64_data_url(colorbar_file)
+
             satellite_rasters_js[nc_file] = {
                 'name': data['name'],
                 'description': data['description'],
                 'file': image_data_url,  # Now contains base64 data URL
+                'colorbar': colorbar_data_url,  # base64 colorbar PNG or None
+                'vmin': data.get('vmin'),
+                'vmax': data.get('vmax'),
                 'bounds': data['bounds'],
                 'n_obs': data['n_obs'],
                 'color': data.get('color', '#666666')
@@ -461,12 +727,69 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
 
     # Keep section image paths as relative paths (loaded on-demand in popups)
     # They'll be copied to output dir alongside the HTML
+    # Combine all section types with labels
+    all_zonal_sections = {}
+    all_meridional_sections = {}
+
     if section_images:
-        for section_type in ['zonal', 'meridional']:
-            if section_type in section_images:
-                for key, filepath in section_images[section_type].items():
-                    if not os.path.exists(filepath):
-                        print(f"Warning: Section image not found: {filepath}")
+        for key, filepath in section_images.get('zonal', {}).items():
+            if os.path.exists(filepath):
+                all_zonal_sections[f"Background: {key}"] = filepath
+            else:
+                print(f"Warning: Background zonal section image not found: {filepath}")
+        for key, filepath in section_images.get('meridional', {}).items():
+            if os.path.exists(filepath):
+                all_meridional_sections[f"Background: {key}"] = filepath
+            else:
+                print(f"Warning: Background meridional section image not found: {filepath}")
+
+    if section_images_jedi_inc:
+        for key, filepath in section_images_jedi_inc.get('zonal', {}).items():
+            if os.path.exists(filepath):
+                all_zonal_sections[f"JEDI Increment: {key}"] = filepath
+            else:
+                print(f"Warning: JEDI increment zonal section image not found: {filepath}")
+        for key, filepath in section_images_jedi_inc.get('meridional', {}).items():
+            if os.path.exists(filepath):
+                all_meridional_sections[f"JEDI Increment: {key}"] = filepath
+            else:
+                print(f"Warning: JEDI increment meridional section image not found: {filepath}")
+
+    if section_images_mom6_inc:
+        for key, filepath in section_images_mom6_inc.get('zonal', {}).items():
+            if os.path.exists(filepath):
+                all_zonal_sections[f"MOM6 Increment: {key}"] = filepath
+            else:
+                print(f"Warning: MOM6 increment zonal section image not found: {filepath}")
+        for key, filepath in section_images_mom6_inc.get('meridional', {}).items():
+            if os.path.exists(filepath):
+                all_meridional_sections[f"MOM6 Increment: {key}"] = filepath
+            else:
+                print(f"Warning: MOM6 increment meridional section image not found: {filepath}")
+
+    if section_images_ocn_bkgerr:
+        for key, filepath in section_images_ocn_bkgerr.get('zonal', {}).items():
+            if os.path.exists(filepath):
+                all_zonal_sections[f"Ocean Bkg Error: {key}"] = filepath
+            else:
+                print(f"Warning: Ocean bkg error zonal section image not found: {filepath}")
+        for key, filepath in section_images_ocn_bkgerr.get('meridional', {}).items():
+            if os.path.exists(filepath):
+                all_meridional_sections[f"Ocean Bkg Error: {key}"] = filepath
+            else:
+                print(f"Warning: Ocean bkg error meridional section image not found: {filepath}")
+
+    if section_images_ocn_ens_spread:
+        for key, filepath in section_images_ocn_ens_spread.get('zonal', {}).items():
+            if os.path.exists(filepath):
+                all_zonal_sections[f"Ocean Ens Spread: {key}"] = filepath
+            else:
+                print(f"Warning: Ocean ensemble spread zonal section image not found: {filepath}")
+        for key, filepath in section_images_ocn_ens_spread.get('meridional', {}).items():
+            if os.path.exists(filepath):
+                all_meridional_sections[f"Ocean Ens Spread: {key}"] = filepath
+            else:
+                print(f"Warning: Ocean ensemble spread meridional section image not found: {filepath}")
 
     # Convert land overlay to base64 data URL if provided
     land_overlay_data_url = None
@@ -604,8 +927,8 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
 
         .info-box {{
             position: absolute;
-            top: 10px;
-            right: 10px;
+            bottom: 180px;
+            left: 10px;
             background: white;
             padding: 15px;
             border-radius: 5px;
@@ -643,7 +966,7 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
             font-size: 14px;
         }}
 
-        .colorbar-gradient {{
+        .sst-colorbar-gradient {{
             width: 100%;
             height: 20px;
             background: linear-gradient(to right,
@@ -657,7 +980,7 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
             margin: 5px 0;
         }}
 
-        .colorbar-labels {{
+        .sst-colorbar-labels {{
             display: flex;
             justify-content: space-between;
             font-size: 11px;
@@ -786,10 +1109,153 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
             border-color: #c0392b;
             box-shadow: 0 0 8px rgba(231, 76, 60, 0.6);
         }}
+
+        /* Custom Layer Control Boxes */
+        .layer-control-container {{
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: calc(100vh - 20px);
+            overflow-y: auto;
+        }}
+
+        .layer-control-box {{
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            padding: 10px;
+            min-width: 200px;
+            max-width: 300px;
+        }}
+
+        .layer-control-box h3 {{
+            margin: 0 0 10px 0;
+            padding: 5px;
+            font-size: 14px;
+            font-weight: bold;
+            color: white;
+            background: #2c3e50;
+            border-radius: 4px;
+            text-align: center;
+        }}
+
+        .layer-control-box.observations h3 {{
+            background: #27ae60;
+        }}
+
+        .layer-control-box.background h3 {{
+            background: #3498db;
+        }}
+
+        .layer-control-box.increments h3 {{
+            background: #e67e22;
+        }}
+
+        .layer-control-box.errors h3 {{
+            background: #8e44ad;
+        }}
+
+        .layer-control-box.ensspread h3 {{
+            background: #16a085;
+        }}
+
+        .layer-control-item {{
+            display: flex;
+            align-items: center;
+            padding: 4px 0;
+            cursor: pointer;
+            user-select: none;
+        }}
+
+        .layer-control-item:hover {{
+            background: #f0f0f0;
+            border-radius: 3px;
+        }}
+
+        .layer-control-item input[type="checkbox"] {{
+            margin-right: 8px;
+            cursor: pointer;
+        }}
+
+        .layer-control-item label {{
+            cursor: pointer;
+            font-size: 12px;
+            color: #333;
+            flex: 1;
+        }}
+
+        /* Colorbar Legend for Surface Plots */
+        .colorbar-legend {{
+            position: absolute;
+            bottom: 180px;
+            left: 10px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            padding: 15px;
+            z-index: 1000;
+            display: none;  /* Hidden by default */
+            min-width: 250px;
+        }}
+
+        .colorbar-legend h4 {{
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            font-weight: bold;
+            color: #2c3e50;
+            text-align: center;
+        }}
+
+        .surface-colorbar-labels {{
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #333;
+        }}
+
+        .colorbar-legend img {{
+            border-radius: 3px;
+        }}
     </style>
 </head>
 <body>
     <div id="map"></div>
+
+    <!-- Custom Layer Control Boxes -->
+    <div class="layer-control-container">
+        <div class="layer-control-box observations">
+            <h3>Observations</h3>
+            <div id="observations-layers"></div>
+        </div>
+        <div class="layer-control-box background">
+            <h3>Model Background</h3>
+            <select id="background-select" style="width: 100%; padding: 4px; border-radius: 4px; border: 1px solid #ccc; font-size: 12px;">
+                <option value="">— None —</option>
+            </select>
+        </div>
+        <div class="layer-control-box increments">
+            <h3>Increments</h3>
+            <select id="increments-select" style="width: 100%; padding: 4px; border-radius: 4px; border: 1px solid #ccc; font-size: 12px;">
+                <option value="">— None —</option>
+            </select>
+        </div>
+        <div class="layer-control-box errors">
+            <h3>Parametric Background Error</h3>
+            <select id="errors-select" style="width: 100%; padding: 4px; border-radius: 4px; border: 1px solid #ccc; font-size: 12px;">
+                <option value="">— None —</option>
+            </select>
+        </div>
+        <div class="layer-control-box ensspread">
+            <h3>Ensemble Spread</h3>
+            <select id="ensspread-select" style="width: 100%; padding: 4px; border-radius: 4px; border: 1px solid #ccc; font-size: 12px;">
+                <option value="">— None —</option>
+            </select>
+        </div>
+    </div>
 
     <!-- Meridional section selector (horizontal, at bottom) -->
     <div class="section-selector section-selector-horizontal" id="meridional-selector">
@@ -816,13 +1282,19 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
 
     <div class="colorbar-box">
         <h4>SST OMB Color Scale</h4>
-        <div class="colorbar-gradient"></div>
-        <div class="colorbar-labels">
+        <div class="sst-colorbar-gradient"></div>
+        <div class="sst-colorbar-labels">
             <span>-1°C</span>
             <span>0°C</span>
             <span>+1°C</span>
         </div>
         <div class="colorbar-title">Obs - Background</div>
+    </div>
+
+    <!-- Dynamic Colorbar Legend for Surface Plots -->
+    <div class="colorbar-legend" id="surface-colorbar">
+        <h4 id="colorbar-title">Surface Variable</h4>
+        <img id="colorbar-img" src="" alt="colorbar" style="width:100%; height:auto; display:block;">
     </div>
 
     <div class="legend-box">
@@ -847,9 +1319,21 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
         // Satellite raster data (SST and sea ice) - base64 embedded for map overlays
         const satelliteRasters = {json.dumps(satellite_rasters_js)};
 
+        // Surface plots data (model background fields) - base64 embedded for map overlays
+        const surfacePlots = {json.dumps(surface_plots_js)};
+
+        // Surface plot metadata (bounds and units for colorbar) - used as fallback label
+        const surfacePlotMetadata = {json.dumps(surface_plot_metadata)};
+
+        // Colorbar images (base64 PNGs generated by aquaslice, exact match to raster colormaps)
+        const surfaceColorbars = {json.dumps(colorbars_js)};
+
+        // Actual data min/max per layer (computed by aquaslice from the unmasked field)
+        const surfaceStats = {json.dumps(surface_stats_js)};
+
         // Section images data - relative paths, loaded on demand in popups
-        const zonalSections = {json.dumps({str(k): v for k, v in (section_images.get('zonal', {}) if section_images else {}).items()})};
-        const meridionalSections = {json.dumps({str(k): v for k, v in (section_images.get('meridional', {}) if section_images else {}).items()})};
+        const zonalSections = {json.dumps(all_zonal_sections)};
+        const meridionalSections = {json.dumps(all_meridional_sections)};
 
         // Initialize the map
         const map = L.map('map', {{
@@ -974,7 +1458,7 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
             }}).addTo(map);
 
             // Open popup showing section info
-            const popup = L.popup()
+            const popup = L.popup({{maxWidth: 1300}})
                 .setLatLng([0, lon])
                 .setContent(getMeridionalSectionPopupContent(lon))
                 .openOn(map);
@@ -984,17 +1468,19 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
 
         // Function to get meridional section popup content
         function getMeridionalSectionPopupContent(lon) {{
-            // Find all sections at this longitude
-            let sections = [];
+            // Find all sections at this longitude, grouped by field type
+            let fieldTypes = {{}};  // e.g. {{"Background": [{{varName, imageFile}}], "JEDI Increment": [...]}}
 
             for (const key in meridionalSections) {{
-                // Parse the key string like "('Temp', 120)" to extract varname and lon
-                const match = key.match(/\('(\w+)',\s*([+-]?\d+)\)/);
+                // Parse key like "Background: ('Temp', -90)" or "JEDI Increment: ('Salt', 45)"
+                const match = key.match(/^(.+?):\s*\('(\w+)',\s*([+-]?\d+)\)/);
                 if (match) {{
-                    const keyVarName = match[1];
-                    const keyLon = parseInt(match[2]);
+                    const fieldType = match[1];
+                    const keyVarName = match[2];
+                    const keyLon = parseInt(match[3]);
                     if (keyLon === lon) {{
-                        sections.push({{
+                        if (!fieldTypes[fieldType]) fieldTypes[fieldType] = [];
+                        fieldTypes[fieldType].push({{
                             varName: keyVarName,
                             imageFile: meridionalSections[key]
                         }});
@@ -1002,39 +1488,63 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
                 }}
             }}
 
-            // Sort sections: Temp first, then Salt, then others alphabetically
-            sections.sort((a, b) => {{
-                if (a.varName === 'Temp') return -1;
-                if (b.varName === 'Temp') return 1;
-                if (a.varName === 'Salt') return -1;
-                if (b.varName === 'Salt') return 1;
-                return a.varName.localeCompare(b.varName);
-            }});
+            const typeNames = Object.keys(fieldTypes);
+            if (typeNames.length === 0) {{
+                return `<strong>Meridional Section</strong><br>Longitude: ${{lon}}°<br><em>No section image available</em>`;
+            }}
 
-            if (sections.length > 0) {{
-                // Build HTML with sections side by side
-                let imagesHtml = '<div style="display: flex; gap: 10px; flex-wrap: nowrap;">';
-                sections.forEach(section => {{
+            // Sort variables within each field type: Temp first, then Salt, then others
+            for (const ft of typeNames) {{
+                fieldTypes[ft].sort((a, b) => {{
+                    if (a.varName === 'Temp') return -1;
+                    if (b.varName === 'Temp') return 1;
+                    if (a.varName === 'Salt') return -1;
+                    if (b.varName === 'Salt') return 1;
+                    return a.varName.localeCompare(b.varName);
+                }});
+            }}
+
+            // Build dropdown + image area
+            const popupId = 'merid-popup-' + lon;
+            const selectId = popupId + '-select';
+            const contentId = popupId + '-content';
+
+            let optionsHtml = typeNames.map((ft, i) =>
+                `<option value="${{ft}}" ${{i === 0 ? 'selected' : ''}}>${{ft}}</option>`
+            ).join('');
+
+            // Build image HTML for each field type (hidden by default except the first)
+            let allContentHtml = '';
+            typeNames.forEach((ft, i) => {{
+                const display = i === 0 ? 'flex' : 'none';
+                let imagesHtml = '';
+                fieldTypes[ft].forEach(section => {{
                     imagesHtml += `
                         <div style="flex: 0 0 auto;">
                             <h4 style="text-align: center; margin: 5px 0;">${{section.varName}}</h4>
-                            <img src="${{section.imageFile}}" alt="Meridional Section - ${{section.varName}}"
+                            <img src="${{section.imageFile}}" alt="Meridional Section - ${{ft}} ${{section.varName}}"
                                  style="width: 600px; height: auto; display: block;"
-                                 onerror="this.parentElement.innerHTML='<p>Image not found: ${{section.imageFile}}</p>'">
+                                 onerror="this.parentElement.innerHTML='<p>Image not found</p>'">
                         </div>
                     `;
                 }});
-                imagesHtml += '</div>';
+                allContentHtml += `<div class="section-field-group" data-field-type="${{ft}}" style="display: ${{display}}; gap: 10px; flex-wrap: nowrap;">${{imagesHtml}}</div>`;
+            }});
 
-                return `
-                    <div style="min-width: 300px;">
-                        <h3 style="margin: 0 0 10px 0;">Meridional Section at ${{lon}}°E</h3>
-                        ${{imagesHtml}}
+            return `
+                <div style="min-width: 300px;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                        <h3 style="margin: 0;">Meridional Section at ${{lon}}°E</h3>
+                        ${{typeNames.length > 1 ? `<select id="${{selectId}}" onchange="(function(sel){{
+                            const groups = sel.closest('.leaflet-popup-content').querySelectorAll('.section-field-group');
+                            groups.forEach(g => g.style.display = g.dataset.fieldType === sel.value ? 'flex' : 'none');
+                        }})(this)" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #ccc; font-size: 13px;">
+                            ${{optionsHtml}}
+                        </select>` : ''}}
                     </div>
-                `;
-            }} else {{
-                return `<strong>Meridional Section</strong><br>Longitude: ${{lon}}°<br><em>No section image available</em>`;
-            }}
+                    ${{allContentHtml}}
+                </div>
+            `;
         }}        // Function to toggle zonal section
         function toggleZonalSection(lat, btn) {{
             // Remove previous line if exists
@@ -1074,7 +1584,7 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
             }}).addTo(map);
 
             // Open popup showing section info
-            const popup = L.popup()
+            const popup = L.popup({{maxWidth: 1300}})
                 .setLatLng([lat, 0])
                 .setContent(getZonalSectionPopupContent(lat))
                 .openOn(map);
@@ -1084,17 +1594,19 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
 
         // Function to get zonal section popup content
         function getZonalSectionPopupContent(lat) {{
-            // Find all sections at this latitude
-            let sections = [];
+            // Find all sections at this latitude, grouped by field type
+            let fieldTypes = {{}};  // e.g. {{"Background": [{{varName, imageFile}}], "JEDI Increment": [...]}}
 
             for (const key in zonalSections) {{
-                // Parse the key string like "('Temp', 45)" to extract varname and lat
-                const match = key.match(/\('(\w+)',\s*([+-]?\d+)\)/);
+                // Parse key like "Background: ('Temp', 45)" or "JEDI Increment: ('Salt', -30)"
+                const match = key.match(/^(.+?):\s*\('(\w+)',\s*([+-]?\d+)\)/);
                 if (match) {{
-                    const keyVarName = match[1];
-                    const keyLat = parseInt(match[2]);
+                    const fieldType = match[1];
+                    const keyVarName = match[2];
+                    const keyLat = parseInt(match[3]);
                     if (keyLat === lat) {{
-                        sections.push({{
+                        if (!fieldTypes[fieldType]) fieldTypes[fieldType] = [];
+                        fieldTypes[fieldType].push({{
                             varName: keyVarName,
                             imageFile: zonalSections[key]
                         }});
@@ -1102,39 +1614,63 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
                 }}
             }}
 
-            // Sort sections: Temp first, then Salt, then others alphabetically
-            sections.sort((a, b) => {{
-                if (a.varName === 'Temp') return -1;
-                if (b.varName === 'Temp') return 1;
-                if (a.varName === 'Salt') return -1;
-                if (b.varName === 'Salt') return 1;
-                return a.varName.localeCompare(b.varName);
-            }});
+            const typeNames = Object.keys(fieldTypes);
+            if (typeNames.length === 0) {{
+                return `<strong>Zonal Section</strong><br>Latitude: ${{lat}}°<br><em>No section image available</em>`;
+            }}
 
-            if (sections.length > 0) {{
-                // Build HTML with sections side by side
-                let imagesHtml = '<div style="display: flex; gap: 10px; flex-wrap: nowrap;">';
-                sections.forEach(section => {{
+            // Sort variables within each field type: Temp first, then Salt, then others
+            for (const ft of typeNames) {{
+                fieldTypes[ft].sort((a, b) => {{
+                    if (a.varName === 'Temp') return -1;
+                    if (b.varName === 'Temp') return 1;
+                    if (a.varName === 'Salt') return -1;
+                    if (b.varName === 'Salt') return 1;
+                    return a.varName.localeCompare(b.varName);
+                }});
+            }}
+
+            // Build dropdown + image area
+            const popupId = 'zonal-popup-' + lat;
+            const selectId = popupId + '-select';
+            const contentId = popupId + '-content';
+
+            let optionsHtml = typeNames.map((ft, i) =>
+                `<option value="${{ft}}" ${{i === 0 ? 'selected' : ''}}>${{ft}}</option>`
+            ).join('');
+
+            // Build image HTML for each field type (hidden by default except the first)
+            let allContentHtml = '';
+            typeNames.forEach((ft, i) => {{
+                const display = i === 0 ? 'flex' : 'none';
+                let imagesHtml = '';
+                fieldTypes[ft].forEach(section => {{
                     imagesHtml += `
                         <div style="flex: 0 0 auto;">
                             <h4 style="text-align: center; margin: 5px 0;">${{section.varName}}</h4>
-                            <img src="${{section.imageFile}}" alt="Zonal Section - ${{section.varName}}"
+                            <img src="${{section.imageFile}}" alt="Zonal Section - ${{ft}} ${{section.varName}}"
                                  style="width: 600px; height: auto; display: block;"
-                                 onerror="this.parentElement.innerHTML='<p>Image not found: ${{section.imageFile}}</p>'">
+                                 onerror="this.parentElement.innerHTML='<p>Image not found</p>'">
                         </div>
                     `;
                 }});
-                imagesHtml += '</div>';
+                allContentHtml += `<div class="section-field-group" data-field-type="${{ft}}" style="display: ${{display}}; gap: 10px; flex-wrap: nowrap;">${{imagesHtml}}</div>`;
+            }});
 
-                return `
-                    <div style="min-width: 300px;">
-                        <h3 style="margin: 0 0 10px 0;">Zonal Section at ${{lat}}°N</h3>
-                        ${{imagesHtml}}
+            return `
+                <div style="min-width: 300px;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                        <h3 style="margin: 0;">Zonal Section at ${{lat}}°N</h3>
+                        ${{typeNames.length > 1 ? `<select id="${{selectId}}" onchange="(function(sel){{
+                            const groups = sel.closest('.leaflet-popup-content').querySelectorAll('.section-field-group');
+                            groups.forEach(g => g.style.display = g.dataset.fieldType === sel.value ? 'flex' : 'none');
+                        }})(this)" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #ccc; font-size: 13px;">
+                            ${{optionsHtml}}
+                        </select>` : ''}}
                     </div>
-                `;
-            }} else {{
-                return `<strong>Zonal Section</strong><br>Latitude: ${{lat}}°<br><em>No section image available</em>`;
-            }}
+                    ${{allContentHtml}}
+                </div>
+            `;
         }}        // Platform-specific marker colors and icons
         const platformColors = {{
             'Argo': '#0078d7'
@@ -1295,13 +1831,41 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
             }});
         }});
 
-        // Add layer control
-        const overlayLayers = {{
-            'Argo Profiles': argoLayer,
-            'Surface Drifters': drifterLayer
+        // Create surface plot overlays (model background fields)
+        const surfacePlotOverlays = {{}};
+        Object.keys(surfacePlots).forEach(varName => {{
+            const imageDataUrl = surfacePlots[varName];
+            // Surface plots are global, so use full lat/lon bounds
+            const bounds = [[-90, -180], [90, 180]];
+            surfacePlotOverlays[varName] = L.imageOverlay(imageDataUrl, bounds, {{
+                opacity: 0.7,
+                interactive: false,
+                className: 'surface-plot-overlay'
+            }});
+        }});
+
+        // Add layer control - Custom implementation with separate boxes
+        const layersByCategory = {{
+            observations: [],
+            background: [],
+            increments: [],
+            errors: [],
+            ensspread: []
         }};
 
-        // Add satellite layers (SST, altimetry, sea ice, salinity)
+        // Add Argo and Drifter layers to observations
+        layersByCategory.observations.push({{
+            name: 'Argo Profiles',
+            layer: argoLayer,
+            visible: true
+        }});
+        layersByCategory.observations.push({{
+            name: 'Surface Drifters',
+            layer: drifterLayer,
+            visible: true
+        }});
+
+        // Add satellite layers to observations
         Object.keys(satelliteRasters).forEach(key => {{
             const raster = satelliteRasters[key];
             let prefix = 'Other';
@@ -1317,13 +1881,307 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
                 prefix = 'SST';
             }}
 
-            overlayLayers[`${{prefix}}: ${{raster.name}} (${{raster.n_obs.toLocaleString()}} obs)`] = satelliteOverlays[key];
+            layersByCategory.observations.push({{
+                name: `${{prefix}}: ${{raster.name}} (${{raster.n_obs.toLocaleString()}} obs)`,
+                layer: satelliteOverlays[key],
+                satKey: key,
+                visible: false
+            }});
         }});
 
-        L.control.layers(null, overlayLayers, {{
-            collapsed: false,
-            position: 'topleft'
-        }}).addTo(map);
+        // Add surface plot layers - categorize as background or increments
+        Object.keys(surfacePlots).forEach(varName => {{
+            if (varName.includes('Background:') && !varName.includes('Sea Ice')) {{
+                layersByCategory.background.push({{
+                    name: varName.replace('Background: ', ''),
+                    fullName: varName,
+                    layer: surfacePlotOverlays[varName],
+                    visible: false
+                }});
+            }} else if (varName.includes('Sea Ice Background:')) {{
+                layersByCategory.background.push({{
+                    name: varName.replace('Sea Ice Background: ', 'Ice: '),
+                    fullName: varName,
+                    layer: surfacePlotOverlays[varName],
+                    visible: false
+                }});
+            }} else if (varName.includes('JEDI Increment:') || varName.includes('MOM6 Increment:')) {{
+                layersByCategory.increments.push({{
+                    name: varName,
+                    fullName: varName,
+                    layer: surfacePlotOverlays[varName],
+                    visible: false
+                }});
+            }} else if (varName.includes('Sea Ice JEDI Increment:')) {{
+                layersByCategory.increments.push({{
+                    name: varName.replace('Sea Ice JEDI Increment: ', 'Ice JEDI Inc: '),
+                    fullName: varName,
+                    layer: surfacePlotOverlays[varName],
+                    visible: false
+                }});
+            }} else if (varName.includes('Ocean Bkg Error:') || varName.includes('Ice Bkg Error:') || varName.includes('Recentering Error:')) {{
+                layersByCategory.errors.push({{
+                    name: varName,
+                    fullName: varName,
+                    layer: surfacePlotOverlays[varName],
+                    visible: false
+                }});
+            }} else if (varName.includes('Ocean Ens Spread:') || varName.includes('Ice Ens Spread:')) {{
+                layersByCategory.ensspread.push({{
+                    name: varName,
+                    fullName: varName,
+                    layer: surfacePlotOverlays[varName],
+                    visible: false
+                }});
+            }}
+        }});
+
+        // Function to update colorbar display
+        let currentActiveSurfacePlot = null;
+
+        function updateColorbar(displayName, fullName) {{
+            const colorbar = document.getElementById('surface-colorbar');
+            const title = document.getElementById('colorbar-title');
+            const img = document.getElementById('colorbar-img');
+
+            // Use the pre-generated colorbar image if available
+            if (surfaceColorbars[fullName]) {{
+                img.src = surfaceColorbars[fullName];
+                img.style.display = 'block';
+            }} else {{
+                // Fallback: hide image and just show title with bounds from metadata
+                img.style.display = 'none';
+                const metadata = surfacePlotMetadata[fullName];
+                if (metadata) {{
+                    title.textContent = `${{metadata.label}} (${{metadata.bounds[0]}}–${{metadata.bounds[1]}}${{metadata.units}})`;
+                }}
+            }}
+
+            // Always update title from metadata label
+            const metadata = surfacePlotMetadata[fullName];
+            if (metadata) {{
+                title.textContent = metadata.label;
+            }} else {{
+                title.textContent = displayName;
+            }}
+
+            colorbar.style.display = 'block';
+            currentActiveSurfacePlot = fullName;
+        }}
+
+        // Function to hide colorbar if no surface plots or satellite rasters are active
+        function hideColorbarIfNoSurfacePlots() {{
+            const allSurfacePlots = [...layersByCategory.background, ...layersByCategory.increments, ...layersByCategory.errors, ...layersByCategory.ensspread];
+            const activeSurfacePlots = allSurfacePlots.filter(layerInfo => {{
+                return layerInfo.fullName && map.hasLayer(layerInfo.layer);
+            }});
+
+            // Also check if any satellite layers with colorbars are still active
+            const activeSatWithColorbar = layersByCategory.observations.filter(layerInfo => {{
+                return layerInfo.satKey && map.hasLayer(layerInfo.layer) &&
+                       satelliteRasters[layerInfo.satKey] && satelliteRasters[layerInfo.satKey].colorbar;
+            }});
+
+            if (activeSurfacePlots.length === 0 && activeSatWithColorbar.length === 0) {{
+                document.getElementById('surface-colorbar').style.display = 'none';
+                currentActiveSurfacePlot = null;
+            }} else if (activeSurfacePlots.length > 0) {{
+                // If the current colorbar is no longer valid, update to first active surface plot
+                const currentStillActive = activeSurfacePlots.some(info => info.fullName === currentActiveSurfacePlot);
+                if (!currentStillActive && activeSurfacePlots.length > 0) {{
+                    const firstActive = activeSurfacePlots[0];
+                    updateColorbar(firstActive.name, firstActive.fullName);
+                }}
+            }} else if (activeSatWithColorbar.length > 0) {{
+                // Switch to most recently active satellite colorbar
+                const sat = activeSatWithColorbar[0];
+                const raster = satelliteRasters[sat.satKey];
+                const colorbarEl = document.getElementById('surface-colorbar');
+                const titleEl = document.getElementById('colorbar-title');
+                const imgEl = document.getElementById('colorbar-img');
+                imgEl.src = raster.colorbar;
+                imgEl.style.display = 'block';
+                let label = raster.name;
+                if (raster.vmin !== null && raster.vmax !== null) {{
+                    label += ` (${{raster.vmin}} – ${{raster.vmax}})`;
+                }}
+                titleEl.textContent = label;
+                colorbarEl.style.display = 'block';
+            }}
+        }}
+
+        // Function to create layer control items (for observations with checkboxes)
+        function createLayerControlItem(layerInfo, containerId) {{
+            const container = document.getElementById(containerId);
+            const itemDiv = document.createElement('div');
+            itemDiv.className = 'layer-control-item';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.id = `layer-${{containerId}}-${{layerInfo.name.replace(/[^a-zA-Z0-9]/g, '-')}}`;
+            checkbox.checked = layerInfo.visible;
+
+            const label = document.createElement('label');
+            label.htmlFor = checkbox.id;
+            label.textContent = layerInfo.name;
+
+            // Add/remove layer on checkbox change
+            checkbox.addEventListener('change', function() {{
+                if (this.checked) {{
+                    layerInfo.layer.addTo(map);
+                    // Show satellite colorbar if this layer has one
+                    if (layerInfo.satKey) {{
+                        const raster = satelliteRasters[layerInfo.satKey];
+                        if (raster && raster.colorbar) {{
+                            const colorbarEl = document.getElementById('surface-colorbar');
+                            const titleEl = document.getElementById('colorbar-title');
+                            const imgEl = document.getElementById('colorbar-img');
+                            imgEl.src = raster.colorbar;
+                            imgEl.style.display = 'block';
+                            let label = raster.name;
+                            if (raster.vmin !== null && raster.vmax !== null) {{
+                                label += ` (${{raster.vmin}} – ${{raster.vmax}})`;
+                            }}
+                            titleEl.textContent = label;
+                            colorbarEl.style.display = 'block';
+                            currentActiveSurfacePlot = null;  // satellite, not a surface plot
+                        }}
+                    }}
+                }} else {{
+                    map.removeLayer(layerInfo.layer);
+                    // Hide colorbar if it was showing for this satellite
+                    if (layerInfo.satKey) {{
+                        hideColorbarIfNoSurfacePlots();
+                    }}
+                }}
+            }});
+
+            // Toggle on label click
+            itemDiv.addEventListener('click', function(e) {{
+                if (e.target !== checkbox) {{
+                    checkbox.checked = !checkbox.checked;
+                    checkbox.dispatchEvent(new Event('change'));
+                }}
+            }});
+
+            itemDiv.appendChild(checkbox);
+            itemDiv.appendChild(label);
+            container.appendChild(itemDiv);
+
+            // Add to map if visible by default
+            if (layerInfo.visible) {{
+                layerInfo.layer.addTo(map);
+            }}
+        }}
+
+        // Populate observation layer control (checkboxes)
+        layersByCategory.observations.forEach(layerInfo => {{
+            createLayerControlItem(layerInfo, 'observations-layers');
+        }});
+
+        // Populate background dropdown
+        const bgSelect = document.getElementById('background-select');
+        layersByCategory.background.forEach((layerInfo, i) => {{
+            const opt = document.createElement('option');
+            opt.value = i;
+            const bgStats = surfaceStats[layerInfo.fullName];
+            opt.textContent = bgStats
+                ? `${{layerInfo.name}}  [min=${{bgStats.data_min.toPrecision(4)}}, max=${{bgStats.data_max.toPrecision(4)}}]`
+                : layerInfo.name;
+            bgSelect.appendChild(opt);
+        }});
+
+        bgSelect.addEventListener('change', function() {{
+            // Remove all background layers
+            layersByCategory.background.forEach(info => {{
+                if (map.hasLayer(info.layer)) map.removeLayer(info.layer);
+            }});
+            if (this.value !== '') {{
+                const info = layersByCategory.background[parseInt(this.value)];
+                info.layer.addTo(map);
+                updateColorbar(info.name, info.fullName);
+            }} else {{
+                hideColorbarIfNoSurfacePlots();
+            }}
+        }});
+
+        // Populate increments dropdown
+        const incSelect = document.getElementById('increments-select');
+        layersByCategory.increments.forEach((layerInfo, i) => {{
+            const opt = document.createElement('option');
+            opt.value = i;
+            const incStats = surfaceStats[layerInfo.fullName];
+            opt.textContent = incStats
+                ? `${{layerInfo.name}}  [min=${{incStats.data_min.toPrecision(4)}}, max=${{incStats.data_max.toPrecision(4)}}]`
+                : layerInfo.name;
+            incSelect.appendChild(opt);
+        }});
+
+        incSelect.addEventListener('change', function() {{
+            // Remove all increment layers
+            layersByCategory.increments.forEach(info => {{
+                if (map.hasLayer(info.layer)) map.removeLayer(info.layer);
+            }});
+            if (this.value !== '') {{
+                const info = layersByCategory.increments[parseInt(this.value)];
+                info.layer.addTo(map);
+                updateColorbar(info.name, info.fullName);
+            }} else {{
+                hideColorbarIfNoSurfacePlots();
+            }}
+        }});
+
+        // Populate errors dropdown
+        const errSelect = document.getElementById('errors-select');
+        layersByCategory.errors.forEach((layerInfo, i) => {{
+            const opt = document.createElement('option');
+            opt.value = i;
+            const errStats = surfaceStats[layerInfo.fullName];
+            opt.textContent = errStats
+                ? `${{layerInfo.name}}  [min=${{errStats.data_min.toPrecision(4)}}, max=${{errStats.data_max.toPrecision(4)}}]`
+                : layerInfo.name;
+            errSelect.appendChild(opt);
+        }});
+
+        errSelect.addEventListener('change', function() {{
+            // Remove all error layers
+            layersByCategory.errors.forEach(info => {{
+                if (map.hasLayer(info.layer)) map.removeLayer(info.layer);
+            }});
+            if (this.value !== '') {{
+                const info = layersByCategory.errors[parseInt(this.value)];
+                info.layer.addTo(map);
+                updateColorbar(info.name, info.fullName);
+            }} else {{
+                hideColorbarIfNoSurfacePlots();
+            }}
+        }});
+
+        // Populate ensemble spread dropdown
+        const ensSelect = document.getElementById('ensspread-select');
+        layersByCategory.ensspread.forEach((layerInfo, i) => {{
+            const opt = document.createElement('option');
+            opt.value = i;
+            const ensStats = surfaceStats[layerInfo.fullName];
+            opt.textContent = ensStats
+                ? `${{layerInfo.name}}  [min=${{ensStats.data_min.toPrecision(4)}}, max=${{ensStats.data_max.toPrecision(4)}}]`
+                : layerInfo.name;
+            ensSelect.appendChild(opt);
+        }});
+
+        ensSelect.addEventListener('change', function() {{
+            // Remove all ensemble spread layers
+            layersByCategory.ensspread.forEach(info => {{
+                if (map.hasLayer(info.layer)) map.removeLayer(info.layer);
+            }});
+            if (this.value !== '') {{
+                const info = layersByCategory.ensspread[parseInt(this.value)];
+                info.layer.addTo(map);
+                updateColorbar(info.name, info.fullName);
+            }} else {{
+                hideColorbarIfNoSurfacePlots();
+            }}
+        }});
     </script>
 </body>
 </html>'''
@@ -1389,8 +2247,64 @@ Examples:
                         help='Cycle name to display on the map (e.g., gdas.20210706/18)')
 
     parser.add_argument('--sections-dir',
-                        default='sections',
-                        help='Directory containing section PNG images (default: sections)')
+                        default='sections_bkg',
+                        help='Directory containing background section PNG images (default: sections_bkg)')
+
+    parser.add_argument('--sections-jedi-inc-dir',
+                        default='sections_jedi_inc',
+                        help='Directory containing JEDI increment section PNG images (default: sections_jedi_inc)')
+
+    parser.add_argument('--sections-mom6-inc-dir',
+                        default='sections_mom6_inc',
+                        help='Directory containing MOM6 increment section PNG images (default: sections_mom6_inc)')
+
+    parser.add_argument('--sections-ocn-bkgerr-dir',
+                        default='sections_ocn_bkgerr',
+                        help='Directory containing ocean background error section PNG images (default: sections_ocn_bkgerr)')
+
+    parser.add_argument('--surface-plots-dir',
+                        default='surface_plots_bkg',
+                        help='Directory containing background surface plot PNG images (default: surface_plots_bkg)')
+
+    parser.add_argument('--surface-plots-jedi-inc-dir',
+                        default='surface_plots_jedi_inc',
+                        help='Directory containing JEDI increment surface plot PNG images (default: surface_plots_jedi_inc)')
+
+    parser.add_argument('--surface-plots-mom6-inc-dir',
+                        default='surface_plots_mom6_inc',
+                        help='Directory containing MOM6 increment surface plot PNG images (default: surface_plots_mom6_inc)')
+
+    parser.add_argument('--surface-plots-ice-bkg-dir',
+                        default='surface_plots_ice_bkg',
+                        help='Directory containing sea ice background surface plot PNG images (default: surface_plots_ice_bkg)')
+
+    parser.add_argument('--surface-plots-ice-jedi-inc-dir',
+                        default='surface_plots_ice_jedi_inc',
+                        help='Directory containing sea ice JEDI increment surface plot PNG images (default: surface_plots_ice_jedi_inc)')
+
+    parser.add_argument('--surface-plots-ocn-bkgerr-dir',
+                        default='surface_plots_ocn_bkgerr',
+                        help='Directory containing ocean parametric background error surface plot PNG images (default: surface_plots_ocn_bkgerr)')
+
+    parser.add_argument('--surface-plots-ice-bkgerr-dir',
+                        default='surface_plots_ice_bkgerr',
+                        help='Directory containing ice parametric background error surface plot PNG images (default: surface_plots_ice_bkgerr)')
+
+    parser.add_argument('--surface-plots-recentering-err-dir',
+                        default='surface_plots_recentering_err',
+                        help='Directory containing recentering error surface plot PNG images (default: surface_plots_recentering_err)')
+
+    parser.add_argument('--surface-plots-ocn-ens-spread-dir',
+                        default='surface_plots_ocn_ens_spread',
+                        help='Directory containing ocean ensemble spread surface plot PNG images (default: surface_plots_ocn_ens_spread)')
+
+    parser.add_argument('--surface-plots-ice-ens-spread-dir',
+                        default='surface_plots_ice_ens_spread',
+                        help='Directory containing ice ensemble spread surface plot PNG images (default: surface_plots_ice_ens_spread)')
+
+    parser.add_argument('--sections-ocn-ens-spread-dir',
+                        default='sections_ocn_ens_spread',
+                        help='Directory containing ocean ensemble spread section PNG images (default: sections_ocn_ens_spread)')
 
     args = parser.parse_args()
 
@@ -1400,7 +2314,13 @@ Examples:
     print(f"  Profile directory: {args.profile_dir}")
     print(f"  Drifter file: {args.drifter_file}")
     print(f"  Raster metadata: {args.raster_metadata}")
-    print(f"  Sections directory: {args.sections_dir}")
+    print(f"  Sections directory (bkg): {args.sections_dir}")
+    print(f"  Sections directory (JEDI inc): {args.sections_jedi_inc_dir}")
+    print(f"  Sections directory (MOM6 inc): {args.sections_mom6_inc_dir}")
+    print(f"  Sections directory (ocn bkgerr): {args.sections_ocn_bkgerr_dir}")
+    print(f"  Surface plots directory (bkg): {args.surface_plots_dir}")
+    print(f"  Surface plots directory (JEDI inc): {args.surface_plots_jedi_inc_dir}")
+    print(f"  Surface plots directory (MOM6 inc): {args.surface_plots_mom6_inc_dir}")
     if args.cycle_name:
         print(f"  Cycle name: {args.cycle_name}")
 
@@ -1417,11 +2337,59 @@ Examples:
     drifters = get_drifter_data(nc_file=args.drifter_file)
     print(f"Found {len(drifters)} surface drifters")
 
-    # Load section images
+    # Load surface plots for all three types
+    print("\nScanning for surface plot images...")
+    surface_plots_bkg = get_surface_plot_images(surface_dir=args.surface_plots_dir)
+    print(f"Found {len(surface_plots_bkg)} background surface plots: {list(surface_plots_bkg.keys())}")
+
+    surface_plots_jedi_inc = get_surface_plot_images(surface_dir=args.surface_plots_jedi_inc_dir)
+    print(f"Found {len(surface_plots_jedi_inc)} JEDI increment surface plots: {list(surface_plots_jedi_inc.keys())}")
+
+    surface_plots_mom6_inc = get_surface_plot_images(surface_dir=args.surface_plots_mom6_inc_dir)
+    print(f"Found {len(surface_plots_mom6_inc)} MOM6 increment surface plots: {list(surface_plots_mom6_inc.keys())}")
+
+    surface_plots_ice_bkg = get_surface_plot_images(surface_dir=args.surface_plots_ice_bkg_dir)
+    print(f"Found {len(surface_plots_ice_bkg)} sea ice background surface plots: {list(surface_plots_ice_bkg.keys())}")
+
+    surface_plots_ice_jedi_inc = get_surface_plot_images(surface_dir=args.surface_plots_ice_jedi_inc_dir)
+    print(f"Found {len(surface_plots_ice_jedi_inc)} sea ice JEDI increment surface plots: {list(surface_plots_ice_jedi_inc.keys())}")
+
+    surface_plots_ocn_bkgerr = get_surface_plot_images(surface_dir=args.surface_plots_ocn_bkgerr_dir)
+    print(f"Found {len(surface_plots_ocn_bkgerr)} ocean bkg error surface plots: {list(surface_plots_ocn_bkgerr.keys())}")
+
+    surface_plots_ice_bkgerr = get_surface_plot_images(surface_dir=args.surface_plots_ice_bkgerr_dir)
+    print(f"Found {len(surface_plots_ice_bkgerr)} ice bkg error surface plots: {list(surface_plots_ice_bkgerr.keys())}")
+
+    surface_plots_recentering_err = get_surface_plot_images(surface_dir=args.surface_plots_recentering_err_dir)
+    print(f"Found {len(surface_plots_recentering_err)} recentering error surface plots: {list(surface_plots_recentering_err.keys())}")
+
+    surface_plots_ocn_ens_spread = get_surface_plot_images(surface_dir=args.surface_plots_ocn_ens_spread_dir)
+    print(f"Found {len(surface_plots_ocn_ens_spread)} ocean ensemble spread surface plots: {list(surface_plots_ocn_ens_spread.keys())}")
+
+    surface_plots_ice_ens_spread = get_surface_plot_images(surface_dir=args.surface_plots_ice_ens_spread_dir)
+    print(f"Found {len(surface_plots_ice_ens_spread)} ice ensemble spread surface plots: {list(surface_plots_ice_ens_spread.keys())}")
+
+    # Load section images for all three types
     print("\nScanning for section images...")
-    section_images = get_section_images(sections_dir=args.sections_dir)
-    print(f"Found {len(section_images['zonal'])} zonal sections")
-    print(f"Found {len(section_images['meridional'])} meridional sections")
+    section_images_bkg = get_section_images(sections_dir=args.sections_dir)
+    print(f"Found {len(section_images_bkg['zonal'])} background zonal sections")
+    print(f"Found {len(section_images_bkg['meridional'])} background meridional sections")
+
+    section_images_jedi_inc = get_section_images(sections_dir=args.sections_jedi_inc_dir)
+    print(f"Found {len(section_images_jedi_inc['zonal'])} JEDI increment zonal sections")
+    print(f"Found {len(section_images_jedi_inc['meridional'])} JEDI increment meridional sections")
+
+    section_images_mom6_inc = get_section_images(sections_dir=args.sections_mom6_inc_dir)
+    print(f"Found {len(section_images_mom6_inc['zonal'])} MOM6 increment zonal sections")
+    print(f"Found {len(section_images_mom6_inc['meridional'])} MOM6 increment meridional sections")
+
+    section_images_ocn_bkgerr = get_section_images(sections_dir=args.sections_ocn_bkgerr_dir)
+    print(f"Found {len(section_images_ocn_bkgerr['zonal'])} ocean bkg error zonal sections")
+    print(f"Found {len(section_images_ocn_bkgerr['meridional'])} ocean bkg error meridional sections")
+
+    section_images_ocn_ens_spread = get_section_images(sections_dir=args.sections_ocn_ens_spread_dir)
+    print(f"Found {len(section_images_ocn_ens_spread['zonal'])} ocean ensemble spread zonal sections")
+    print(f"Found {len(section_images_ocn_ens_spread['meridional'])} ocean ensemble spread meridional sections")
 
     # Load satellite raster metadata (SST and sea ice)
     print("\nLoading satellite raster metadata...")
@@ -1516,14 +2484,265 @@ Examples:
                    os.path.getmtime(src) > os.path.getmtime(dst):
                     shutil.copy2(src, dst)
                 section_copy_count += 1
-    print(f"  Synced {section_copy_count} section images to {out_sections_dir}")
+    print(f"  Synced {section_copy_count} background section images to {out_sections_dir}")
+
+    # Copy JEDI increment sections
+    out_sections_jedi_dir = os.path.join(args.output_dir, 'sections_jedi_inc')
+    os.makedirs(out_sections_jedi_dir, exist_ok=True)
+    section_jedi_copy_count = 0
+    if os.path.exists(args.sections_jedi_inc_dir):
+        for f in os.listdir(args.sections_jedi_inc_dir):
+            if f.endswith('.png'):
+                src = os.path.join(args.sections_jedi_inc_dir, f)
+                dst = os.path.join(out_sections_jedi_dir, f)
+                if not os.path.exists(dst) or \
+                   os.path.getmtime(src) > os.path.getmtime(dst):
+                    shutil.copy2(src, dst)
+                section_jedi_copy_count += 1
+    print(f"  Synced {section_jedi_copy_count} JEDI increment section images to {out_sections_jedi_dir}")
+
+    # Copy MOM6 increment sections
+    out_sections_mom6_dir = os.path.join(args.output_dir, 'sections_mom6_inc')
+    os.makedirs(out_sections_mom6_dir, exist_ok=True)
+    section_mom6_copy_count = 0
+    if os.path.exists(args.sections_mom6_inc_dir):
+        for f in os.listdir(args.sections_mom6_inc_dir):
+            if f.endswith('.png'):
+                src = os.path.join(args.sections_mom6_inc_dir, f)
+                dst = os.path.join(out_sections_mom6_dir, f)
+                if not os.path.exists(dst) or \
+                   os.path.getmtime(src) > os.path.getmtime(dst):
+                    shutil.copy2(src, dst)
+                section_mom6_copy_count += 1
+    print(f"  Synced {section_mom6_copy_count} MOM6 increment section images to {out_sections_mom6_dir}")
+
+    # Copy ocean bkg error sections
+    out_sections_ocn_bkgerr_dir = os.path.join(args.output_dir, 'sections_ocn_bkgerr')
+    os.makedirs(out_sections_ocn_bkgerr_dir, exist_ok=True)
+    section_ocn_bkgerr_copy_count = 0
+    if os.path.exists(args.sections_ocn_bkgerr_dir):
+        for f in os.listdir(args.sections_ocn_bkgerr_dir):
+            if f.endswith('.png'):
+                src = os.path.join(args.sections_ocn_bkgerr_dir, f)
+                dst = os.path.join(out_sections_ocn_bkgerr_dir, f)
+                if not os.path.exists(dst) or \
+                   os.path.getmtime(src) > os.path.getmtime(dst):
+                    shutil.copy2(src, dst)
+                section_ocn_bkgerr_copy_count += 1
+    print(f"  Synced {section_ocn_bkgerr_copy_count} ocean bkg error section images to {out_sections_ocn_bkgerr_dir}")
+
+    # Copy ocean ensemble spread sections
+    out_sections_ocn_ens_spread_dir = os.path.join(args.output_dir, 'sections_ocn_ens_spread')
+    os.makedirs(out_sections_ocn_ens_spread_dir, exist_ok=True)
+    section_ocn_ens_spread_copy_count = 0
+    if os.path.exists(args.sections_ocn_ens_spread_dir):
+        for f in os.listdir(args.sections_ocn_ens_spread_dir):
+            if f.endswith('.png'):
+                src = os.path.join(args.sections_ocn_ens_spread_dir, f)
+                dst = os.path.join(out_sections_ocn_ens_spread_dir, f)
+                if not os.path.exists(dst) or \
+                   os.path.getmtime(src) > os.path.getmtime(dst):
+                    shutil.copy2(src, dst)
+                section_ocn_ens_spread_copy_count += 1
+    print(f"  Synced {section_ocn_ens_spread_copy_count} ocean ensemble spread section images to {out_sections_ocn_ens_spread_dir}")
+
+    # Copy surface plots to output directory
+    out_surface_dir = os.path.join(args.output_dir, 'surface_plots')
+    os.makedirs(out_surface_dir, exist_ok=True)
+    surface_copy_count = 0
+    if os.path.exists(args.surface_plots_dir):
+        for f in os.listdir(args.surface_plots_dir):
+            if f.endswith('.png'):
+                src = os.path.join(args.surface_plots_dir, f)
+                dst = os.path.join(out_surface_dir, f)
+                if not os.path.exists(dst) or \
+                   os.path.getmtime(src) > os.path.getmtime(dst):
+                    shutil.copy2(src, dst)
+                surface_copy_count += 1
+    print(f"  Synced {surface_copy_count} background surface plot images to {out_surface_dir}")
+
+    # Copy JEDI increment surface plots
+    out_surface_jedi_dir = os.path.join(args.output_dir, 'surface_plots_jedi_inc')
+    os.makedirs(out_surface_jedi_dir, exist_ok=True)
+    surface_jedi_copy_count = 0
+    if os.path.exists(args.surface_plots_jedi_inc_dir):
+        for f in os.listdir(args.surface_plots_jedi_inc_dir):
+            if f.endswith('.png'):
+                src = os.path.join(args.surface_plots_jedi_inc_dir, f)
+                dst = os.path.join(out_surface_jedi_dir, f)
+                if not os.path.exists(dst) or \
+                   os.path.getmtime(src) > os.path.getmtime(dst):
+                    shutil.copy2(src, dst)
+                surface_jedi_copy_count += 1
+    print(f"  Synced {surface_jedi_copy_count} JEDI increment surface plot images to {out_surface_jedi_dir}")
+
+    # Copy MOM6 increment surface plots
+    out_surface_mom6_dir = os.path.join(args.output_dir, 'surface_plots_mom6_inc')
+    os.makedirs(out_surface_mom6_dir, exist_ok=True)
+    surface_mom6_copy_count = 0
+    if os.path.exists(args.surface_plots_mom6_inc_dir):
+        for f in os.listdir(args.surface_plots_mom6_inc_dir):
+            if f.endswith('.png'):
+                src = os.path.join(args.surface_plots_mom6_inc_dir, f)
+                dst = os.path.join(out_surface_mom6_dir, f)
+                if not os.path.exists(dst) or \
+                   os.path.getmtime(src) > os.path.getmtime(dst):
+                    shutil.copy2(src, dst)
+                surface_mom6_copy_count += 1
+    print(f"  Synced {surface_mom6_copy_count} MOM6 increment surface plot images to {out_surface_mom6_dir}")
+
+    # Copy sea ice background surface plots
+    out_surface_ice_bkg_dir = os.path.join(args.output_dir, 'surface_plots_ice_bkg')
+    os.makedirs(out_surface_ice_bkg_dir, exist_ok=True)
+    surface_ice_bkg_copy_count = 0
+    if os.path.exists(args.surface_plots_ice_bkg_dir):
+        for f in os.listdir(args.surface_plots_ice_bkg_dir):
+            if f.endswith('.png'):
+                src = os.path.join(args.surface_plots_ice_bkg_dir, f)
+                dst = os.path.join(out_surface_ice_bkg_dir, f)
+                if not os.path.exists(dst) or \
+                   os.path.getmtime(src) > os.path.getmtime(dst):
+                    shutil.copy2(src, dst)
+                surface_ice_bkg_copy_count += 1
+    print(f"  Synced {surface_ice_bkg_copy_count} sea ice background surface plot images to {out_surface_ice_bkg_dir}")
+
+    # Copy sea ice JEDI increment surface plots
+    out_surface_ice_jedi_dir = os.path.join(args.output_dir, 'surface_plots_ice_jedi_inc')
+    os.makedirs(out_surface_ice_jedi_dir, exist_ok=True)
+    surface_ice_jedi_copy_count = 0
+    if os.path.exists(args.surface_plots_ice_jedi_inc_dir):
+        for f in os.listdir(args.surface_plots_ice_jedi_inc_dir):
+            if f.endswith('.png'):
+                src = os.path.join(args.surface_plots_ice_jedi_inc_dir, f)
+                dst = os.path.join(out_surface_ice_jedi_dir, f)
+                if not os.path.exists(dst) or \
+                   os.path.getmtime(src) > os.path.getmtime(dst):
+                    shutil.copy2(src, dst)
+                surface_ice_jedi_copy_count += 1
+    print(f"  Synced {surface_ice_jedi_copy_count} sea ice JEDI increment surface plot images to {out_surface_ice_jedi_dir}")
+
+    # Copy ocean parametric background error surface plots
+    out_surface_ocn_bkgerr_dir = os.path.join(args.output_dir, 'surface_plots_ocn_bkgerr')
+    os.makedirs(out_surface_ocn_bkgerr_dir, exist_ok=True)
+    surface_ocn_bkgerr_copy_count = 0
+    if os.path.exists(args.surface_plots_ocn_bkgerr_dir):
+        for f in os.listdir(args.surface_plots_ocn_bkgerr_dir):
+            if f.endswith('.png'):
+                src = os.path.join(args.surface_plots_ocn_bkgerr_dir, f)
+                dst = os.path.join(out_surface_ocn_bkgerr_dir, f)
+                if not os.path.exists(dst) or \
+                   os.path.getmtime(src) > os.path.getmtime(dst):
+                    shutil.copy2(src, dst)
+                surface_ocn_bkgerr_copy_count += 1
+    print(f"  Synced {surface_ocn_bkgerr_copy_count} ocean bkg error surface plot images to {out_surface_ocn_bkgerr_dir}")
+
+    # Copy ice parametric background error surface plots
+    out_surface_ice_bkgerr_dir = os.path.join(args.output_dir, 'surface_plots_ice_bkgerr')
+    os.makedirs(out_surface_ice_bkgerr_dir, exist_ok=True)
+    surface_ice_bkgerr_copy_count = 0
+    if os.path.exists(args.surface_plots_ice_bkgerr_dir):
+        for f in os.listdir(args.surface_plots_ice_bkgerr_dir):
+            if f.endswith('.png'):
+                src = os.path.join(args.surface_plots_ice_bkgerr_dir, f)
+                dst = os.path.join(out_surface_ice_bkgerr_dir, f)
+                if not os.path.exists(dst) or \
+                   os.path.getmtime(src) > os.path.getmtime(dst):
+                    shutil.copy2(src, dst)
+                surface_ice_bkgerr_copy_count += 1
+    print(f"  Synced {surface_ice_bkgerr_copy_count} ice bkg error surface plot images to {out_surface_ice_bkgerr_dir}")
+
+    # Copy recentering error surface plots
+    out_surface_recenter_dir = os.path.join(args.output_dir, 'surface_plots_recentering_err')
+    os.makedirs(out_surface_recenter_dir, exist_ok=True)
+    surface_recenter_copy_count = 0
+    if os.path.exists(args.surface_plots_recentering_err_dir):
+        for f in os.listdir(args.surface_plots_recentering_err_dir):
+            if f.endswith('.png'):
+                src = os.path.join(args.surface_plots_recentering_err_dir, f)
+                dst = os.path.join(out_surface_recenter_dir, f)
+                if not os.path.exists(dst) or \
+                   os.path.getmtime(src) > os.path.getmtime(dst):
+                    shutil.copy2(src, dst)
+                surface_recenter_copy_count += 1
+    print(f"  Synced {surface_recenter_copy_count} recentering error surface plot images to {out_surface_recenter_dir}")
+
+    # Copy ocean ensemble spread surface plots
+    out_surface_ocn_ens_spread_dir = os.path.join(args.output_dir, 'surface_plots_ocn_ens_spread')
+    os.makedirs(out_surface_ocn_ens_spread_dir, exist_ok=True)
+    surface_ocn_ens_spread_copy_count = 0
+    if os.path.exists(args.surface_plots_ocn_ens_spread_dir):
+        for f in os.listdir(args.surface_plots_ocn_ens_spread_dir):
+            if f.endswith('.png'):
+                src = os.path.join(args.surface_plots_ocn_ens_spread_dir, f)
+                dst = os.path.join(out_surface_ocn_ens_spread_dir, f)
+                if not os.path.exists(dst) or \
+                   os.path.getmtime(src) > os.path.getmtime(dst):
+                    shutil.copy2(src, dst)
+                surface_ocn_ens_spread_copy_count += 1
+    print(f"  Synced {surface_ocn_ens_spread_copy_count} ocean ensemble spread surface plot images to {out_surface_ocn_ens_spread_dir}")
+
+    # Copy ice ensemble spread surface plots
+    out_surface_ice_ens_spread_dir = os.path.join(args.output_dir, 'surface_plots_ice_ens_spread')
+    os.makedirs(out_surface_ice_ens_spread_dir, exist_ok=True)
+    surface_ice_ens_spread_copy_count = 0
+    if os.path.exists(args.surface_plots_ice_ens_spread_dir):
+        for f in os.listdir(args.surface_plots_ice_ens_spread_dir):
+            if f.endswith('.png'):
+                src = os.path.join(args.surface_plots_ice_ens_spread_dir, f)
+                dst = os.path.join(out_surface_ice_ens_spread_dir, f)
+                if not os.path.exists(dst) or \
+                   os.path.getmtime(src) > os.path.getmtime(dst):
+                    shutil.copy2(src, dst)
+                surface_ice_ens_spread_copy_count += 1
+    print(f"  Synced {surface_ice_ens_spread_copy_count} ice ensemble spread surface plot images to {out_surface_ice_ens_spread_dir}")
 
     # Generate HTML
     print("\nGenerating HTML file...")
     output_path = os.path.join(args.output_dir, args.html_name)
-    generate_html(profiles, drifters, satellite_metadata, section_images,
-                  output_file=output_path, cycle_name=args.cycle_name,
-                  land_overlay=land_overlay)
+
+    # Build colorbars dict: full display key (e.g. "Background: Temperature") -> colorbar PNG path
+    # Collect from every surface plot directory using the same prefix logic as generate_html
+    colorbars = {}
+    _colorbar_dir_prefixes = [
+        (args.surface_plots_dir,               'Background: '),
+        (args.surface_plots_jedi_inc_dir,       'JEDI Increment: '),
+        (args.surface_plots_mom6_inc_dir,       'MOM6 Increment: '),
+        (args.surface_plots_ice_bkg_dir,        'Sea Ice Background: '),
+        (args.surface_plots_ice_jedi_inc_dir,   'Sea Ice JEDI Increment: '),
+        (args.surface_plots_ocn_bkgerr_dir,     'Ocean Bkg Error: '),
+        (args.surface_plots_ice_bkgerr_dir,     'Ice Bkg Error: '),
+        (args.surface_plots_recentering_err_dir,'Recentering Error: '),
+        (args.surface_plots_ocn_ens_spread_dir, 'Ocean Ens Spread: '),
+        (args.surface_plots_ice_ens_spread_dir, 'Ice Ens Spread: '),
+    ]
+    for cb_dir, prefix in _colorbar_dir_prefixes:
+        for disp_name, cb_path in get_colorbar_images(surface_dir=cb_dir).items():
+            colorbars[f"{prefix}{disp_name}"] = cb_path
+
+    # Build surface stats dict: full display key -> {"data_min": ..., "data_max": ...}
+    surface_stats = {}
+    for stats_dir, prefix in _colorbar_dir_prefixes:
+        for disp_name, st in get_surface_stats(surface_dir=stats_dir).items():
+            surface_stats[f"{prefix}{disp_name}"] = st
+
+    generate_html(profiles, drifters, satellite_metadata, section_images_bkg,
+                  surface_plots=surface_plots_bkg, output_file=output_path,
+                  cycle_name=args.cycle_name, land_overlay=land_overlay,
+                  section_images_jedi_inc=section_images_jedi_inc,
+                  section_images_mom6_inc=section_images_mom6_inc,
+                  surface_plots_jedi_inc=surface_plots_jedi_inc,
+                  surface_plots_mom6_inc=surface_plots_mom6_inc,
+                  surface_plots_ice_bkg=surface_plots_ice_bkg,
+                  surface_plots_ice_jedi_inc=surface_plots_ice_jedi_inc,
+                  surface_plots_ocn_bkgerr=surface_plots_ocn_bkgerr,
+                  surface_plots_ice_bkgerr=surface_plots_ice_bkgerr,
+                  surface_plots_recentering_err=surface_plots_recentering_err,
+                  section_images_ocn_bkgerr=section_images_ocn_bkgerr,
+                  surface_plots_ocn_ens_spread=surface_plots_ocn_ens_spread,
+                  surface_plots_ice_ens_spread=surface_plots_ice_ens_spread,
+                  section_images_ocn_ens_spread=section_images_ocn_ens_spread,
+                  colorbars=colorbars,
+                  surface_stats=surface_stats)
 
     print(f"\nDone! Open {output_path} in a web browser.")
 

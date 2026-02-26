@@ -6,7 +6,42 @@ import os
 import json
 import yaml
 import glob
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 from generate_generic_raster import generate_observation_raster
+
+
+def generate_satellite_colorbar(output_file, vmin, vmax, cmap='RdBu_r'):
+    """
+    Generate a horizontal colorbar PNG for a satellite raster.
+
+    Parameters:
+    -----------
+    output_file : str
+        Path to save the colorbar PNG
+    vmin, vmax : float
+        Color scale limits
+    cmap : str
+        Matplotlib colormap name
+    """
+    fig, ax = plt.subplots(figsize=(4, 0.4))
+    fig.subplots_adjust(bottom=0.5)
+
+    norm = plt.Normalize(vmin=vmin, vmax=vmax)
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+
+    cbar = fig.colorbar(sm, cax=ax, orientation='horizontal')
+    cbar.ax.tick_params(labelsize=7)
+    # Format tick labels to avoid unnecessary decimals
+    cbar.set_ticks([vmin, (vmin + vmax) / 2, vmax])
+    cbar.set_ticklabels([f'{vmin:g}', f'{(vmin + vmax) / 2:g}', f'{vmax:g}'])
+
+    plt.savefig(output_file, dpi=100, bbox_inches='tight',
+                facecolor='#2a2a2a', edgecolor='none')
+    plt.close()
+    print(f"  Colorbar saved: {output_file}")
 
 
 def load_satellite_sources(yaml_file='satellite_sources.yaml'):
@@ -99,14 +134,25 @@ def main():
         )
 
         if result:
+            # Generate colorbar PNG alongside the raster
+            cmap = info.get('cmap', 'RdBu_r')
+            colorbar_file = os.path.join(output_dir,
+                                         f"satellite_colorbar_{base_no_ext}.png")
+            generate_satellite_colorbar(colorbar_file, info['vmin'], info['vmax'], cmap=cmap)
+
             # Store relative path from output directory (where HTML will be)
             relative_file = os.path.basename(output_file)
+            relative_colorbar_file = os.path.basename(colorbar_file)
             # Use actual filename as key for metadata
             results[actual_filename] = {
                 'name': dataset_name,
                 'description': info['description'],
                 'color': info['color'],
                 'file': relative_file,
+                'colorbar_file': relative_colorbar_file,
+                'vmin': info['vmin'],
+                'vmax': info['vmax'],
+                'cmap': cmap,
                 'bounds': result['bounds'],
                 'n_obs': result['n_obs']
             }

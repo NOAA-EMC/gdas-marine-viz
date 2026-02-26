@@ -227,6 +227,19 @@ def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_varianc
     print(f"Plot background: {plot_background}")
     print(f"{'='*70}\n")
 
+    if not os.path.exists(oceanfile):
+        print(f"Warning: ocean file not found, skipping observation profiles for {oceanvarname}: {oceanfile}")
+        return None
+    if not os.path.exists(gridfile):
+        print(f"Warning: grid file not found, skipping observation profiles for {oceanvarname}: {gridfile}")
+        return None
+    if not os.path.exists(hfile):
+        print(f"Warning: h file not found, skipping observation profiles for {oceanvarname}: {hfile}")
+        return None
+    if not os.path.exists(obsfile):
+        print(f"Warning: obs file not found, skipping observation profiles for {oceanvarname}: {obsfile}")
+        return None
+
     # Extract base filename from obsfile (without path and suffix)
     obs_basename = os.path.splitext(os.path.basename(obsfile))[0]
 
@@ -509,9 +522,283 @@ No accepted observations available for statistics.
     return tarfile_path
 
 
+def lonlat_to_web_mercator(lon, lat):
+    """Convert lon/lat to Web Mercator (EPSG:3857) coordinates"""
+    x = lon * 20037508.34 / 180.0
+    y = np.log(np.tan((90.0 + lat) * np.pi / 360.0)) * (20037508.34 / np.pi)
+    return x, y
+
+
+def batch_create_surface_plots(hfile, oceanfile, oceanvarname, is_variance, gridfile,
+                               output_dir='surface_plots', vmin=None, vmax=None,
+                               use_web_mercator=False, resolution=0.5, cmap='gist_ncar'):
+    """
+    Create surface plot for ocean variable (level 0).
+
+    Parameters:
+    -----------
+    hfile : str
+        NetCDF file containing h variable
+    oceanfile : str
+        NetCDF file containing ocean variable
+    oceanvarname : str
+        Ocean variable name to plot (e.g., Temp, Salt, SSH)
+    is_variance : bool
+        Whether the file contains variance instead of standard deviation
+    gridfile : str
+        NetCDF file containing 2D lon/lat variables
+    output_dir : str
+        Directory to save PNG files
+    vmin, vmax : float, optional
+        Color bounds
+    use_web_mercator : bool, optional
+        If True, create image in Web Mercator projection for HTML map overlay
+        If False, create standard map with coastlines (default)
+    resolution : float, optional
+        Grid resolution in degrees for Web Mercator projection (default: 0.5)
+    """
+    from scipy.interpolate import griddata
+    import cartopy.crs as ccrs
+
+    if not os.path.exists(oceanfile):
+        print(f"Warning: ocean file not found, skipping surface plot for {oceanvarname}: {oceanfile}")
+        return
+    if not os.path.exists(gridfile):
+        print(f"Warning: grid file not found, skipping surface plot for {oceanvarname}: {gridfile}")
+        return
+    if not os.path.exists(hfile):
+        print(f"Warning: h file not found, skipping surface plot for {oceanvarname}: {hfile}")
+        return
+
+    print(f"\n{'='*70}")
+    print(f"BATCH PROCESSING: Creating surface plot for {oceanvarname}")
+    print(f"{'='*70}\n")
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Load grid
+    print("Loading grid data...")
+    grid = xr.open_dataset(gridfile)
+    lon2d = grid['lon'].isel(Time=0)
+    lat2d = grid['lat'].isel(Time=0)
+    grid.close()
+
+    # Load ocean data
+    print(f"Loading ocean data for {oceanvarname}...")
+    ds = xr.open_dataset(oceanfile)
+
+    # Check if variable is 2D (like SSH) or 3D (like Temp, Salt)
+    var_data = ds[oceanvarname]
+
+    # Handle time dimension
+    if 'time' in var_data.dims:
+        var_data = var_data.isel(time=0)
+    elif 'Time' in var_data.dims:
+        var_data = var_data.isel(Time=0)
+
+    # Check dimensionality
+    if var_data.ndim == 3:
+        # 3D variable - take surface level
+        print(f"Variable {oceanvarname} is 3D, taking surface level (index 0)")
+        surface_data = var_data[0, :, :]
+    elif var_data.ndim == 2:
+        # 2D variable (like SSH)
+        print(f"Variable {oceanvarname} is 2D")
+        surface_data = var_data
+    else:
+        raise ValueError(f"Unexpected number of dimensions for {oceanvarname}: {var_data.ndim}")
+
+    # Apply variance conversion if needed
+    if is_variance:
+        surface_data = np.sqrt(surface_data)
+
+    # Convert to numpy arrays first
+    lon2d_vals = lon2d.values if hasattr(lon2d, 'values') else lon2d
+    lat2d_vals = lat2d.values if hasattr(lat2d, 'values') else lat2d
+    surface_data_vals = surface_data.values if hasattr(surface_data, 'values') else surface_data
+
+    # Create mask from h file and apply it (optional, for masking land)
+    if hfile:
+        dsg = xr.open_dataset(hfile)
+        if 'time' in dsg.dims:
+            h = dsg['h'].isel(time=0)
+        elif 'Time' in dsg.dims:
+            h = dsg['h'].isel(Time=0)
+        else:
+            raise ValueError("Could not find time dimension")
+        h_vals = h[0, :, :].values if hasattr(h[0, :, :], 'values') else h[0, :, :]
+        surface_mask = ~np.isnan(h_vals)
+        dsg.close()
+        # Apply mask to numpy array
+        surface_data_vals = np.where(surface_mask, surface_data_vals, np.nan)
+
+    if use_web_mercator:
+        # Create Web Mercator raster (like satellite rasters)
+        print(f"Creating Web Mercator projection raster...")
+
+        # Define global extent in Web Mercator
+        global_lat_min, global_lat_max = -85.0, 85.0
+        global_lon_min, global_lon_max = -180.0, 180.0
+
+        # Convert global bounds to Web Mercator
+        x_min, y_min = lonlat_to_web_mercator(global_lon_min, global_lat_min)
+        x_max, y_max = lonlat_to_web_mercator(global_lon_max, global_lat_max)
+
+        # Flatten the arrays for gridding
+        lon_flat = lon2d_vals.flatten()
+        lat_flat = lat2d_vals.flatten()
+        data_flat = surface_data_vals.flatten()
+
+        # Remove NaN values (ocean mask)
+        valid = ~np.isnan(data_flat) & ~np.isnan(lon_flat) & ~np.isnan(lat_flat)
+        lon_flat = lon_flat[valid]
+        lat_flat = lat_flat[valid]
+        data_flat = data_flat[valid]
+
+        # Duplicate the data with longitude shifted by 360 degrees to handle wrapping
+        # This ensures proper coverage across the date line
+        lon_shifted = lon_flat + 360.0
+        lon_combined = np.concatenate([lon_flat, lon_shifted])
+        lat_combined = np.concatenate([lat_flat, lat_flat])
+        data_combined = np.concatenate([data_flat, data_flat])
+
+        # Convert model coordinates to Web Mercator (using combined data)
+        x_model, y_model = lonlat_to_web_mercator(lon_combined, lat_combined)
+
+        # Calculate bins for global grid
+        resolution_m = resolution * 111320  # degrees to meters at equator
+        n_x_bins = int((x_max - x_min) / resolution_m)
+        n_y_bins = int((y_max - y_min) / resolution_m)
+
+        print(f"Creating GLOBAL {n_x_bins} x {n_y_bins} grid")
+        print(f"Valid ocean points: {len(lon_flat)} (original) + {len(lon_shifted)} (shifted)")
+
+        # Create regular grid in Web Mercator space
+        x_edges = np.linspace(x_min, x_max, n_x_bins + 1)
+        y_edges = np.linspace(y_min, y_max, n_y_bins + 1)
+        x_centers = (x_edges[:-1] + x_edges[1:]) / 2
+        y_centers = (y_edges[:-1] + y_edges[1:]) / 2
+
+        # Create 2D grid
+        X, Y = np.meshgrid(x_centers, y_centers)
+
+        # Interpolate data onto regular grid using nearest neighbor
+        # This will only fill ocean points, leaving NaN where there's no nearby ocean data
+        print("Interpolating data onto Web Mercator grid...")
+        grid = griddata((x_model, y_model), data_combined, (X, Y), method='nearest')
+
+        # Create a mask: mark points that are too far from any ocean point as invalid
+        # This prevents interpolation over large land areas
+        from scipy.spatial import cKDTree
+        print("Creating land mask...")
+        tree = cKDTree(np.column_stack([x_model, y_model]))
+        distances, _ = tree.query(np.column_stack([X.flatten(), Y.flatten()]))
+        max_distance = resolution_m * 2  # Only interpolate within 2 grid cells
+        land_mask = distances.reshape(X.shape) > max_distance
+        grid = np.ma.masked_where(land_mask, grid)
+
+        # Create figure matching grid dimensions (no margins)
+        fig_width_inches = n_x_bins / 100
+        fig_height_inches = n_y_bins / 100
+
+        fig = plt.figure(figsize=(fig_width_inches, fig_height_inches), dpi=100)
+        ax = plt.Axes(fig, [0., 0., 1., 1.])
+        ax.set_axis_off()
+        fig.add_axes(ax)
+
+        # Plot in Web Mercator space with masked array (transparent over land)
+        ax.imshow(grid, cmap=cmap, origin='lower',
+                  extent=[x_min, x_max, y_min, y_max],
+                  vmin=vmin, vmax=vmax, interpolation='nearest',
+                  aspect='auto', alpha=1.0)
+
+        # Save with exact dimensions and transparent background
+        filename = f"surface_{oceanvarname.lower()}.png"
+        filepath = os.path.join(output_dir, filename)
+        fig.savefig(filepath, dpi=100, transparent=True, format='png')
+        plt.close(fig)
+
+        # Save data min/max statistics sidecar JSON
+        import json as _json
+        data_min = float(np.nanmin(data_flat))
+        data_max = float(np.nanmax(data_flat))
+        stats = {'data_min': data_min, 'data_max': data_max}
+        stats_filepath = os.path.join(output_dir, f"stats_{oceanvarname.lower()}.json")
+        with open(stats_filepath, 'w') as _f:
+            _json.dump(stats, _f)
+        print(f"Data range: min={data_min:.4g}, max={data_max:.4g}")
+
+        # Generate a matching colorbar PNG
+        colorbar_filename = f"colorbar_{oceanvarname.lower()}.png"
+        colorbar_filepath = os.path.join(output_dir, colorbar_filename)
+        norm = plt.Normalize(vmin=vmin, vmax=vmax)
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        fig_cb, ax_cb = plt.subplots(figsize=(4, 0.4))
+        fig_cb.subplots_adjust(left=0.05, right=0.95, bottom=0.5, top=1.0)
+        cb = fig_cb.colorbar(sm, cax=ax_cb, orientation='horizontal')
+        cb.ax.tick_params(labelsize=8)
+        fig_cb.savefig(colorbar_filepath, dpi=100, bbox_inches='tight',
+                       transparent=True, format='png')
+        plt.close(fig_cb)
+        print(f"Created colorbar: {colorbar_filepath}")
+
+    else:
+        # Create standard cartopy plot with coastlines
+        print(f"Creating standard cartopy plot...")
+        fig = plt.figure(figsize=(16, 10))
+        ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
+
+        # Plot data
+        pcm = ax.pcolormesh(lon2d_vals, lat2d_vals, surface_data_vals,
+                           vmin=vmin, vmax=vmax, shading='auto', cmap=cmap,
+                           transform=ccrs.PlateCarree())
+
+        # Add coastlines and features
+        ax.coastlines(resolution='110m', linewidth=0.5)
+        ax.add_feature(cfeature.LAND, facecolor='lightgray', alpha=0.3)
+        ax.gridlines(draw_labels=True, linewidth=0.5, alpha=0.5, linestyle='--')
+
+        # Set global extent
+        ax.set_global()
+
+        # Add colorbar
+        cbar = fig.colorbar(pcm, ax=ax, orientation='horizontal', pad=0.05, shrink=0.8)
+        cbar.set_label(oceanvarname, fontsize=12)
+
+        # Add title with min/max of plotted field
+        field_min = float(np.nanmin(surface_data_vals))
+        field_max = float(np.nanmax(surface_data_vals))
+        ax.set_title(f'Surface {oceanvarname}  [min={field_min:.4g}, max={field_max:.4g}]',
+                     fontsize=14, pad=10)
+
+        # Save figure
+        filename = f"surface_{oceanvarname.lower()}.png"
+        filepath = os.path.join(output_dir, filename)
+        plt.savefig(filepath, dpi=150, bbox_inches='tight')
+        plt.close(fig)
+
+        # Save data min/max statistics sidecar JSON
+        import json as _json
+        stats = {'data_min': field_min, 'data_max': field_max}
+        stats_filepath = os.path.join(output_dir, f"stats_{oceanvarname.lower()}.json")
+        with open(stats_filepath, 'w') as _f:
+            _json.dump(stats, _f)
+
+    ds.close()
+
+    print(f"\n{'='*70}")
+    print(f"COMPLETED!")
+    print(f"Created surface plot: {filename}")
+    print(f"Saved to: {output_dir}/")
+    print(f"{'='*70}\n")
+
+    return filepath
+
+
 def batch_create_zonal_sections(hfile, oceanfile, oceanvarname, is_variance, gridfile,
                                 lat_start, lat_end, lat_step, output_dir='sections',
-                                vmin=None, vmax=None):
+                                vmin=None, vmax=None, cmap='gist_ncar'):
     """
     Create zonal section plots for specified latitudes.
 
@@ -542,6 +829,16 @@ def batch_create_zonal_sections(hfile, oceanfile, oceanvarname, is_variance, gri
     print(f"BATCH PROCESSING: Creating zonal section plots")
     print(f"Latitude range: {lat_start}° to {lat_end}° (step: {lat_step}°)")
     print(f"{'='*70}\n")
+
+    if not os.path.exists(oceanfile):
+        print(f"Warning: ocean file not found, skipping zonal sections for {oceanvarname}: {oceanfile}")
+        return
+    if not os.path.exists(gridfile):
+        print(f"Warning: grid file not found, skipping zonal sections for {oceanvarname}: {gridfile}")
+        return
+    if not os.path.exists(hfile):
+        print(f"Warning: h file not found, skipping zonal sections for {oceanvarname}: {hfile}")
+        return
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -614,11 +911,13 @@ def batch_create_zonal_sections(hfile, oceanfile, oceanvarname, is_variance, gri
         fig, ax = plt.subplots(figsize=(14, 8))
 
         pcm = ax.pcolormesh(zonal_lon, zonal_depth, zonal_profile,
-                           vmin=vmin, vmax=vmax, shading='auto', cmap='gist_ncar')
+                           vmin=vmin, vmax=vmax, shading='auto', cmap=cmap)
         ax.invert_yaxis()
         ax.set_xlabel('Longitude')
         ax.set_ylabel('Depth (m)')
-        ax.set_title(f'Zonal Section at {target_lat:+d}°N - {oceanvarname}')
+        field_min = float(np.nanmin(zonal_profile))
+        field_max = float(np.nanmax(zonal_profile))
+        ax.set_title(f'Zonal Section at {target_lat:+d}°N - {oceanvarname}  [min={field_min:.4g}, max={field_max:.4g}]')
         fig.colorbar(pcm, ax=ax, label=oceanvarname)
         ax.grid(True, alpha=0.3)
 
@@ -642,7 +941,7 @@ def batch_create_zonal_sections(hfile, oceanfile, oceanvarname, is_variance, gri
 
 def batch_create_meridional_sections(hfile, oceanfile, oceanvarname, is_variance, gridfile,
                                      lon_start, lon_end, lon_step, output_dir='sections',
-                                     vmin=None, vmax=None):
+                                     vmin=None, vmax=None, cmap='gist_ncar'):
     """
     Create meridional section plots for specified longitudes.
 
@@ -673,6 +972,16 @@ def batch_create_meridional_sections(hfile, oceanfile, oceanvarname, is_variance
     print(f"BATCH PROCESSING: Creating meridional section plots")
     print(f"Longitude range: {lon_start}° to {lon_end}° (step: {lon_step}°)")
     print(f"{'='*70}\n")
+
+    if not os.path.exists(oceanfile):
+        print(f"Warning: ocean file not found, skipping meridional sections for {oceanvarname}: {oceanfile}")
+        return
+    if not os.path.exists(gridfile):
+        print(f"Warning: grid file not found, skipping meridional sections for {oceanvarname}: {gridfile}")
+        return
+    if not os.path.exists(hfile):
+        print(f"Warning: h file not found, skipping meridional sections for {oceanvarname}: {hfile}")
+        return
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -748,11 +1057,13 @@ def batch_create_meridional_sections(hfile, oceanfile, oceanvarname, is_variance
         fig, ax = plt.subplots(figsize=(14, 8))
 
         pcm = ax.pcolormesh(meridional_lat, meridional_depth, meridional_profile,
-                           vmin=vmin, vmax=vmax, shading='auto', cmap='gist_ncar')
+                           vmin=vmin, vmax=vmax, shading='auto', cmap=cmap)
         ax.invert_yaxis()
         ax.set_xlabel('Latitude')
         ax.set_ylabel('Depth (m)')
-        ax.set_title(f'Meridional Section at {target_lon:+d}°E - {oceanvarname}')
+        field_min = float(np.nanmin(meridional_profile))
+        field_max = float(np.nanmax(meridional_profile))
+        ax.set_title(f'Meridional Section at {target_lon:+d}°E - {oceanvarname}  [min={field_min:.4g}, max={field_max:.4g}]')
         fig.colorbar(pcm, ax=ax, label=oceanvarname)
         ax.grid(True, alpha=0.3)
 
@@ -777,7 +1088,9 @@ def batch_create_meridional_sections(hfile, oceanfile, oceanvarname, is_variance
 def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, gridfile, obsfile=None, level=None,
          vmin=None, vmax=None, ocean_vmin=None, ocean_vmax=None, atmos_vmin=None, atmos_vmax=None, atmos_to_celsius=False,
          batch_obs_profiles=False, plot_background=True, batch_zonal_sections=False, batch_meridional_sections=False,
-         lat_start=None, lat_end=None, lat_step=5.0, lon_start=None, lon_end=None, lon_step=5.0, sections_output_dir='sections'):
+         batch_surface_plots=False, use_web_mercator=False, mercator_resolution=0.5,
+         lat_start=None, lat_end=None, lat_step=5.0, lon_start=None, lon_end=None, lon_step=5.0,
+         sections_output_dir='sections', surface_output_dir='surface_plots', cmap='gist_ncar'):
     # Handle batch observation profile mode
     if batch_obs_profiles:
         if not (oceanfile and obsfile and hfile and gridfile and oceanvarname):
@@ -787,6 +1100,22 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
         print(f"DEBUG: plot_background = {plot_background}")
         batch_create_observation_profiles(
             hfile, oceanfile, oceanvarname, is_variance, gridfile, obsfile, plot_background=plot_background
+        )
+        return
+
+    # Handle batch surface plots mode
+    if batch_surface_plots:
+        if not (oceanfile and hfile and gridfile and oceanvarname):
+            print("ERROR: Batch surface plots mode requires:")
+            print("  --oceanfile, --hfile, --gridfile, and --oceanvarname")
+            return
+        batch_create_surface_plots(
+            hfile, oceanfile, oceanvarname, is_variance, gridfile, output_dir=surface_output_dir,
+            vmin=ocean_vmin if ocean_vmin is not None else vmin,
+            vmax=ocean_vmax if ocean_vmax is not None else vmax,
+            use_web_mercator=use_web_mercator,
+            resolution=mercator_resolution,
+            cmap=cmap
         )
         return
 
@@ -810,7 +1139,8 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
             hfile, oceanfile, oceanvarname, is_variance, gridfile,
             lat_start, lat_end, int(round(lat_step)), output_dir=sections_output_dir,
             vmin=ocean_vmin if ocean_vmin is not None else vmin,
-            vmax=ocean_vmax if ocean_vmax is not None else vmax
+            vmax=ocean_vmax if ocean_vmax is not None else vmax,
+            cmap=cmap
         )
         return
 
@@ -834,7 +1164,8 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
             hfile, oceanfile, oceanvarname, is_variance, gridfile,
             lon_start, lon_end, int(round(lon_step)), output_dir=sections_output_dir,
             vmin=ocean_vmin if ocean_vmin is not None else vmin,
-            vmax=ocean_vmax if ocean_vmax is not None else vmax
+            vmax=ocean_vmax if ocean_vmax is not None else vmax,
+            cmap=cmap
         )
         return
 
@@ -1043,11 +1374,11 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
         # First plot: original longitude
         pcm_atmos = ax_atmos.pcolormesh(atmos_lon2d, atmos_lat2d, atmos_masked,
                                         vmin=vmin_atmos, vmax=vmax_atmos,
-                                        cmap='gist_ncar', shading='auto', alpha=0.5)
+                                        cmap=cmap, shading='auto', alpha=0.5)
         # Second plot: shifted by -360 degrees
         ax_atmos.pcolormesh(atmos_lon2d - 360, atmos_lat2d, atmos_masked,
                             vmin=vmin_atmos, vmax=vmax_atmos,
-                            cmap='gist_ncar', shading='auto', alpha=0.5)
+                            cmap=cmap, shading='auto', alpha=0.5)
 
         # Set axis limits to -180 to 180
         ax_atmos.set_xlim(-180, 180)
@@ -1082,11 +1413,11 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
         # First plot: original longitude
         pcm_ocean = ax_ocean.pcolormesh(ocean_lon2d, ocean_lat2d, ocean_masked,
                                         vmin=vmin_ocean, vmax=vmax_ocean,
-                                        cmap='gist_ncar', shading='auto', alpha=0.5)
+                                        cmap=cmap, shading='auto', alpha=0.5)
         # Second plot: shifted by +360 degrees
         ax_ocean.pcolormesh(ocean_lon2d + 360, ocean_lat2d, ocean_masked,
                             vmin=vmin_ocean, vmax=vmax_ocean,
-                            cmap='gist_ncar', shading='auto', alpha=0.5)
+                            cmap=cmap, shading='auto', alpha=0.5)
 
         # Set axis limits to -180 to 180
         ax_ocean.set_xlim(-180, 180)
@@ -1158,7 +1489,7 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
             vmin_init = vmin if vmin is not None else float(np.nanmin(masked_field))
             vmax_init = vmax if vmax is not None else float(np.nanmax(masked_field))
 
-        pcm = ax.pcolormesh(lon2d, lat2d, masked_field, vmin=vmin_init, vmax=vmax_init, cmap='gist_ncar', shading='auto', alpha=0.5)
+        pcm = ax.pcolormesh(lon2d, lat2d, masked_field, vmin=vmin_init, vmax=vmax_init, cmap=cmap, shading='auto', alpha=0.5)
 
         if obs is not None:
             # Categorize observations by QC status at each unique location
@@ -1372,13 +1703,15 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
                 vmax_slice = ocean_vmax if ocean_vmax is not None else (vmax if vmax is not None else None)
 
             pcm_zonal = ax_zonal.pcolormesh(zonal_lon, depth_to_use[:, iy, :], zonal_profile,
-                                            vmin=vmin_slice, vmax=vmax_slice, shading='auto', cmap='gist_ncar')
+                                            vmin=vmin_slice, vmax=vmax_slice, shading='auto', cmap=cmap)
             # Always invert y-axis: ocean depth increases down, atmos pressure decreases up
             ax_zonal.invert_yaxis()
             ax_zonal.set_xlabel('Longitude')
             ylabel = 'Pressure (hPa)' if is_atmos_to_use else 'Depth (m)'
             ax_zonal.set_ylabel(ylabel)
-            ax_zonal.set_title(f'Zonal Slice at lat={lat_val:.2f}')
+            slice_min = float(np.nanmin(zonal_profile))
+            slice_max = float(np.nanmax(zonal_profile))
+            ax_zonal.set_title(f'Zonal Slice at lat={lat_val:.2f}  [min={slice_min:.4g}, max={slice_max:.4g}]')
             fig_zonal.colorbar(pcm_zonal, ax=ax_zonal, label='Field Value')
             plt.show()
         elif plot_type['value'] == 'Meridional Slice':
@@ -1398,13 +1731,15 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
                 vmax_slice = ocean_vmax if ocean_vmax is not None else (vmax if vmax is not None else None)
 
             pcm_merid = ax_merid.pcolormesh(meridional_lat, depth_to_use[:, :, ix], meridional_profile,
-                                            vmin=vmin_slice, vmax=vmax_slice, shading='auto', cmap='gist_ncar')
+                                            vmin=vmin_slice, vmax=vmax_slice, shading='auto', cmap=cmap)
             # Always invert y-axis: ocean depth increases down, atmos pressure decreases up
             ax_merid.invert_yaxis()
             ax_merid.set_xlabel('Latitude')
             ylabel = 'Pressure (hPa)' if is_atmos_to_use else 'Depth (m)'
             ax_merid.set_ylabel(ylabel)
-            ax_merid.set_title(f'Meridional Slice at lon={lon_val:.2f}')
+            slice_min = float(np.nanmin(meridional_profile))
+            slice_max = float(np.nanmax(meridional_profile))
+            ax_merid.set_title(f'Meridional Slice at lon={lon_val:.2f}  [min={slice_min:.4g}, max={slice_max:.4g}]')
             fig_merid.colorbar(pcm_merid, ax=ax_merid, label='Field Value')
             plt.show()
         elif plot_type['value'] == 'Combined Profile':
@@ -1428,6 +1763,7 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
 
             # Find nearest grid points in each domain
             # Handle longitude wrapping for proper distance calculation
+
             ocean_lon_vals = ocean_lon2d.values if hasattr(ocean_lon2d, 'values') else ocean_lon2d
             ocean_lat_vals = ocean_lat2d.values if hasattr(ocean_lat2d, 'values') else ocean_lat2d
 
@@ -2204,8 +2540,18 @@ if __name__ == "__main__":
                         help='Ending longitude for meridional sections (requires --batch_meridional_sections)')
     parser.add_argument('--lon_step', required=False, type=float, default=5.0,
                         help='Longitude step for meridional sections (default: 5.0)')
+    parser.add_argument('--batch_surface_plots', action='store_true',
+                        help='Create surface plot for ocean variable (batch mode)')
+    parser.add_argument('--surface_output_dir', required=False, type=str, default='surface_plots',
+                        help='Output directory for surface plots (default: surface_plots)')
+    parser.add_argument('--use_web_mercator', action='store_true',
+                        help='Use Web Mercator projection for surface plots (for HTML map overlay)')
+    parser.add_argument('--mercator_resolution', required=False, type=float, default=0.5,
+                        help='Grid resolution in degrees for Web Mercator projection (default: 0.5)')
     parser.add_argument('--sections_output_dir', required=False, type=str, default='sections',
                         help='Output directory for section plots (default: sections)')
+    parser.add_argument('--cmap', required=False, type=str, default='gist_ncar',
+                        help='Matplotlib colormap name (default: gist_ncar)')
     args = parser.parse_args()
 
     # Parse bounds arguments
@@ -2260,6 +2606,11 @@ if __name__ == "__main__":
          atmos_vmin=atmos_vmin, atmos_vmax=atmos_vmax, atmos_to_celsius=args.atmos_to_celsius,
          batch_obs_profiles=args.batch_obs_profiles, plot_background=not args.no_plot_background,
          batch_zonal_sections=args.batch_zonal_sections, batch_meridional_sections=args.batch_meridional_sections,
+         batch_surface_plots=args.batch_surface_plots, use_web_mercator=args.use_web_mercator,
+         mercator_resolution=args.mercator_resolution,
          lat_start=args.lat_start, lat_end=args.lat_end, lat_step=args.lat_step,
          lon_start=args.lon_start, lon_end=args.lon_end, lon_step=args.lon_step,
-         sections_output_dir=args.sections_output_dir)
+         sections_output_dir=args.sections_output_dir, surface_output_dir=args.surface_output_dir,
+         cmap=args.cmap)
+
+
