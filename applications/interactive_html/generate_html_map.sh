@@ -37,364 +37,371 @@ ice_bkg="${expdir}/model/ice/history/gdas.t${cyc}z.inst.f006.nc"
 ice_jedi_inc="${expdir}/analysis/ice/gdas.t${cyc}z.jedi_increment.i006.nc"
 soca_grid="/scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfsv17/gfs-base/COMROOT/gfs-base/gdas.20251011/00/analysis/ocean/gdas.t00z.jedi_gridspec.tm03.nc"
 soca_grid_lowres="/scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfsv17/marineanlvar/anl_geom/soca_gridspec.nc"
+soca_h_lowres="/scratch3/NCEPDEV/da/Guillaume.Vernieres/common/monitor_rt/lowres_h.nc"
+
 # End of user configuration
 
 # Create work directory
 mkdir -p scratch-${expname}-${cycle}
 cd scratch-${expname}-${cycle}
 
-#echo "Step 1/3: Generating profile plots..."
-#for var in Salt Temp; do
-#    if [ "$var" = "Salt" ]; then
-#        obsfile="insitu_salt_profile_argo.nc"
-#    else
-#        obsfile="insitu_temp_profile_argo.nc"
-#    fi
-#    if [ ! -f "${diags_dir}/${obsfile}" ]; then
-#        echo "Skipping ${obsfile} as it does not exist."
-#        continue
-#    fi
-#    python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
-#        --oceanfile ${ocn_bkg} \
-#        --gridfile ${soca_grid} \
-#        --oceanvarname "$var" \
-#        --hfile ${ocn_bkg} \
-#        --obsfile "${diags_dir}/${obsfile}" \
-#        --batch_obs_profiles --no_plot_background
-#done
+echo "Step 1/3: Generating profile plots..."
+for var in Salt Temp; do
+    if [ "$var" = "Salt" ]; then
+        obsfile="insitu_salt_profile_argo.nc"
+    else
+        obsfile="insitu_temp_profile_argo.nc"
+    fi
+    if [ ! -f "${diags_dir}/${obsfile}" ]; then
+        echo "Skipping ${obsfile} as it does not exist."
+        continue
+    fi
+    python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
+        --oceanfile ${ocn_bkg} \
+        --gridfile ${soca_grid} \
+        --oceanvarname "$var" \
+        --hfile ${ocn_bkg} \
+        --obsfile "${diags_dir}/${obsfile}" \
+        --batch_obs_profiles \
+        --model_field_type bkgerr \
+        --oceanfile ${ocn_bkgerr_parametric} \
+        --gridfile ${soca_grid_lowres} \
+        --hfile ${soca_h_lowres}
+#--no_plot_background
+done
 
-## Loop over background and increments
-#for ocn_type in bkg jedi_inc mom6_inc; do
-#    if [ "$ocn_type" = "bkg" ]; then
-#        ocn_file="${ocn_bkg}"
-#        ocn_cmap="gist_ncar"
-#        echo "Generating sections and surface plots for background..."
-#    elif [ "$ocn_type" = "jedi_inc" ]; then
-#        ocn_file="${ocn_jedi_inc}"
-#        ocn_cmap="jet"
-#        echo "Generating sections and surface plots for JEDI increment..."
-#    else
-#        ocn_file="${ocn_mom6_inc}"
-#        ocn_cmap="jet"
-#        echo "Generating sections and surface plots for MOM6 increment..."
-#    fi
-#
-#    # Generate sections
-#    for var in Salt Temp; do
-#        if [ "$ocn_type" = "bkg" ]; then
-#            # Background bounds
-#            if [ "$var" = "Salt" ]; then
-#                ocean_bounds="31,38"
-#            else
-#                ocean_bounds="-2,31"
-#            fi
-#        else
-#            # Increment bounds
-#            if [ "$var" = "Salt" ]; then
-#                ocean_bounds="-0.5,0.5"
-#            else
-#                ocean_bounds="-2,2"
-#            fi
-#        fi
-#
-#        python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
-#            --oceanfile ${ocn_file} \
-#            --gridfile ${soca_grid} \
-#            --oceanvarname "$var" \
-#            --hfile ${ocn_bkg} \
-#            --batch_zonal_sections \
-#            --lat_start -65 \
-#            --lat_end 65 \
-#            --lat_step 5 \
-#            --sections_output_dir "sections_${ocn_type}" \
-#            --ocean_bounds="${ocean_bounds}" \
-#            --cmap "${ocn_cmap}"
-#
-#        python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
-#            --oceanfile ${ocn_file} \
-#            --gridfile ${soca_grid} \
-#            --oceanvarname "$var" \
-#            --hfile ${ocn_bkg} \
-#            --batch_meridional_sections \
-#            --lon_start -180 \
-#            --lon_end 180 \
-#            --lon_step 5 \
-#            --sections_output_dir "sections_${ocn_type}" \
-#            --ocean_bounds="${ocean_bounds}" \
-#            --cmap "${ocn_cmap}"
-#    done
-#
-#    # Generate surface plots
-#    if [ "$ocn_type" = "bkg" ]; then
-#        # Background includes SSH
-#        for var in Temp Salt ave_ssh; do
-#            if [ "$var" = "Temp" ]; then
-#                ocean_bounds="-2,31"
-#            elif [ "$var" = "Salt" ]; then
-#                ocean_bounds="32,40"
-#            else
-#                ocean_bounds="-2,1.5"  # SSH bounds
-#            fi
-#
-#            python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
-#                --oceanfile ${ocn_file} \
-#                --gridfile ${soca_grid} \
-#                --oceanvarname "$var" \
-#                --hfile ${ocn_bkg} \
-#                --batch_surface_plots \
-#                --use_web_mercator \
-#                --surface_output_dir "./surface_plots_${ocn_type}" \
-#                --ocean_bounds="${ocean_bounds}" \
-#                --cmap "${ocn_cmap}"
-#        done
-#    else
-#        # Increments only have Temp and Salt
-#        for var in Temp Salt; do
-#            if [ "$var" = "Salt" ]; then
-#                ocean_bounds="-0.5,0.5"
-#            else
-#                ocean_bounds="-2,2"
-#            fi
-#
-#            python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
-#                --oceanfile ${ocn_file} \
-#                --gridfile ${soca_grid} \
-#                --oceanvarname "$var" \
-#                --hfile ${ocn_bkg} \
-#                --batch_surface_plots \
-#                --use_web_mercator \
-#                --surface_output_dir "./surface_plots_${ocn_type}" \
-#                --ocean_bounds="${ocean_bounds}" \
-#                --cmap "${ocn_cmap}"
-#        done
-#    fi
-#done
-#
-## Loop over sea ice background and increments
-#for ice_type in bkg jedi_inc; do
-#    if [ "$ice_type" = "bkg" ]; then
-#        ice_file="${ice_bkg}"
-#        echo "Generating sea ice surface plots for background..."
-#        ice_vars="aice_h sice_h hi_h hs_h"
-#        ice_cmap="gist_ncar"
-#    else
-#        ice_file="${ice_jedi_inc}"
-#        echo "Generating sea ice surface plots for JEDI increment..."
-#        ice_vars="aice_h hi_h hs_h"
-#        ice_cmap="jet"
-#    fi
-#
-#    # Generate sea ice surface plots
-#    for var in $ice_vars; do
-#        if [ "$ice_type" = "bkg" ]; then
-#            # Background bounds
-#            if [ "$var" = "aice_h" ]; then
-#                ocean_bounds="0,1"  # Ice concentration (0-1)
-#            elif [ "$var" = "sice_h" ]; then
-#                ocean_bounds="0,35"  # Ice salinity (psu)
-#            elif [ "$var" = "hi_h" ]; then
-#                ocean_bounds="0,5"  # Ice thickness (m)
-#            else
-#                ocean_bounds="0,2"  # Snow depth (m)
-#            fi
-#        else
-#            # Increment bounds
-#            if [ "$var" = "aice_h" ]; then
-#                ocean_bounds="-0.2,0.2"  # Ice concentration increment
-#            elif [ "$var" = "hi_h" ]; then
-#                ocean_bounds="-0.5,0.5"  # Ice thickness increment (m)
-#            else
-#                ocean_bounds="-0.2,0.2"  # Snow depth increment (m)
-#            fi
-#        fi
-#
-#        python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
-#            --oceanfile ${ice_file} \
-#            --gridfile ${soca_grid} \
-#            --oceanvarname "$var" \
-#            --hfile ${ocn_bkg} \
-#            --batch_surface_plots \
-#            --use_web_mercator \
-#            --surface_output_dir "./surface_plots_ice_${ice_type}" \
-#            --ocean_bounds="${ocean_bounds}" \
-#            --cmap "${ice_cmap}"
-#    done
-#done
-#
-## Loop over ocean parametric background error
-#echo "Generating ocean parametric background error surface plots..."
-#for var in Temp Salt ave_ssh; do
-#    if [ "$var" = "Temp" ]; then
-#        ocean_bounds="0,2"
-#    elif [ "$var" = "Salt" ]; then
-#        ocean_bounds="0,0.5"
-#    else
-#        ocean_bounds="0,0.2"  # SSH stddev bounds
-#    fi
-#
-#    python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
-#        --oceanfile ${ocn_bkgerr_parametric} \
-#        --gridfile ${soca_grid_lowres} \
-#        --oceanvarname "$var" \
-#        --hfile ${soca_grid_lowres} \
-#        --batch_surface_plots \
-#        --use_web_mercator \
-#        --surface_output_dir "./surface_plots_ocn_bkgerr" \
-#        --ocean_bounds="${ocean_bounds}"
-#done
-#
-## Loop over ice parametric background error
-#echo "Generating ice parametric background error surface plots..."
-#for var in aice_h hi_h hs_h; do
-#    if [ "$var" = "aice_h" ]; then
-#        ocean_bounds="0,0.2"
-#    elif [ "$var" = "hi_h" ]; then
-#        ocean_bounds="0,1"
-#    else
-#        ocean_bounds="0,0.5"
-#    fi
-#
-#    python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
-#        --oceanfile ${ice_bkgerr_parametric} \
-#        --gridfile ${soca_grid_lowres} \
-#        --oceanvarname "$var" \
-#        --hfile ${soca_grid_lowres} \
-#        --batch_surface_plots \
-#        --use_web_mercator \
-#        --surface_output_dir "./surface_plots_ice_bkgerr" \
-#        --ocean_bounds="${ocean_bounds}"
-#done
-#
-## Recentering error (SSH only)
-#echo "Generating recentering error surface plot (SSH only)..."
-#python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
-#    --oceanfile ${ocn_recentering_error} \
-#    --gridfile ${soca_grid_lowres} \
-#    --oceanvarname "ave_ssh" \
-#    --hfile ${soca_grid_lowres} \
-#    --batch_surface_plots \
-#    --use_web_mercator \
-#    --surface_output_dir "./surface_plots_recentering_err" \
-#    --ocean_bounds="0,0.2"
-#
-## Generate ocean background error sections (Temp, Salt only)
-#echo "Generating ocean parametric background error sections..."
-#for var in Temp Salt; do
-#    if [ "$var" = "Temp" ]; then
-#        ocean_bounds="0,2"
-#    else
-#        ocean_bounds="0,0.5"
-#    fi
-#
-#    python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
-#        --oceanfile ${ocn_bkgerr_parametric} \
-#        --gridfile ${soca_grid_lowres} \
-#        --oceanvarname "$var" \
-#        --hfile ${soca_grid_lowres} \
-#        --batch_zonal_sections \
-#        --lat_start -65 \
-#        --lat_end 65 \
-#        --lat_step 5 \
-#        --sections_output_dir "sections_ocn_bkgerr" \
-#        --ocean_bounds="${ocean_bounds}"
-#
-#    python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
-#        --oceanfile ${ocn_bkgerr_parametric} \
-#        --gridfile ${soca_grid_lowres} \
-#        --oceanvarname "$var" \
-#        --hfile ${soca_grid_lowres} \
-#        --batch_meridional_sections \
-#        --lon_start -180 \
-#        --lon_end 180 \
-#        --lon_step 5 \
-#        --sections_output_dir "sections_ocn_bkgerr" \
-#        --ocean_bounds="${ocean_bounds}"
-#done
-#
-## Loop over ocean ensemble spread
-#echo "Generating ocean ensemble spread surface plots..."
-#for var in Temp Salt; do
-#    if [ "$var" = "Temp" ]; then
-#        ocean_bounds="0,2"
-#    elif [ "$var" = "Salt" ]; then
-#        ocean_bounds="0,0.5"
-#    else
-#        ocean_bounds="0,0.2"
-#    fi
-#
-#    python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
-#        --oceanfile ${ocn_ensmble_spread} \
-#        --variance \
-#        --gridfile ${soca_grid} \
-#        --oceanvarname "$var" \
-#        --hfile ${ocn_bkg} \
-#        --batch_surface_plots \
-#        --use_web_mercator \
-#        --surface_output_dir "./surface_plots_ocn_ens_spread" \
-#        --ocean_bounds="${ocean_bounds}"
-#done
-#
-## Loop over ice ensemble spread
-#echo "Generating ice ensemble spread surface plots..."
-#for var in aice_h hi_h hs_h; do
-#    if [ "$var" = "aice_h" ]; then
-#        ocean_bounds="0,0.2"
-#    elif [ "$var" = "hi_h" ]; then
-#        ocean_bounds="0,1"
-#    else
-#        ocean_bounds="0,0.5"
-#    fi
-#
-#    python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
-#        --oceanfile ${ice_ensmble_spread} \
-#        --variance \
-#        --gridfile ${soca_grid} \
-#        --oceanvarname "$var" \
-#        --hfile ${ocn_bkg} \
-#        --batch_surface_plots \
-#        --use_web_mercator \
-#        --surface_output_dir "./surface_plots_ice_ens_spread" \
-#        --ocean_bounds="${ocean_bounds}"
-#done
-#
-## Generate ocean ensemble spread sections (Temp, Salt only)
-#echo "Generating ocean ensemble spread sections..."
-#for var in Temp Salt; do
-#    if [ "$var" = "Temp" ]; then
-#        ocean_bounds="0,2"
-#    else
-#        ocean_bounds="0,0.5"
-#    fi
-#
-#    python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
-#        --oceanfile ${ocn_ensmble_spread} \
-#        --variance \
-#        --gridfile ${soca_grid} \
-#        --oceanvarname "$var" \
-#        --hfile ${ocn_bkg} \
-#        --batch_zonal_sections \
-#        --lat_start -65 \
-#        --lat_end 65 \
-#        --lat_step 5 \
-#        --sections_output_dir "sections_ocn_ens_spread" \
-#        --ocean_bounds="${ocean_bounds}"
-#
-#    python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
-#        --oceanfile ${ocn_ensmble_spread} \
-#        --variance \
-#        --gridfile ${soca_grid} \
-#        --oceanvarname "$var" \
-#        --hfile ${ocn_bkg} \
-#        --batch_meridional_sections \
-#        --lon_start -180 \
-#        --lon_end 180 \
-#        --lon_step 5 \
-#        --sections_output_dir "sections_ocn_ens_spread" \
-#        --ocean_bounds="${ocean_bounds}"
-#done
-#
-#echo "Step 2/3: Generating satellite rasters..."
-#python3 "${marineviz_dir}/applications/interactive_html/generate_all_sat_rasters.py" "${diags_dir}"
+# Loop over background and increments
+for ocn_type in bkg jedi_inc mom6_inc; do
+    if [ "$ocn_type" = "bkg" ]; then
+        ocn_file="${ocn_bkg}"
+        ocn_cmap="gist_ncar"
+        echo "Generating sections and surface plots for background..."
+    elif [ "$ocn_type" = "jedi_inc" ]; then
+        ocn_file="${ocn_jedi_inc}"
+        ocn_cmap="jet"
+        echo "Generating sections and surface plots for JEDI increment..."
+    else
+        ocn_file="${ocn_mom6_inc}"
+        ocn_cmap="jet"
+        echo "Generating sections and surface plots for MOM6 increment..."
+    fi
+
+    # Generate sections
+    for var in Salt Temp; do
+        if [ "$ocn_type" = "bkg" ]; then
+            # Background bounds
+            if [ "$var" = "Salt" ]; then
+                ocean_bounds="31,38"
+            else
+                ocean_bounds="-2,31"
+            fi
+        else
+            # Increment bounds
+            if [ "$var" = "Salt" ]; then
+                ocean_bounds="-0.5,0.5"
+            else
+                ocean_bounds="-2,2"
+            fi
+        fi
+
+        python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
+            --oceanfile ${ocn_file} \
+            --gridfile ${soca_grid} \
+            --oceanvarname "$var" \
+            --hfile ${ocn_bkg} \
+            --batch_zonal_sections \
+            --lat_start -65 \
+            --lat_end 65 \
+            --lat_step 5 \
+            --sections_output_dir "sections_${ocn_type}" \
+            --ocean_bounds="${ocean_bounds}" \
+            --cmap "${ocn_cmap}"
+
+        python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
+            --oceanfile ${ocn_file} \
+            --gridfile ${soca_grid} \
+            --oceanvarname "$var" \
+            --hfile ${ocn_bkg} \
+            --batch_meridional_sections \
+            --lon_start -180 \
+            --lon_end 180 \
+            --lon_step 5 \
+            --sections_output_dir "sections_${ocn_type}" \
+            --ocean_bounds="${ocean_bounds}" \
+            --cmap "${ocn_cmap}"
+    done
+
+    # Generate surface plots
+    if [ "$ocn_type" = "bkg" ]; then
+        # Background includes SSH
+        for var in Temp Salt ave_ssh; do
+            if [ "$var" = "Temp" ]; then
+                ocean_bounds="-2,31"
+            elif [ "$var" = "Salt" ]; then
+                ocean_bounds="32,40"
+            else
+                ocean_bounds="-2,1.5"  # SSH bounds
+            fi
+
+            python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
+                --oceanfile ${ocn_file} \
+                --gridfile ${soca_grid} \
+                --oceanvarname "$var" \
+                --hfile ${ocn_bkg} \
+                --batch_surface_plots \
+                --use_web_mercator \
+                --surface_output_dir "./surface_plots_${ocn_type}" \
+                --ocean_bounds="${ocean_bounds}" \
+                --cmap "${ocn_cmap}"
+        done
+    else
+        # Increments only have Temp and Salt
+        for var in Temp Salt; do
+            if [ "$var" = "Salt" ]; then
+                ocean_bounds="-0.5,0.5"
+            else
+                ocean_bounds="-2,2"
+            fi
+
+            python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
+                --oceanfile ${ocn_file} \
+                --gridfile ${soca_grid} \
+                --oceanvarname "$var" \
+                --hfile ${ocn_bkg} \
+                --batch_surface_plots \
+                --use_web_mercator \
+                --surface_output_dir "./surface_plots_${ocn_type}" \
+                --ocean_bounds="${ocean_bounds}" \
+                --cmap "${ocn_cmap}"
+        done
+    fi
+done
+
+# Loop over sea ice background and increments
+for ice_type in bkg jedi_inc; do
+    if [ "$ice_type" = "bkg" ]; then
+        ice_file="${ice_bkg}"
+        echo "Generating sea ice surface plots for background..."
+        ice_vars="aice_h sice_h hi_h hs_h"
+        ice_cmap="gist_ncar"
+    else
+        ice_file="${ice_jedi_inc}"
+        echo "Generating sea ice surface plots for JEDI increment..."
+        ice_vars="aice_h hi_h hs_h"
+        ice_cmap="jet"
+    fi
+
+    # Generate sea ice surface plots
+    for var in $ice_vars; do
+        if [ "$ice_type" = "bkg" ]; then
+            # Background bounds
+            if [ "$var" = "aice_h" ]; then
+                ocean_bounds="0,1"  # Ice concentration (0-1)
+            elif [ "$var" = "sice_h" ]; then
+                ocean_bounds="0,35"  # Ice salinity (psu)
+            elif [ "$var" = "hi_h" ]; then
+                ocean_bounds="0,5"  # Ice thickness (m)
+            else
+                ocean_bounds="0,2"  # Snow depth (m)
+            fi
+        else
+            # Increment bounds
+            if [ "$var" = "aice_h" ]; then
+                ocean_bounds="-0.2,0.2"  # Ice concentration increment
+            elif [ "$var" = "hi_h" ]; then
+                ocean_bounds="-0.5,0.5"  # Ice thickness increment (m)
+            else
+                ocean_bounds="-0.2,0.2"  # Snow depth increment (m)
+            fi
+        fi
+
+        python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
+            --oceanfile ${ice_file} \
+            --gridfile ${soca_grid} \
+            --oceanvarname "$var" \
+            --hfile ${ocn_bkg} \
+            --batch_surface_plots \
+            --use_web_mercator \
+            --surface_output_dir "./surface_plots_ice_${ice_type}" \
+            --ocean_bounds="${ocean_bounds}" \
+            --cmap "${ice_cmap}"
+    done
+done
+
+# Loop over ocean parametric background error
+echo "Generating ocean parametric background error surface plots..."
+for var in Temp Salt ave_ssh; do
+    if [ "$var" = "Temp" ]; then
+        ocean_bounds="0,2"
+    elif [ "$var" = "Salt" ]; then
+        ocean_bounds="0,0.5"
+    else
+        ocean_bounds="0,0.2"  # SSH stddev bounds
+    fi
+
+    python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
+        --oceanfile ${ocn_bkgerr_parametric} \
+        --gridfile ${soca_grid_lowres} \
+        --oceanvarname "$var" \
+        --hfile ${soca_h_lowres} \
+        --batch_surface_plots \
+        --use_web_mercator \
+        --surface_output_dir "./surface_plots_ocn_bkgerr" \
+        --ocean_bounds="${ocean_bounds}"
+done
+
+# Loop over ice parametric background error
+echo "Generating ice parametric background error surface plots..."
+for var in aice_h hi_h hs_h; do
+    if [ "$var" = "aice_h" ]; then
+        ocean_bounds="0,0.2"
+    elif [ "$var" = "hi_h" ]; then
+        ocean_bounds="0,1"
+    else
+        ocean_bounds="0,0.5"
+    fi
+
+    python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
+        --oceanfile ${ice_bkgerr_parametric} \
+        --gridfile ${soca_grid_lowres} \
+        --oceanvarname "$var" \
+        --hfile ${soca_h_lowres} \
+        --batch_surface_plots \
+        --use_web_mercator \
+        --surface_output_dir "./surface_plots_ice_bkgerr" \
+        --ocean_bounds="${ocean_bounds}"
+done
+
+# Recentering error (SSH only)
+echo "Generating recentering error surface plot (SSH only)..."
+python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
+    --oceanfile ${ocn_recentering_error} \
+    --gridfile ${soca_grid_lowres} \
+    --oceanvarname "ave_ssh" \
+    --hfile ${soca_h_lowres} \
+    --batch_surface_plots \
+    --use_web_mercator \
+    --surface_output_dir "./surface_plots_recentering_err" \
+    --ocean_bounds="0,0.2"
+
+# Generate ocean background error sections (Temp, Salt only)
+echo "Generating ocean parametric background error sections..."
+for var in Temp Salt; do
+    if [ "$var" = "Temp" ]; then
+        ocean_bounds="0,2"
+    else
+        ocean_bounds="0,0.5"
+    fi
+
+    python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
+        --oceanfile ${ocn_bkgerr_parametric} \
+        --gridfile ${soca_grid_lowres} \
+        --oceanvarname "$var" \
+        --hfile ${soca_h_lowres} \
+        --batch_zonal_sections \
+        --lat_start -65 \
+        --lat_end 65 \
+        --lat_step 5 \
+        --sections_output_dir "sections_ocn_bkgerr" \
+        --ocean_bounds="${ocean_bounds}"
+
+    python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
+        --oceanfile ${ocn_bkgerr_parametric} \
+        --gridfile ${soca_grid_lowres} \
+        --oceanvarname "$var" \
+        --hfile ${soca_h_lowres} \
+        --batch_meridional_sections \
+        --lon_start -180 \
+        --lon_end 180 \
+        --lon_step 5 \
+        --sections_output_dir "sections_ocn_bkgerr" \
+        --ocean_bounds="${ocean_bounds}"
+done
+
+# Loop over ocean ensemble spread
+echo "Generating ocean ensemble spread surface plots..."
+for var in Temp Salt; do
+    if [ "$var" = "Temp" ]; then
+        ocean_bounds="0,2"
+    elif [ "$var" = "Salt" ]; then
+        ocean_bounds="0,0.5"
+    else
+        ocean_bounds="0,0.2"
+    fi
+
+    python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
+        --oceanfile ${ocn_ensmble_spread} \
+        --variance \
+        --gridfile ${soca_grid} \
+        --oceanvarname "$var" \
+        --hfile ${ocn_bkg} \
+        --batch_surface_plots \
+        --use_web_mercator \
+        --surface_output_dir "./surface_plots_ocn_ens_spread" \
+        --ocean_bounds="${ocean_bounds}"
+done
+
+# Loop over ice ensemble spread
+echo "Generating ice ensemble spread surface plots..."
+for var in aice_h hi_h hs_h; do
+    if [ "$var" = "aice_h" ]; then
+        ocean_bounds="0,0.2"
+    elif [ "$var" = "hi_h" ]; then
+        ocean_bounds="0,1"
+    else
+        ocean_bounds="0,0.5"
+    fi
+
+    python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
+        --oceanfile ${ice_ensmble_spread} \
+        --variance \
+        --gridfile ${soca_grid} \
+        --oceanvarname "$var" \
+        --hfile ${ocn_bkg} \
+        --batch_surface_plots \
+        --use_web_mercator \
+        --surface_output_dir "./surface_plots_ice_ens_spread" \
+        --ocean_bounds="${ocean_bounds}"
+done
+
+# Generate ocean ensemble spread sections (Temp, Salt only)
+echo "Generating ocean ensemble spread sections..."
+for var in Temp Salt; do
+    if [ "$var" = "Temp" ]; then
+        ocean_bounds="0,2"
+    else
+        ocean_bounds="0,0.5"
+    fi
+
+    python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
+        --oceanfile ${ocn_ensmble_spread} \
+        --variance \
+        --gridfile ${soca_grid} \
+        --oceanvarname "$var" \
+        --hfile ${ocn_bkg} \
+        --batch_zonal_sections \
+        --lat_start -65 \
+        --lat_end 65 \
+        --lat_step 5 \
+        --sections_output_dir "sections_ocn_ens_spread" \
+        --ocean_bounds="${ocean_bounds}"
+
+    python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
+        --oceanfile ${ocn_ensmble_spread} \
+        --variance \
+        --gridfile ${soca_grid} \
+        --oceanvarname "$var" \
+        --hfile ${ocn_bkg} \
+        --batch_meridional_sections \
+        --lon_start -180 \
+        --lon_end 180 \
+        --lon_step 5 \
+        --sections_output_dir "sections_ocn_ens_spread" \
+        --ocean_bounds="${ocean_bounds}"
+done
+
+echo "Step 2/3: Generating satellite rasters..."
+python3 "${marineviz_dir}/applications/interactive_html/generate_all_sat_rasters.py" "${diags_dir}"
 
 echo "Copy the output of aquaslice (obs_profiles) to output/obs_profiles..."
 cp -r obs_profiles ./output/obs_profiles

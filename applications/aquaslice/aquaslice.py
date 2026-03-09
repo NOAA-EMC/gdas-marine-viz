@@ -10,6 +10,44 @@ import tarfile
 from tqdm import tqdm
 
 
+# UFO QC flag descriptions (from ufo/filters/QCflags.h)
+QC_FLAG_NAMES = {
+    0:  ('pass',             'observation accepted'),
+    1:  ('passive',          'H(x) computed but not assimilated'),
+    10: ('missing',          'missing values prevent use'),
+    11: ('preQC',            'rejected by pre-processing'),
+    12: ('bounds',           'value out of bounds'),
+    13: ('domain',           'not within domain of use'),
+    14: ('black',            'black listed'),
+    15: ('Hfailed',          'H(x) computation failed'),
+    16: ('thinned',          'removed due to thinning'),
+    17: ('diffref',          'metadata too far from reference'),
+    18: ('clw',              'removed due to cloud field'),
+    19: ('fguess',           'too far from guess'),
+    20: ('seaice',           'sea ice/land detection'),
+    21: ('track',            'inconsistent with rest of track'),
+    22: ('buddy',            'rejected by buddy check'),
+    23: ('derivative',       'metadata derivative value'),
+    24: ('profile',          'rejected by profile QC check'),
+    25: ('onedvar',          'failed 1D-Var convergence'),
+    26: ('bayesianQC',       'failed Bayesian background check'),
+    27: ('modelobthresh',    'failed model-ob threshold check'),
+    28: ('history',          'failed historical data comparison'),
+    29: ('processed',        'processed, H(x) not calculated'),
+    30: ('superrefraction',  'GNSSRO super refraction QC'),
+    31: ('superob',          'superob value not set'),
+}
+
+
+def qc_flag_label(flag):
+    """Return a human-readable label for a QC flag integer."""
+    entry = QC_FLAG_NAMES.get(int(flag))
+    if entry is not None:
+        name, desc = entry
+        return f"{int(flag)} ({name}: {desc})"
+    return f"{int(flag)} (unknown)"
+
+
 def plot_vertical_profile(ix, iy, lon2d, lat2d, data, depth, ax_profile, is_atmos=False):
     # Handle both xarray and numpy arrays for lon2d/lat2d
     lon_val = lon2d[iy, ix].values if hasattr(lon2d[iy, ix], 'values') else lon2d[iy, ix]
@@ -194,7 +232,7 @@ def load_atmospheric_data(atmfile, varname, level=0):
 
 
 def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_variance, gridfile, obsfile,
-                                      output_dir='obs_profiles', plot_background=True):
+                                      output_dir='obs_profiles', model_field_type='bkgerr'):
     """
     Create observation profiles for all unique observation locations and save as PNG files.
 
@@ -214,8 +252,11 @@ def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_varianc
         IODA observation file with ombg and oman
     output_dir : str
         Directory to save PNG files (default: 'obs_profiles')
-    plot_background : bool
-        Whether to plot the model background (default: True)
+    model_field_type : str or None
+        Type of model field being provided. Options:
+        - 'background' : plot the model field in the Obs Value panel (default)
+        - 'bkgerr'     : plot the model field in the OMB/OMA panel
+        - None         : do not plot the model field
 
     Returns:
     --------
@@ -224,7 +265,7 @@ def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_varianc
     """
     print(f"\n{'='*70}")
     print(f"BATCH PROCESSING: Creating observation profiles for all locations")
-    print(f"Plot background: {plot_background}")
+    print(f"Model field type: {model_field_type}")
     print(f"{'='*70}\n")
 
     if not os.path.exists(oceanfile):
@@ -371,6 +412,9 @@ def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_varianc
                           alpha=0.7, linewidths=2)
 
         ax_obs.axvline(x=0, color='black', linestyle='--', linewidth=0.8, alpha=0.5)
+        if model_field_type == 'bkgerr':
+            ax_obs.plot(model_profile, model_depth, '.-', color='tab:purple',
+                       label='Bkg Error', markersize=8)
         ax_obs.invert_yaxis()
         ax_obs.set_xlabel(f'Innovation / Increment ({units})')
         ax_obs.set_ylabel('Depth (m)')
@@ -405,9 +449,25 @@ def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_varianc
                              marker='x', s=50, color='darkblue', label='Obs Rejected',
                              alpha=0.7, linewidths=1.5)
 
-        if plot_background:
+        if model_field_type == 'background':
             ax_obsval.plot(model_profile, model_depth, '.-', color='tab:purple',
                           label="QC'ed Analysis", markersize=8)
+        elif model_field_type == 'bkgerr':
+            # Interpolate background error from model depths to observation depths
+            model_depth_vals = np.array(model_depth).flatten()
+            model_profile_vals = np.array(model_profile).flatten()
+            valid_model = np.isfinite(model_depth_vals) & np.isfinite(model_profile_vals)
+            if np.any(valid_model):
+                bkgerr_at_obs = np.interp(obs_depths,
+                                          model_depth_vals[valid_model],
+                                          model_profile_vals[valid_model],
+                                          left=np.nan, right=np.nan)
+                # Background at obs depths = ObsValue - O-B
+                bkg_at_obs = obs_values - ombg_values
+                ax_obsval.fill_betweenx(obs_depths,
+                                        bkg_at_obs - bkgerr_at_obs,
+                                        bkg_at_obs + bkgerr_at_obs,
+                                        color='tab:green', alpha=0.2, label='Bkg ± Bkg Error')
         ax_obsval.invert_yaxis()
         ax_obsval.set_xlabel(f'Obs Value ({units})')
         ax_obsval.set_ylabel('Depth (m)')
@@ -416,14 +476,18 @@ def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_varianc
         ax_obsval.grid()
 
         # QC flag subplot
-        # Use scatter plot to show QC values at each depth
+        # Use scatter plot to show QC values at each depth with human-readable labels
         ax_qc.scatter(qc_values, obs_depths, c='tab:cyan', s=50, alpha=0.7, edgecolors='black')
         ax_qc.invert_yaxis()
         ax_qc.set_xlabel('QC Flag')
         ax_qc.set_ylabel('Depth (m)')
         ax_qc.set_title('Effective QC Flag')
         ax_qc.grid()
-        ax_qc.set_xlim(-0.5, max(1, np.max(qc_values) + 0.5))
+        unique_qc = sorted(set(int(v) for v in qc_values))
+        ax_qc.set_xticks(unique_qc)
+        ax_qc.set_xticklabels([qc_flag_label(v) for v in unique_qc], rotation=45, ha='right', fontsize=8)
+        qc_margin = 0.5
+        ax_qc.set_xlim(min(unique_qc) - qc_margin, max(unique_qc) + qc_margin)
 
         # Statistics table subplot
         ax_stats.axis('off')
@@ -1087,7 +1151,7 @@ def batch_create_meridional_sections(hfile, oceanfile, oceanvarname, is_variance
 
 def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, gridfile, obsfile=None, level=None,
          vmin=None, vmax=None, ocean_vmin=None, ocean_vmax=None, atmos_vmin=None, atmos_vmax=None, atmos_to_celsius=False,
-         batch_obs_profiles=False, plot_background=True, batch_zonal_sections=False, batch_meridional_sections=False,
+         batch_obs_profiles=False, model_field_type='bkgerr', batch_zonal_sections=False, batch_meridional_sections=False,
          batch_surface_plots=False, use_web_mercator=False, mercator_resolution=0.5,
          lat_start=None, lat_end=None, lat_step=5.0, lon_start=None, lon_end=None, lon_step=5.0,
          sections_output_dir='sections', surface_output_dir='surface_plots', cmap='gist_ncar'):
@@ -1097,9 +1161,9 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
             print("ERROR: Batch observation profile mode requires:")
             print("  --oceanfile, --obsfile, --hfile, --gridfile, and --oceanvarname")
             return
-        print(f"DEBUG: plot_background = {plot_background}")
+        print(f"DEBUG: model_field_type = {model_field_type}")
         batch_create_observation_profiles(
-            hfile, oceanfile, oceanvarname, is_variance, gridfile, obsfile, plot_background=plot_background
+            hfile, oceanfile, oceanvarname, is_variance, gridfile, obsfile, model_field_type=model_field_type
         )
         return
 
@@ -2029,6 +2093,9 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
                               marker='x', s=80, color='darkorange', label='A-B Rejected', alpha=0.7, linewidths=2)
 
             ax_obs.axvline(x=0, color='black', linestyle='--', linewidth=0.8, alpha=0.5)
+            if model_field_type == 'bkgerr':
+                ax_obs.plot(model_profile, model_depth, '.-', color='tab:purple',
+                           label='Bkg Error', markersize=8)
             ax_obs.invert_yaxis()
             ax_obs.set_xlabel(f'Innovation / Increment ({units})')
             ax_obs.set_ylabel('Depth (m)')
@@ -2068,8 +2135,24 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
                                  marker='x', s=50, color='darkblue', label='Obs Rejected',
                                  alpha=0.7, linewidths=1.5)
 
-            if plot_background:
+            if model_field_type == 'background':
                 ax_obsval.plot(model_profile, model_depth, '.-', color='tab:purple', label="QC'ed Analysis", markersize=8)
+            elif model_field_type == 'bkgerr':
+                # Interpolate background error from model depths to observation depths
+                model_depth_vals = np.array(model_depth).flatten()
+                model_profile_vals = np.array(model_profile).flatten()
+                valid_model = np.isfinite(model_depth_vals) & np.isfinite(model_profile_vals)
+                if np.any(valid_model):
+                    bkgerr_at_obs = np.interp(depth_values,
+                                              model_depth_vals[valid_model],
+                                              model_profile_vals[valid_model],
+                                              left=np.nan, right=np.nan)
+                    # Background at obs depths = ObsValue - O-B
+                    bkg_at_obs = obs_value - ombg_values
+                    ax_obsval.fill_betweenx(depth_values,
+                                            bkg_at_obs - bkgerr_at_obs,
+                                            bkg_at_obs + bkgerr_at_obs,
+                                            color='tab:green', alpha=0.2, label='Bkg ± Bkg Error')
             ax_obsval.invert_yaxis()
             ax_obsval.set_xlabel(f'Obs Value ({units})')
             ax_obsval.set_ylabel('Depth (m)')
@@ -2078,14 +2161,18 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
             ax_obsval.grid()
 
             # QC flag subplot
-            # Use scatter plot to show QC values at each depth
+            # Use scatter plot to show QC values at each depth with human-readable labels
             ax_qc.scatter(qc_values, depth_values, c='tab:cyan', s=50, alpha=0.7, edgecolors='black')
             ax_qc.invert_yaxis()
             ax_qc.set_xlabel('QC Flag')
             ax_qc.set_ylabel('Depth (m)')
             ax_qc.set_title('Effective QC Flag')
             ax_qc.grid()
-            ax_qc.set_xlim(-0.5, max(1, np.max(qc_values) + 0.5))
+            unique_qc = sorted(set(int(v) for v in qc_values))
+            ax_qc.set_xticks(unique_qc)
+            ax_qc.set_xticklabels([qc_flag_label(v) for v in unique_qc], rotation=45, ha='right', fontsize=8)
+            qc_margin = 0.5
+            ax_qc.set_xlim(min(unique_qc) - qc_margin, max(unique_qc) + qc_margin)
 
             # Statistics table subplot
             ax_stats.axis('off')
@@ -2522,8 +2609,11 @@ if __name__ == "__main__":
                         help='Convert atmospheric temperature from Kelvin to Celsius')
     parser.add_argument('--batch_obs_profiles', action='store_true',
                         help='Create observation profiles for all locations (batch mode)')
+    parser.add_argument('--model_field_type', choices=['background', 'bkgerr'], default='bkgerr',
+                        help='Type of model field: "background" plots in obs value panel, '
+                             '"bkgerr" plots in OMB/OMA panel (default: bkgerr)')
     parser.add_argument('--no_plot_background', action='store_true',
-                        help='Do not plot model background in observation profile plots')
+                        help='Do not plot model field in observation profile plots')
     parser.add_argument('--batch_zonal_sections', action='store_true',
                         help='Create zonal section plots for specified latitudes (batch mode)')
     parser.add_argument('--lat_start', required=False, type=float, default=None,
@@ -2604,7 +2694,7 @@ if __name__ == "__main__":
          args.variance, args.gridfile, obsfile=args.obsfile, level=args.level,
          vmin=vmin, vmax=vmax, ocean_vmin=ocean_vmin, ocean_vmax=ocean_vmax,
          atmos_vmin=atmos_vmin, atmos_vmax=atmos_vmax, atmos_to_celsius=args.atmos_to_celsius,
-         batch_obs_profiles=args.batch_obs_profiles, plot_background=not args.no_plot_background,
+         batch_obs_profiles=args.batch_obs_profiles, model_field_type=None if args.no_plot_background else args.model_field_type,
          batch_zonal_sections=args.batch_zonal_sections, batch_meridional_sections=args.batch_meridional_sections,
          batch_surface_plots=args.batch_surface_plots, use_web_mercator=args.use_web_mercator,
          mercator_resolution=args.mercator_resolution,
