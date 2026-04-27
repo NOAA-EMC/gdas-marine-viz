@@ -173,7 +173,12 @@ def build_html(manifest):
       clearSelect('obsSelect'); clearSelect('varSelect');
       cycleSel.onchange = () => {
         const sel = cycleSel.value;
-        if (!sel) { renderAll(manifest); return; }
+        if (!sel) {
+          clearSelect('obsSelect');
+          clearSelect('varSelect');
+          showEmptyState('Select a cycle to load thumbnails.');
+          return;
+        }
         populateObsSelect(manifest, sel);
         const root = document.getElementById('galleryRoot'); root.innerHTML = ''; const cb = addCycleBlock(root, sel); renderCycleFromManifest(cb, manifest[sel], sel);
       };
@@ -231,10 +236,16 @@ def build_html(manifest):
         }
       }
     }
-    function renderAll(manifest) { const root = document.getElementById('galleryRoot'); root.innerHTML = ''; const cycles = Object.keys(manifest).sort().reverse(); for (const cycle of cycles) { const cb = addCycleBlock(root, cycle); renderCycleFromManifest(cb, manifest[cycle], cycle); } }
+    function showEmptyState(message) {
+      const root = document.getElementById('galleryRoot');
+      root.innerHTML = `<p class="note">${message}</p>`;
+    }
 
     // Initialize
-    window.addEventListener('load', () => { populateCycleSelect(MANIFEST); renderAll(MANIFEST); });
+    window.addEventListener('load', () => {
+      populateCycleSelect(MANIFEST);
+      showEmptyState('Select a cycle to load thumbnails.');
+    });
   </script>
 </body>
 </html>

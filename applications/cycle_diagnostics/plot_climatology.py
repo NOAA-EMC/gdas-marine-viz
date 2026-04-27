@@ -17,30 +17,39 @@ import xarray as xr
 import cartopy.crs as ccrs
 
 # Directory containing climatology data
-climatology_dir = '/scratch3/NCEPDEV/da/Andrew.Eichmann/climatology'
+climatology_dir = '/scratch3/NCEPDEV/da/Guillaume.Vernieres/data/woa'
 
 # Output directory for plots
-vrfyout = '/scratch3/NCEPDEV/da/Andrew.Eichmann/vrfy/vrfy-dev/climatology'
+vrfyout = '/scratch3/NCEPDEV/da/Andrew.Eichmann/vrfy/vrfy-dev/climatology_woa'
 os.makedirs(vrfyout, exist_ok=True)
 
-# Grid file path based on the system's hostname
+# Grid file and layer file paths based on the system's hostname
 hpcname = os.getenv('HPCname', 'ursa')  # default to ursa
 if hpcname.startswith("hera"):
     grid_file = '/scratch1/NCEPDEV/da/common/validation/vrfy/soca_gridspec.bkgerr.nc'
+    layer_file = '/scratch1/NCEPDEV/da/common/validation/vrfy/soca_gridspec.bkgerr.nc'
 elif hpcname in ["ursa"]:
     grid_file = '/scratch3/NCEPDEV/da/common/validation/vrfy/gdas.t21z.ocngrid.nc'
+    layer_file = '/scratch3/NCEPDEV/da/common/validation/vrfy/soca_gridspec.bkgerr.nc'
 elif hpcname in ["hercules", "orion"]:
     grid_file = '/work/noaa/da/marineda/validation/vrfy/soca_gridspec.bkgerr.nc'
+    layer_file = '/work/noaa/da/marineda/validation/vrfy/soca_gridspec.bkgerr.nc'
 else:
     # Default fallback
     grid_file = '/scratch3/NCEPDEV/da/common/validation/vrfy/gdas.t21z.ocngrid.nc'
+    layer_file = '/scratch3/NCEPDEV/da/common/validation/vrfy/soca_gridspec.bkgerr.nc'
 
 # Check if the grid file exists
 if not os.path.exists(grid_file):
     print(f"Warning: Grid file {grid_file} not found. Using default.")
     grid_file = '/scratch3/NCEPDEV/da/common/validation/vrfy/gdas.t21z.ocngrid.nc'
 
+# Check if the layer file exists
+if not os.path.exists(layer_file):
+    print(f"Warning: Layer file {layer_file} not found.")
+
 print(f"Using grid file: {grid_file}")
+print(f"Using layer file: {layer_file}")
 print(f"Output directory: {vrfyout}")
 
 # Map variable names to their units
@@ -125,7 +134,7 @@ def plotHorizontalSlice_clim(grid_file, data_file, variable, bounds, colormap,
 
 
 def plotZonalSlice_clim(grid_file, data_file, variable, bounds, colormap, 
-                        lat, vrfyout, exp, PDY, cyc, max_depth=700.0):
+                        lat, vrfyout, exp, PDY, cyc, max_depth=700.0, layer_file=None):
     """
     Contourf of a zonal slice of a climatology field
     """
@@ -134,17 +143,36 @@ def plotZonalSlice_clim(grid_file, data_file, variable, bounds, colormap,
     
     unit = variable_units.get(variable, 'unknown')
     lat_index = np.argmin(np.array(np.abs(np.squeeze(grid.lat)[:, 0] - lat)))
-    
+
     # Extract the slice data
     slice_data = np.squeeze(np.array(data[variable]))[:, lat_index, :]
     
-    # Try to get depth information from the grid file
+    # Try to get depth information from the layer file (similar to soca_vrfy.py)
+    if layer_file is None:
+        layer_file = grid_file
+    
     try:
-        layer = xr.open_dataset(grid_file)
+        layer = xr.open_dataset(layer_file)
         if 'h' in layer.variables:
             depth = np.squeeze(np.array(layer['h']))[:, lat_index, :]
             depth[np.where(np.abs(depth) > 10000.0)] = 0.0
             depth = np.cumsum(depth, axis=0)
+            
+            # Interpolate depth to match the horizontal resolution of slice_data
+            if depth.shape[1] != slice_data.shape[1]:
+                from scipy.interpolate import interp1d
+                # Get the longitude dimension sizes
+                n_lons_layer = depth.shape[1]
+                n_lons_data = slice_data.shape[1]
+                # Create interpolation indices
+                x_layer = np.linspace(0, 1, n_lons_layer)
+                x_data = np.linspace(0, 1, n_lons_data)
+                # Interpolate each vertical level
+                depth_interp = np.zeros((depth.shape[0], n_lons_data))
+                for k in range(depth.shape[0]):
+                    f = interp1d(x_layer, depth[k, :], kind='linear', fill_value='extrapolate')
+                    depth_interp[k, :] = f(x_data)
+                depth = depth_interp
         else:
             # Create uniform depth levels if no h variable
             num_levels = slice_data.shape[0]
@@ -163,6 +191,7 @@ def plotZonalSlice_clim(grid_file, data_file, variable, bounds, colormap,
     fig, ax = plt.subplots(figsize=(8, 5))
 
     # Plot the filled contours
+    
     contourf_plot = ax.contourf(x, -depth, slice_data,
                                 levels=np.linspace(bounds[0], bounds[1], 100),
                                 vmin=bounds[0], vmax=bounds[1],
@@ -195,7 +224,7 @@ def plotZonalSlice_clim(grid_file, data_file, variable, bounds, colormap,
 
 
 def plotMeridionalSlice_clim(grid_file, data_file, variable, bounds, colormap, 
-                             lon, vrfyout, exp, PDY, cyc, max_depth=700.0):
+                             lon, vrfyout, exp, PDY, cyc, max_depth=700.0, layer_file=None):
     """
     Contourf of a meridional slice of a climatology field
     """
@@ -208,13 +237,32 @@ def plotMeridionalSlice_clim(grid_file, data_file, variable, bounds, colormap,
     # Extract the slice data
     slice_data = np.squeeze(np.array(data[variable]))[:, :, lon_index]
     
-    # Try to get depth information from the grid file
+    # Try to get depth information from the layer file (similar to soca_vrfy.py)
+    if layer_file is None:
+        layer_file = grid_file
+    
     try:
-        layer = xr.open_dataset(grid_file)
+        layer = xr.open_dataset(layer_file)
         if 'h' in layer.variables:
             depth = np.squeeze(np.array(layer['h']))[:, :, lon_index]
             depth[np.where(np.abs(depth) > 10000.0)] = 0.0
             depth = np.cumsum(depth, axis=0)
+            
+            # Interpolate depth to match the horizontal resolution of slice_data
+            if depth.shape[1] != slice_data.shape[1]:
+                from scipy.interpolate import interp1d
+                # Get the latitude dimension sizes
+                n_lats_layer = depth.shape[1]
+                n_lats_data = slice_data.shape[1]
+                # Create interpolation indices
+                x_layer = np.linspace(0, 1, n_lats_layer)
+                x_data = np.linspace(0, 1, n_lats_data)
+                # Interpolate each vertical level
+                depth_interp = np.zeros((depth.shape[0], n_lats_data))
+                for k in range(depth.shape[0]):
+                    f = interp1d(x_layer, depth[k, :], kind='linear', fill_value='extrapolate')
+                    depth_interp[k, :] = f(x_data)
+                depth = depth_interp
         else:
             # Create uniform depth levels if no h variable
             num_levels = slice_data.shape[0]
@@ -286,7 +334,8 @@ def plot_climatology_fields(config):
                         plotZonalSlice_clim(
                             config['grid_file'], config['data_file'], variable, bounds,
                             config['colormap'], lat, config['vrfyout'],
-                            config['exp'], config['PDY'], config['cyc'], max_depth
+                            config['exp'], config['PDY'], config['cyc'], max_depth,
+                            layer_file=config.get('layer_file')
                         )
             
             # Meridional slices
@@ -296,7 +345,8 @@ def plot_climatology_fields(config):
                         plotMeridionalSlice_clim(
                             config['grid_file'], config['data_file'], variable, bounds,
                             config['colormap'], lon, config['vrfyout'],
-                            config['exp'], config['PDY'], config['cyc'], max_depth
+                            config['exp'], config['PDY'], config['cyc'], max_depth,
+                            layer_file=config.get('layer_file')
                         )
         
         # Handle ice fields (horizontal only)
@@ -322,24 +372,24 @@ configs = []
 for month in range(1, 13):
     month_str = str(month).zfill(2)
     
-    ocean_file = os.path.join(climatology_dir, f'ocean.clim_{month_str}.nc')
-    ice_file = os.path.join(climatology_dir, f'ice.clim_{month_str}.nc')
+    ocean_file = os.path.join(climatology_dir, f'woa_on_mom6_layers_{month_str}.nc')
     
     # Check if files exist
     if not os.path.exists(ocean_file):
         print(f"Warning: {ocean_file} not found, skipping ocean plots for month {month}")
     else:
-        print(f"Configuring ocean plots for month {month}")
+        print(f"Configuring WOA ocean plots for month {month}")
         
         # Ocean climatology plotting configuration
         # Surface plots, zonal and meridional slices for Temp and Salt
         config_ocean = {
             'type': 'ocean',
             'grid_file': grid_file,
+            'layer_file': layer_file,
             'data_file': ocean_file,
-            'PDY': f'Climatology_Month_{month_str}',
+            'PDY': f'WOA_Month_{month_str}',
             'cyc': '00',
-            'exp': 'Clim',
+            'exp': 'WOA',
             'lats': np.arange(-60, 60, 10),
             'lons': np.arange(-280, 80, 30),
             'max_depths': [700.0, 5000.0],
@@ -359,29 +409,6 @@ for month in range(1, 13):
             'vrfyout': os.path.join(vrfyout, f'month_{month_str}', 'ocean')
         }
         configs.append(config_ocean)
-    
-    if not os.path.exists(ice_file):
-        print(f"Warning: {ice_file} not found, skipping ice plots for month {month}")
-    else:
-        print(f"Configuring ice plots for month {month}")
-        
-        # Sea ice climatology plotting configuration
-        # Surface plots for hs_h (snow depth on sea ice)
-        config_ice = {
-            'type': 'ice',
-            'grid_file': grid_file,
-            'data_file': ice_file,
-            'PDY': f'Climatology_Month_{month_str}',
-            'cyc': '00',
-            'exp': 'Clim',
-            'variables_horiz': {
-                'hs_h': [0.0, 0.5]
-            },
-            'colormap': 'jet',
-            'projs': ['North', 'South', 'Global'],
-            'vrfyout': os.path.join(vrfyout, f'month_{month_str}', 'ice')
-        }
-        configs.append(config_ice)
 
 print(f"\nTotal configurations to plot: {len(configs)}")
 print("Starting plotting process...\n")
