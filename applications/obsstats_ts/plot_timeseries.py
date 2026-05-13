@@ -284,15 +284,17 @@ def find_missing_time_periods(existing_times, available_ioda_times, time_interva
     if not existing_times:
         return available_ioda_times
 
-    # Convert to sets for efficient comparison
-    # Round times to nearest interval to handle small time differences
-    def round_to_interval(dt, interval_seconds):
+    # Assign each time to the bin it falls into using floor division.
+    # This matches the binning logic in generate_statistics_from_ioda:
+    #   bin = [current_time, current_time + time_interval)
+    # Using round() would mis-assign obs past the midpoint of a bin to the next bin.
+    def floor_to_interval(dt, interval_seconds):
         timestamp = dt.timestamp()
-        rounded_timestamp = round(timestamp / interval_seconds) * interval_seconds
-        return datetime.fromtimestamp(rounded_timestamp)
+        floored_timestamp = (int(timestamp) // interval_seconds) * interval_seconds
+        return datetime.fromtimestamp(floored_timestamp)
 
-    existing_rounded = {round_to_interval(t, time_interval) for t in existing_times}
-    available_rounded = {round_to_interval(t, time_interval) for t in available_ioda_times}
+    existing_rounded = {floor_to_interval(t, time_interval) for t in existing_times}
+    available_rounded = {floor_to_interval(t, time_interval) for t in available_ioda_times}
 
     # Find missing periods
     missing_periods = available_rounded - existing_rounded
@@ -391,7 +393,7 @@ def plot_timeseries_multi_experiment(experiments_data, output_dir=None, title_pr
         ax1.grid(True, alpha=0.3)
         ax1.legend(fontsize=10)
 
-        ax2.set_ylabel(f"Std {plot_variable} ({variable_name})", fontsize=12)
+        ax2.set_ylabel(f"RMSE {plot_variable} ({variable_name})", fontsize=12)
         ax2.grid(True, alpha=0.3)
         ax2.legend(fontsize=10)
 
@@ -706,12 +708,12 @@ def generate_statistics_from_ioda(data_path, varname, geovar_group='ObsValue',
     # Calculate statistics for each time interval
     stats_times = []
     stats_means = []
-    stats_stds = []
+    stats_rmses = []
     stats_n_obs = []
 
     # Lists for ice-edge statistics (if enabled)
     ice_edge_means = [] if ice_edge_stats and varname == 'icec' else None
-    ice_edge_stds = [] if ice_edge_stats and varname == 'icec' else None
+    ice_edge_rmses = [] if ice_edge_stats and varname == 'icec' else None
     ice_edge_n_obs = [] if ice_edge_stats and varname == 'icec' else None
 
     print("Computing statistics...")
@@ -731,12 +733,8 @@ def generate_statistics_from_ioda(data_path, varname, geovar_group='ObsValue',
     while current_time <= max_time:
         next_time = current_time + timedelta(seconds=time_interval)
 
-        # Get data for current time chunk (use a tighter window to avoid mixing cycles)
-        # Use ±1 hour window around each cycle time instead of ±3*time_interval
-        window_size = min(3600, time_interval // 2)  # 1 hour or half the interval, whichever is smaller
-        time_min = current_time - timedelta(seconds=window_size)
-        time_max = current_time + timedelta(seconds=window_size)
-        time_mask = (all_iodaData.time_data >= time_min) & (all_iodaData.time_data < time_max)
+        # Bin all observations that fall within [current_time, next_time)
+        time_mask = (all_iodaData.time_data >= current_time) & (all_iodaData.time_data < next_time)
 
         # Combine time and spatial masks
         combined_mask = time_mask & spatial_mask
@@ -747,12 +745,12 @@ def generate_statistics_from_ioda(data_path, varname, geovar_group='ObsValue',
 
         # Calculate statistics
         data_mean = np.mean(all_iodaData.geovar[combined_mask])
-        data_std = np.std(all_iodaData.geovar[combined_mask])
+        data_rmse = np.sqrt(np.mean(all_iodaData.geovar[combined_mask] ** 2))
         n_obs = np.sum(combined_mask)
 
         stats_times.append(current_time)
         stats_means.append(data_mean)
-        stats_stds.append(data_std)
+        stats_rmses.append(data_rmse)
         stats_n_obs.append(n_obs)
 
         # Calculate ice-edge statistics if enabled
@@ -761,23 +759,23 @@ def generate_statistics_from_ioda(data_path, varname, geovar_group='ObsValue',
 
             if np.sum(ice_edge_mask) > 0:
                 ice_edge_mean = np.mean(all_iodaData.geovar[ice_edge_mask])
-                ice_edge_std = np.std(all_iodaData.geovar[ice_edge_mask])
+                ice_edge_rmse = np.sqrt(np.mean(all_iodaData.geovar[ice_edge_mask] ** 2))
                 ice_edge_count = np.sum(ice_edge_mask)
             else:
                 ice_edge_mean = np.nan
-                ice_edge_std = np.nan
+                ice_edge_rmse = np.nan
                 ice_edge_count = 0
 
             ice_edge_means.append(ice_edge_mean)
-            ice_edge_stds.append(ice_edge_std)
+            ice_edge_rmses.append(ice_edge_rmse)
             ice_edge_n_obs.append(ice_edge_count)
 
         current_time = next_time
 
     # Save statistics to file if output_file specified
     if output_file and stats_times:
-        save_statistics_to_netcdf(output_file, stats_times, stats_means, stats_stds, stats_n_obs,
-                                  varname, experiment_id, ice_edge_means, ice_edge_stds, ice_edge_n_obs)
+        save_statistics_to_netcdf(output_file, stats_times, stats_means, stats_rmses, stats_n_obs,
+                                  varname, experiment_id, ice_edge_means, ice_edge_rmses, ice_edge_n_obs)
         print(f"Statistics saved to: {output_file}")
 
     # Return statistics data
@@ -785,7 +783,7 @@ def generate_statistics_from_ioda(data_path, varname, geovar_group='ObsValue',
         return {
             'times': stats_times,
             'mean': np.array(stats_means),
-            'std': np.array(stats_stds),
+            'std': np.array(stats_rmses),
             'n_obs': np.array(stats_n_obs),
             'experiment_id': experiment_id,
             'variable': varname,
@@ -891,12 +889,12 @@ def generate_statistics_from_ioda_periods(data_path, varname, missing_periods, g
     # Calculate statistics only for missing periods
     stats_times = []
     stats_means = []
-    stats_stds = []
+    stats_rmses = []
     stats_n_obs = []
 
     # Lists for ice-edge statistics (if enabled)
     ice_edge_means = [] if ice_edge_stats and varname == 'icec' else None
-    ice_edge_stds = [] if ice_edge_stats and varname == 'icec' else None
+    ice_edge_rmses = [] if ice_edge_stats and varname == 'icec' else None
     ice_edge_n_obs = [] if ice_edge_stats and varname == 'icec' else None
 
     print("Computing statistics for missing periods...")
@@ -915,11 +913,10 @@ def generate_statistics_from_ioda_periods(data_path, varname, missing_periods, g
 
     # Process only the missing periods
     for current_time in missing_periods:
-        # Get data for current time chunk (use a tighter window to avoid mixing cycles)
-        window_size = min(3600, time_interval // 2)  # 1 hour or half the interval, whichever is smaller
-        time_min = current_time - timedelta(seconds=window_size)
-        time_max = current_time + timedelta(seconds=window_size)
-        time_mask = (all_iodaData.time_data >= time_min) & (all_iodaData.time_data < time_max)
+        next_time = current_time + timedelta(seconds=time_interval)
+
+        # Bin all observations that fall within [current_time, next_time)
+        time_mask = (all_iodaData.time_data >= current_time) & (all_iodaData.time_data < next_time)
 
         # Combine time and spatial masks
         combined_mask = time_mask & spatial_mask
@@ -929,12 +926,12 @@ def generate_statistics_from_ioda_periods(data_path, varname, missing_periods, g
 
         # Calculate statistics
         data_mean = np.mean(all_iodaData.geovar[combined_mask])
-        data_std = np.std(all_iodaData.geovar[combined_mask])
+        data_rmse = np.sqrt(np.mean(all_iodaData.geovar[combined_mask] ** 2))
         n_obs = np.sum(combined_mask)
 
         stats_times.append(current_time)
         stats_means.append(data_mean)
-        stats_stds.append(data_std)
+        stats_rmses.append(data_rmse)
         stats_n_obs.append(n_obs)
 
         # Calculate ice-edge statistics if enabled
@@ -943,15 +940,15 @@ def generate_statistics_from_ioda_periods(data_path, varname, missing_periods, g
 
             if np.sum(ice_edge_mask) > 0:
                 ice_edge_mean = np.mean(all_iodaData.geovar[ice_edge_mask])
-                ice_edge_std = np.std(all_iodaData.geovar[ice_edge_mask])
+                ice_edge_rmse = np.sqrt(np.mean(all_iodaData.geovar[ice_edge_mask] ** 2))
                 ice_edge_count = np.sum(ice_edge_mask)
             else:
                 ice_edge_mean = np.nan
-                ice_edge_std = np.nan
+                ice_edge_rmse = np.nan
                 ice_edge_count = 0
 
             ice_edge_means.append(ice_edge_mean)
-            ice_edge_stds.append(ice_edge_std)
+            ice_edge_rmses.append(ice_edge_rmse)
             ice_edge_n_obs.append(ice_edge_count)
 
     # Return statistics data (don't save to file here, let the caller handle appending)
@@ -959,7 +956,7 @@ def generate_statistics_from_ioda_periods(data_path, varname, missing_periods, g
         result = {
             'times': stats_times,
             'mean': np.array(stats_means),
-            'std': np.array(stats_stds),
+            'std': np.array(stats_rmses),
             'n_obs': np.array(stats_n_obs),
             'experiment_id': experiment_id,
             'variable': varname,

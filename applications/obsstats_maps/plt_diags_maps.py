@@ -48,8 +48,36 @@ INSTRUMENT_COLORS = {
     'smos': '#bcbd22',          # Olive - SMOS
 
     # Sea ice instruments
-    'amsr2': '#1f77b4',         # Blue - AMSR2
-    'ssmi': '#ff7f0e',          # Orange - SSM/I
+    'icec_amsr2_north': '#1f77b4',   # Blue - AMSR2 North
+    'icec_amsr2_south': '#ff7f0e',   # Orange - AMSR2 South
+    'icec_amsu_ma1_l2': '#2ca02c',   # Green - AMSU MetOp-A L2
+    'icec_atms_n21_l2': '#d62728',   # Red - ATMS NOAA-21 L2
+    'icec_atms_npp_l2': '#9467bd',   # Purple - ATMS NPP L2
+    'icec_viirs_j01_l2': '#8c564b',  # Brown - VIIRS NOAA-20 L2
+    'icec_viirs_n21_l2': '#e377c2',  # Pink - VIIRS NOAA-21 L2
+    'icec_viirs_npp_l2': '#17becf',  # Cyan - VIIRS NPP L2
+    'amsr2': '#1f77b4',              # Blue - AMSR2 (legacy)
+    'ssmi': '#ff7f0e',               # Orange - SSM/I (legacy)
+
+    # In-situ instruments
+    'insitu_temp_profile_argo': '#1f77b4',       # Blue
+    'insitu_temp_profile_glider': '#2ca02c',     # Green
+    'insitu_temp_profile_xbtctd': '#d62728',     # Red
+    'insitu_temp_profile_tesac': '#9467bd',      # Purple
+    'insitu_temp_profile_pirata': '#ff7f0e',     # Orange
+    'insitu_temp_profile_rama': '#8c564b',       # Brown
+    'insitu_temp_profile_taotriton': '#e377c2',  # Pink
+    'insitu_temp_surface_drifter': '#17becf',    # Cyan
+    'insitu_temp_surface_ndbc': '#bcbd22',       # Olive
+    'insitu_temp_surface_trkob': '#7f7f7f',      # Gray
+    'insitu_salt_profile_argo': '#1f77b4',       # Blue
+    'insitu_salt_profile_glider': '#2ca02c',     # Green
+    'insitu_salt_profile_xbtctd': '#d62728',     # Red
+    'insitu_salt_profile_tesac': '#9467bd',      # Purple
+    'insitu_salt_profile_pirata': '#ff7f0e',     # Orange
+    'insitu_salt_profile_rama': '#8c564b',       # Brown
+    'insitu_salt_profile_taotriton': '#e377c2',  # Pink
+    'insitu_salt_surface_trkob': '#7f7f7f',      # Gray
 
     # Default fallback colors for unknown instruments
     'unknown_1': '#ff9999',     # Light red
@@ -61,19 +89,29 @@ INSTRUMENT_COLORS = {
 
 
 def extract_instrument_name(filepath):
-    """Extract instrument name from IODA file path."""
+    """Extract instrument name from IODA file path.
+
+    Handles two common naming conventions:
+    1. GDAS format: gdas.tHHz.<instrument>.nc  (e.g., gdas.t18z.rads_adt_3a.nc)
+    2. Legacy format: variable_instrument_platform_datetime.nc4
+    """
     filename = os.path.basename(filepath)
 
-    # Try to extract instrument name from common patterns
-    # Examples: sst_viirs_npp_20210701T120000Z.nc4, adt_jason3_20210701.nc4
+    # Try GDAS naming convention first: gdas.tHHz.<instrument>.nc
+    # Split on '.' to get ['gdas', 't18z', 'rads_adt_3a', 'nc']
+    dot_parts = filename.split('.')
+    if len(dot_parts) >= 4 and dot_parts[0] == 'gdas':
+        # The instrument name is the third dot-separated part
+        return dot_parts[2]
+
+    # Fallback: try underscore-based naming convention
+    # Examples: sst_viirs_npp_20210701T120000Z.nc4
     parts = filename.split('_')
     if len(parts) >= 3:
-        # Usually format: variable_instrument_platform_datetime
         if len(parts[1]) > 0:
             instrument = parts[1]
             if len(parts) >= 4 and parts[2] not in ['20', '19']:  # Not a date
                 instrument = f"{parts[1]}_{parts[2]}_{parts[3]}"
-            # Remove file extension if present (e.g., .nc, .nc4)
             instrument = os.path.splitext(instrument)[0]
             return instrument
 

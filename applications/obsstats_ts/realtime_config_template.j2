@@ -18,28 +18,34 @@
 
 {% set experiments = [
     {
-        'name': 'cp4.02d',
-        'description': '3DVAR, C384/0.25°',
-        'data_dir': 'cp4.02d-parallel-obsforge',
-        'output_dir': 'stats-cp4.02d'
-    },
-    {
         'name': 'cp4.03.3dvar',
         'description': '3DVAR, C384/0.25° with early cycle',
         'data_dir': 'cp4.03-parallel-3dvar',
         'output_dir': 'stats-cp4.02d'
     },
     {
-        'name': 'GFSv17 RT 16-17',
-        'description': 'Real time GFSv17 test (16-17)',
-        'data_dir': 'retrotestgfs16_17_realtime',
-        'output_dir': 'stats-gfs17-16-17'
+        'name': 'cp4.04.3dvar',
+        'description': '3DVAR, C384/0.25° with early cycle',
+        'data_dir': 'cp4.04-parallel-3dvar',
+        'output_dir': 'stats-cp4.04d'
+    },
+    {
+        'name': 'GFSv17 RT 01',
+        'description': 'Real time GFSv17 01',
+        'data_dir': 'retrov17_01_realtime',
+        'output_dir': 'stats-gfs17-rt-01'
     },
     {
         'name': 'cp4.03.hyb',
         'description': 'Parallel hybrid, C384/0.25°',
         'data_dir': 'cp4.03-parallel-hybrid',
         'output_dir': 'stats-cp4.03.hyb'
+    },
+    {
+        'name': 'cp4.04.hyb',
+        'description': 'Parallel hybrid, C384/0.25°',
+        'data_dir': 'cp4.04-parallel-hybrid',
+        'output_dir': 'stats-cp4.04.hyb'
     }
 ] %}
 
@@ -200,6 +206,7 @@
     'varname': 'temp',
     'geovar_group': 'ombg',
     'time_interval': 21600,
+    'adt_time_interval': 86400,
     'ice_edge_stats': false
 } %}
 
@@ -217,7 +224,7 @@ experiments:
         ioda_data_path: "./{{ exp.data_dir }}/gdas.{{ date_pattern }}/*/analysis/ocean/diags/{{ platform.file_pattern }}"
         varname: "{{ platform.varname | default(default_config.varname) }}"
         geovar_group: "{{ platform.geovar_group | default(default_config.geovar_group) }}"
-        time_interval: {{ default_config.time_interval }}
+        time_interval: {{ default_config.adt_time_interval if platform.varname == 'adt' else default_config.time_interval }}
         ice_edge_stats: {{ default_config.ice_edge_stats | lower }}
         stats_output: "./{{ exp.output_dir }}/{{ platform.safe_name }}_{{ basin.suffix }}_{{ platform.geovar_group | default(default_config.geovar_group) }}_statistics.nc"
 {% if basin.codes %}
