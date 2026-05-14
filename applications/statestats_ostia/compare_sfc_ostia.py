@@ -62,6 +62,15 @@ CELL_AREA = (_R_EARTH_KM ** 2 * _DLON *
 # Ice-extent threshold
 ICE_EXTENT_THRESH = 0.15
 
+# Major western boundary current regions (lon in [-180,180], lat standard)
+WBC_REGIONS = [
+    {"key": "gulf_stream",    "label": "Gulf Stream",     "lon": (-82, -40), "lat": (24, 52)},
+    {"key": "kuroshio",       "label": "Kuroshio",        "lon": (120, 165), "lat": (18, 50)},
+    {"key": "brazil",         "label": "Brazil Current",  "lon": (-58, -28), "lat": (-50,  -8)},
+    {"key": "east_australia", "label": "E. Australian",   "lon": (145, 178), "lat": (-45, -15)},
+    {"key": "agulhas",        "label": "Agulhas",         "lon": ( 15,  55), "lat": (-50, -22)},
+]
+
 
 # =========================================================================== #
 #  Helpers – discover background files
@@ -575,13 +584,14 @@ def _safe_tag(label):
 def plot_timeseries(stats_by_run, var, out_dir):
     """
     Plot per-region time series of bias and RMSE.
-    var = "sst" (regions = ocean basins) or "ice" (regions = north / south).
+    var = "sst" (regions = ocean basins), "ice" (regions = north / south),
+          or "adt" (regions = ocean basins).
     """
     regions = sorted({region
                       for stats in stats_by_run.values()
                       for region in stats.keys()})
-    # Put "global" (was "open_ocean") first for SST time series
-    if var == "sst" and "open_ocean" in regions:
+    # Put "global" (was "open_ocean") first for SST/ADT time series
+    if var in ("sst", "adt") and "open_ocean" in regions:
         regions = ["open_ocean"] + [r for r in regions if r != "open_ocean"]
     nregions = len(regions)
     if nregions == 0:
@@ -590,10 +600,14 @@ def plot_timeseries(stats_by_run, var, out_dir):
     fig, axes = plt.subplots(nregions, 2, figsize=(16, 3.5 * nregions),
                              squeeze=False, constrained_layout=True)
 
-    units = "K" if var == "sst" else "fraction"
-    title_var = "Foundation SST" if var == "sst" else "Ice Concentration"
-    region_label = "basin" if var == "sst" else "hemisphere"
-    fig.suptitle(f"{title_var} vs OSTIA — per-{region_label} bias & RMSE ({units})",
+    if var == "sst":
+        units, title_var, obs_label = "K", "Foundation SST", "OSTIA"
+    elif var == "adt":
+        units, title_var, obs_label = "m", "ADT anomaly", "Copernicus ADT"
+    else:
+        units, title_var, obs_label = "fraction", "Ice Concentration", "OSTIA"
+    region_label = "basin" if var in ("sst", "adt") else "hemisphere"
+    fig.suptitle(f"{title_var} vs {obs_label} — per-{region_label} bias & RMSE ({units})",
                  fontsize=15, fontweight="bold")
 
     # Debug dump: print the exact values used to build the time-series curves.
@@ -640,7 +654,7 @@ def plot_timeseries(stats_by_run, var, out_dir):
         ax_bias.axhline(0, color="black", lw=2, ls="-", zorder=1)
         display_name = "global" if rname == "open_ocean" else rname
         ax_bias.set_ylabel(f"Bias ({units})")
-        ax_bias.set_title(f"{display_name} — Bias (bkg − OSTIA)")
+        ax_bias.set_title(f"{display_name} — Bias (model − {obs_label})")
         if plotted_bias:
             ax_bias.legend(fontsize=7)
         else:
@@ -682,8 +696,12 @@ def plot_spatial_maps(spatial, exp_label, var, out_dir,
     mean_diff = spatial[f"{var}_diff_sum"] / cnt_safe
     rmse      = np.sqrt(spatial[f"{var}_diff_sq_sum"] / cnt_safe)
 
-    units = "K" if var == "sst" else "fraction"
-    title_var = "Foundation SST" if var == "sst" else "Ice Concentration"
+    if var == "sst":
+        units, title_var, obs_label = "K", "Foundation SST", "OSTIA"
+    elif var == "adt":
+        units, title_var, obs_label = "m", "ADT anomaly", "Copernicus ADT"
+    else:
+        units, title_var, obs_label = "fraction", "Ice Concentration", "OSTIA"
 
     # Add cyclic point to avoid seam at 0/360°
     mean_diff_c, lon_c = add_cyclic_point(mean_diff, coord=TGT_LON)
@@ -695,7 +713,7 @@ def plot_spatial_maps(spatial, exp_label, var, out_dir,
     fig, (ax_bias, ax_rmse) = plt.subplots(
         2, 1, figsize=(14, 10), constrained_layout=True,
         subplot_kw={"projection": proj})
-    fig.suptitle(f"{exp_label} — {title_var} vs OSTIA ({units})",
+    fig.suptitle(f"{exp_label} — {title_var} vs {obs_label} ({units})",
                  fontsize=15, fontweight="bold")
 
     # Bias
@@ -716,7 +734,7 @@ def plot_spatial_maps(spatial, exp_label, var, out_dir,
     ax_bias.coastlines(lw=0.5, zorder=3)
     ax_bias.set_global()
     fig.colorbar(im, ax=ax_bias, shrink=0.7, label=f"Bias ({units})")
-    ax_bias.set_title(f"Time-mean bias  (bkg − OSTIA)")
+    ax_bias.set_title(f"Time-mean bias  (model − {obs_label})")
 
     # RMSE
     if vmax_rmse is None:
@@ -738,6 +756,86 @@ def plot_spatial_maps(spatial, exp_label, var, out_dir,
 
     tag = _safe_tag(exp_label)
     outfile = os.path.join(out_dir, f"{var}_maps_{tag}.png")
+    fig.savefig(outfile, dpi=150)
+    plt.close(fig)
+    print(f"  Saved {outfile}")
+
+
+def plot_regional_maps(spatial, exp_label, var, out_dir,
+                       vmax_bias=None, vmax_rmse=None):
+    """
+    2-row × N-column figure zoomed into each western boundary current region.
+    Row 0 = time-mean bias, row 1 = RMSE.  Uses the same colour limits as
+    the global spatial maps when supplied.
+    """
+    cnt = spatial[f"{var}_count"]
+    cnt_safe = np.where(cnt > 0, cnt, np.nan)
+    mean_diff = spatial[f"{var}_diff_sum"] / cnt_safe
+    rmse      = np.sqrt(spatial[f"{var}_diff_sq_sum"] / cnt_safe)
+
+    if var == "sst":
+        units, title_var, obs_label = "K", "Foundation SST", "OSTIA"
+    elif var == "adt":
+        units, title_var, obs_label = "m", "ADT anomaly", "Copernicus ADT"
+    else:
+        units, title_var, obs_label = "fraction", "Ice Concentration", "OSTIA"
+
+    if vmax_bias is None:
+        finite = mean_diff[np.isfinite(mean_diff)]
+        vmax_bias = max(float(np.percentile(np.abs(finite), 95)), 0.01) if len(finite) > 0 else 1.0
+    if vmax_rmse is None:
+        finite_r = rmse[np.isfinite(rmse)]
+        vmax_rmse = max(float(np.percentile(finite_r, 95)), 0.01) if len(finite_r) > 0 else 1.0
+
+    mean_diff_c, lon_c = add_cyclic_point(mean_diff, coord=TGT_LON)
+    rmse_c, _          = add_cyclic_point(rmse,      coord=TGT_LON)
+    LON_c, LAT_c = np.meshgrid(lon_c, TGT_LAT)
+
+    nreg = len(WBC_REGIONS)
+    proj = ccrs.PlateCarree()
+
+    fig, axes = plt.subplots(2, nreg, figsize=(4.5 * nreg, 9),
+                             constrained_layout=True,
+                             subplot_kw={"projection": proj})
+    fig.suptitle(
+        f"{exp_label} — {title_var} vs {obs_label}: "
+        f"Western Boundary Currents ({units})",
+        fontsize=13, fontweight="bold")
+
+    im_bias, im_rmse = None, None
+    for col, reg in enumerate(WBC_REGIONS):
+        extent = [reg["lon"][0], reg["lon"][1], reg["lat"][0], reg["lat"][1]]
+
+        ax_b = axes[0, col]
+        im_bias = ax_b.pcolormesh(LON_c, LAT_c, mean_diff_c,
+                                  transform=ccrs.PlateCarree(),
+                                  cmap="RdBu_r", vmin=-vmax_bias, vmax=vmax_bias,
+                                  shading="auto")
+        ax_b.contour(LON_c, LAT_c, mean_diff_c, levels=[0], colors="black",
+                     linewidths=0.8, transform=ccrs.PlateCarree())
+        ax_b.set_extent(extent, crs=ccrs.PlateCarree())
+        ax_b.add_feature(cfeature.LAND, facecolor="0.85", edgecolor="0.5", lw=0.4, zorder=2)
+        ax_b.coastlines(lw=0.5, zorder=3)
+        ax_b.gridlines(draw_labels=False, lw=0.3, color="gray", alpha=0.5)
+        ax_b.set_title(reg["label"], fontsize=10, fontweight="bold")
+
+        ax_r = axes[1, col]
+        im_rmse = ax_r.pcolormesh(LON_c, LAT_c, rmse_c,
+                                  transform=ccrs.PlateCarree(),
+                                  cmap="YlOrRd", vmin=0, vmax=vmax_rmse,
+                                  shading="auto")
+        ax_r.set_extent(extent, crs=ccrs.PlateCarree())
+        ax_r.add_feature(cfeature.LAND, facecolor="0.85", edgecolor="0.5", lw=0.4, zorder=2)
+        ax_r.coastlines(lw=0.5, zorder=3)
+        ax_r.gridlines(draw_labels=False, lw=0.3, color="gray", alpha=0.5)
+
+    fig.colorbar(im_bias, ax=axes[0, :], shrink=0.6,
+                 label=f"Bias ({units})", pad=0.02)
+    fig.colorbar(im_rmse, ax=axes[1, :], shrink=0.6,
+                 label=f"RMSE ({units})", pad=0.02)
+
+    tag = _safe_tag(exp_label)
+    outfile = os.path.join(out_dir, f"{var}_maps_{tag}_wbc.png")
     fig.savefig(outfile, dpi=150)
     plt.close(fig)
     print(f"  Saved {outfile}")
@@ -1269,6 +1367,362 @@ def plot_diff_ops_vs_par(ops_spatial, par_spatial, var, out_dir):
 
 
 # =========================================================================== #
+#  Helpers – discover model ADT files (ocean history at 12Z)
+# =========================================================================== #
+def discover_ocean_adt_files(base_dir):
+    """Return {YYYYMMDD: filepath} for gdas.t12z.inst.f006.nc ocean history files."""
+    files = {}
+    for f in sorted(glob.glob(os.path.join(
+            base_dir,
+            "gdas.*/12/model/ocean/history/gdas.t12z.inst.f006.nc"))):
+        m = re.search(r"gdas\.(\d{8})/12/", f)
+        if m:
+            files[m.group(1)] = f
+    return files
+
+
+def copernicus_adt_path(adt_dir, date_str):
+    """Return Copernicus ADT file for YYYYMMDD, or None if not found."""
+    matches = glob.glob(os.path.join(
+        adt_dir, f"nrt_global_allsat_phy_l4_{date_str}_*.nc"))
+    return matches[0] if matches else None
+
+
+# =========================================================================== #
+#  Interpolation – Copernicus ADT (regular 0.125° [-180,180]) to target grid
+# =========================================================================== #
+def _interp_copernicus_adt_to_target(adt_lat, adt_lon, field2d):
+    """Interpolate Copernicus ADT regular 0.125° grid (lon [-180,180]) to TGT."""
+    # Shift lon to [0, 360) to match the target grid convention
+    idx_shift = np.searchsorted(adt_lon, 0.0)
+    lon_shifted = np.concatenate([adt_lon[idx_shift:],
+                                  adt_lon[:idx_shift] + 360.0])
+    field_shifted = np.concatenate([field2d[:, idx_shift:],
+                                    field2d[:, :idx_shift]], axis=1)
+    interp = RegularGridInterpolator(
+        (adt_lat, lon_shifted), field_shifted,
+        method="linear", bounds_error=False, fill_value=np.nan,
+    )
+    tgt_lon_grid, tgt_lat_grid = np.meshgrid(TGT_LON, TGT_LAT)
+    pts = np.stack([tgt_lat_grid.ravel(), tgt_lon_grid.ravel()], axis=-1)
+    return interp(pts).reshape(len(TGT_LAT), len(TGT_LON))
+
+
+# =========================================================================== #
+#  Read Copernicus ADT → on target grid (m) + ice mask
+# =========================================================================== #
+def read_copernicus_adt(filepath):
+    """Return (adt_tgt, ice_mask_tgt) on the 0.5° target grid.
+
+    adt_tgt     : ADT in metres; NaN where missing/land.
+    ice_mask_tgt: bool array, True where Copernicus flag_ice indicates
+                  ≥15 % sea-ice concentration (flag_ice == 1).
+                  Cells with a masked/missing flag_ice are treated as ice
+                  (conservative).  Interpolated bilinearly from 0.125° then
+                  thresholded at > 0 so any ice fraction triggers masking.
+
+    scale_factor (0.0001) and _FillValue (-2147483647) for adt are handled
+    automatically by NetCDF4 masked-array machinery.
+    """
+    ds = nc.Dataset(filepath)
+    alat = ds.variables["latitude"][:].astype(np.float64)
+    alon = ds.variables["longitude"][:].astype(np.float64)
+    adt      = ds.variables["adt"][0, :, :]      # scale applied by nc4
+    flag_ice = ds.variables["flag_ice"][0, :, :] # 0=ocean, 1=ice, FV=masked
+    ds.close()
+
+    if hasattr(adt, "mask"):
+        adt = np.where(adt.mask, np.nan, np.array(adt, dtype=np.float64))
+    else:
+        adt = np.array(adt, dtype=np.float64)
+
+    # Masked flag_ice cells are land — treat as NaN so bilinear interpolation
+    # does not bleed land into adjacent ocean cells.
+    if hasattr(flag_ice, "mask"):
+        flag_ice = np.where(flag_ice.mask, np.nan,
+                            np.array(flag_ice, dtype=np.float64))
+    else:
+        flag_ice = np.array(flag_ice, dtype=np.float64)
+
+    adt_tgt  = _interp_copernicus_adt_to_target(alat, alon, adt)
+    ice_tgt  = _interp_copernicus_adt_to_target(alat, alon, flag_ice)
+    # Only mask where the interpolated ice flag is finite and positive.
+    # NaN ice_tgt means land-adjacent; those cells are already excluded by
+    # the common valid mask (model ADT and obs ADT are both NaN over land).
+    ice_mask_tgt = np.isfinite(ice_tgt) & (ice_tgt > 0)
+
+    return adt_tgt, ice_mask_tgt
+
+
+# =========================================================================== #
+#  Read model ADT (ave_ssh) → on target grid (m)
+# =========================================================================== #
+def read_model_adt(filepath):
+    """Return model ADT (ave_ssh, m) on the 0.5° target grid.
+
+    The MOM6 tripolar grid is handled by the same bin-averaging used for
+    the Gaussian atmos grid.  _FillValue = 0.f is auto-masked by NetCDF4.
+    """
+    ds = nc.Dataset(filepath)
+    geolat = ds.variables["geolat"][:].astype(np.float64)   # (yh, xh)
+    geolon = ds.variables["geolon"][:].astype(np.float64)   # (yh, xh)
+    ssh = ds.variables["ave_ssh"][0, :, :]                   # (yh, xh)
+    ds.close()
+
+    if hasattr(ssh, "mask"):
+        ssh = np.where(ssh.mask, np.nan, np.array(ssh, dtype=np.float64))
+    else:
+        ssh = np.array(ssh, dtype=np.float64)
+
+    return _interp_gaussian_to_target(geolat, geolon, ssh)
+
+
+# =========================================================================== #
+#  Plotting – daily ADT snapshot maps (model | obs | diff)
+# =========================================================================== #
+def plot_adt_daily_map(model_anom, obs_anom, diff, day_str, exp_label, out_dir):
+    """3-panel global map: model ADT anomaly | Copernicus ADT anomaly | difference.
+
+    Saved to <out_dir>/adt_daily/<tag>_adt_YYYYMMDD.png.
+    """
+    daily_dir = os.path.join(out_dir, "adt_daily")
+    os.makedirs(daily_dir, exist_ok=True)
+
+    # Colour limits: shared for anomaly panels, independent for diff
+    all_anom = np.concatenate([model_anom[np.isfinite(model_anom)],
+                               obs_anom[np.isfinite(obs_anom)]])
+    vmax_anom = (max(float(np.percentile(np.abs(all_anom), 97)), 0.01)
+                 if len(all_anom) > 0 else 0.5)
+
+    diff_fin = diff[np.isfinite(diff)]
+    vmax_diff = (max(float(np.percentile(np.abs(diff_fin), 97)), 0.01)
+                 if len(diff_fin) > 0 else 0.2)
+
+    # Add cyclic column to avoid seam at 0/360°
+    model_c, lon_c = add_cyclic_point(model_anom, coord=TGT_LON)
+    obs_c, _       = add_cyclic_point(obs_anom,   coord=TGT_LON)
+    diff_c, _      = add_cyclic_point(diff,        coord=TGT_LON)
+    LON_c, LAT_c = np.meshgrid(lon_c, TGT_LAT)
+
+    proj = ccrs.PlateCarree(central_longitude=0)
+    fig, axes = plt.subplots(1, 3, figsize=(21, 5), constrained_layout=True,
+                             subplot_kw={"projection": proj})
+    fig.suptitle(f"{exp_label} — ADT anomaly vs Copernicus  {day_str}",
+                 fontsize=13, fontweight="bold")
+
+    panels = [
+        (axes[0], model_c, vmax_anom, "Model ADT anomaly (m)"),
+        (axes[1], obs_c,   vmax_anom, "Copernicus ADT anomaly (m)"),
+        (axes[2], diff_c,  vmax_diff, "Model − Copernicus (m)"),
+    ]
+    for ax, field, vmax, title in panels:
+        im = ax.pcolormesh(LON_c, LAT_c, field, transform=ccrs.PlateCarree(),
+                           cmap="RdBu_r", vmin=-vmax, vmax=vmax, shading="auto")
+        ax.contour(LON_c, LAT_c, field, levels=[0], colors="black",
+                   linewidths=0.5, transform=ccrs.PlateCarree())
+        ax.add_feature(cfeature.LAND, facecolor="0.85", edgecolor="0.5",
+                       lw=0.4, zorder=2)
+        ax.coastlines(lw=0.5, zorder=3)
+        ax.set_global()
+        fig.colorbar(im, ax=ax, shrink=0.6, label="m", pad=0.02)
+        ax.set_title(title, fontsize=10)
+
+    tag = _safe_tag(exp_label)
+    outfile = os.path.join(daily_dir, f"adt_daily_{tag}_{day_str}.png")
+    fig.savefig(outfile, dpi=130)
+    plt.close(fig)
+    print(f"      → {outfile}")
+
+
+def plot_adt_daily_map_wbc(model_anom, obs_anom, diff, day_str, exp_label,
+                            out_dir, vmax_anom, vmax_diff):
+    """
+    3-row × N-column regional zoom figure for daily ADT at each western
+    boundary current.  Row 0 = model anomaly, row 1 = Copernicus anomaly,
+    row 2 = model − Copernicus.  Saved alongside the global daily ADT map.
+    """
+    daily_dir = os.path.join(out_dir, "adt_daily")
+    os.makedirs(daily_dir, exist_ok=True)
+
+    model_c, lon_c = add_cyclic_point(model_anom, coord=TGT_LON)
+    obs_c, _       = add_cyclic_point(obs_anom,   coord=TGT_LON)
+    diff_c, _      = add_cyclic_point(diff,        coord=TGT_LON)
+    LON_c, LAT_c = np.meshgrid(lon_c, TGT_LAT)
+
+    nreg = len(WBC_REGIONS)
+    proj = ccrs.PlateCarree()
+
+    row_defs = [
+        (model_c, vmax_anom, "Model ADT anomaly (m)"),
+        (obs_c,   vmax_anom, "Copernicus ADT (m)"),
+        (diff_c,  vmax_diff, "Model − Copernicus (m)"),
+    ]
+
+    fig, axes = plt.subplots(3, nreg, figsize=(4.5 * nreg, 9),
+                             constrained_layout=True,
+                             subplot_kw={"projection": proj})
+    fig.suptitle(
+        f"{exp_label} — ADT anomaly (m) Western Boundary Currents  {day_str}",
+        fontsize=12, fontweight="bold")
+
+    for row, (field, vmax, row_label) in enumerate(row_defs):
+        row_im = None
+        for col, reg in enumerate(WBC_REGIONS):
+            extent = [reg["lon"][0], reg["lon"][1], reg["lat"][0], reg["lat"][1]]
+            ax = axes[row, col]
+            row_im = ax.pcolormesh(LON_c, LAT_c, field,
+                                   transform=ccrs.PlateCarree(),
+                                   cmap="RdBu_r", vmin=-vmax, vmax=vmax,
+                                   shading="auto")
+            ax.contour(LON_c, LAT_c, field, levels=[0], colors="black",
+                       linewidths=0.5, transform=ccrs.PlateCarree())
+            ax.set_extent(extent, crs=ccrs.PlateCarree())
+            ax.add_feature(cfeature.LAND, facecolor="0.85", edgecolor="0.5",
+                           lw=0.4, zorder=2)
+            ax.coastlines(lw=0.5, zorder=3)
+            ax.gridlines(draw_labels=False, lw=0.3, color="gray", alpha=0.5)
+            if row == 0:
+                ax.set_title(reg["label"], fontsize=10, fontweight="bold")
+        fig.colorbar(row_im, ax=axes[row, :], shrink=0.6,
+                     label=row_label, pad=0.02)
+
+    tag = _safe_tag(exp_label)
+    outfile = os.path.join(daily_dir, f"adt_daily_wbc_{tag}_{day_str}.png")
+    fig.savefig(outfile, dpi=130)
+    plt.close(fig)
+    print(f"      → {outfile}")
+
+
+# =========================================================================== #
+#  Accumulate daily ADT statistics
+# =========================================================================== #
+def compute_daily_adt_stats(model_files_by_day, adt_dir, basins,
+                             out_dir=None, exp_label=None):
+    """
+    Compare model ADT (ave_ssh) with Copernicus gridded ADT per day.
+
+    Datum removal is applied before differencing: the spatial mean over the
+    common valid ocean mask is subtracted from each field independently.
+
+        model_anom = model_adt - mean(model_adt, common mask)
+        obs_anom   = obs_adt   - mean(obs_adt,   common mask)
+        diff       = model_anom - obs_anom
+
+    Returns
+    -------
+    adt_basin_stats : dict
+        { region: { "dates": [], "adt_bias": [], "adt_rmse": [] } }
+    spatial : dict
+        { "adt_diff_sum":2-D, "adt_diff_sq_sum":2-D, "adt_count":2-D }
+    """
+    nlat, nlon = len(TGT_LAT), len(TGT_LON)
+
+    region_keys = list(basins.keys()) if basins else ["global"]
+    adt_basin_stats = {b: {"dates": [], "adt_bias": [], "adt_rmse": []}
+                       for b in region_keys}
+
+    spatial = {k: np.zeros((nlat, nlon)) for k in
+               ("adt_diff_sum", "adt_diff_sq_sum", "adt_count")}
+
+    n_missing = 0
+    for day_str in sorted(model_files_by_day.keys()):
+        adt_file = copernicus_adt_path(adt_dir, day_str)
+        if adt_file is None:
+            print(f"    {day_str} ... skip (no Copernicus ADT in {adt_dir})")
+            n_missing += 1
+            continue
+
+        print(f"    {day_str} ...", end="", flush=True)
+
+        try:
+            model_adt = read_model_adt(model_files_by_day[day_str])
+        except Exception as e:
+            print(f" skip (model read error: {e})")
+            continue
+
+        try:
+            obs_adt, ice_mask = read_copernicus_adt(adt_file)
+        except Exception as e:
+            print(f" skip (obs read error: {e})")
+            continue
+
+        # Apply the Copernicus ice mask to both fields before any comparison.
+        # This is the single, consistent ice mask: wherever Copernicus flags
+        # ≥15 % sea-ice concentration, both model and obs are excluded.
+        model_adt = np.where(ice_mask, np.nan, model_adt)
+        obs_adt   = np.where(ice_mask, np.nan, obs_adt)
+
+        # Common valid ocean mask (land + ice already removed above)
+        common = np.isfinite(model_adt) & np.isfinite(obs_adt)
+        n_common = int(np.sum(common))
+        if n_common == 0:
+            print(" skip (no common valid points)")
+            continue
+
+        # Datum removal: subtract per-field spatial mean over common mask
+        model_mean = float(model_adt[common].mean())
+        obs_mean   = float(obs_adt[common].mean())
+        model_anom = np.where(common, model_adt - model_mean, np.nan)
+        obs_anom   = np.where(common, obs_adt   - obs_mean,   np.nan)
+        diff       = model_anom - obs_anom   # NaN outside common mask
+
+        # Colour limits shared between global and regional daily maps
+        all_anom = np.concatenate([model_anom[np.isfinite(model_anom)],
+                                   obs_anom[np.isfinite(obs_anom)]])
+        vmax_anom_day = (max(float(np.percentile(np.abs(all_anom), 97)), 0.01)
+                         if len(all_anom) > 0 else 0.5)
+        diff_fin_day = diff[np.isfinite(diff)]
+        vmax_diff_day = (max(float(np.percentile(np.abs(diff_fin_day), 97)), 0.01)
+                         if len(diff_fin_day) > 0 else 0.2)
+
+        # Daily snapshot maps (global + regional)
+        if out_dir is not None:
+            plot_adt_daily_map(model_anom, obs_anom, diff,
+                               day_str, exp_label or "exp", out_dir)
+            plot_adt_daily_map_wbc(model_anom, obs_anom, diff,
+                                   day_str, exp_label or "exp", out_dir,
+                                   vmax_anom_day, vmax_diff_day)
+
+        # Spatial accumulation
+        spatial["adt_diff_sum"][common]    += diff[common]
+        spatial["adt_diff_sq_sum"][common] += diff[common] ** 2
+        spatial["adt_count"][common]       += 1.0
+
+        dt = datetime.strptime(day_str, "%Y%m%d")
+
+        # Per-region stats
+        for bname in region_keys:
+            m = (basins[bname] & common) if basins else common
+            n = int(np.sum(m))
+            if n > 0:
+                b = float(diff[m].mean())
+                r = float(np.sqrt(np.mean(diff[m] ** 2)))
+            else:
+                b, r = np.nan, np.nan
+            adt_basin_stats[bname]["dates"].append(dt)
+            adt_basin_stats[bname]["adt_bias"].append(b)
+            adt_basin_stats[bname]["adt_rmse"].append(r)
+
+        # Per-day global summary line
+        d_g = diff[common]
+        print(f" OK  n={n_common}"
+              f"  bias={d_g.mean():+.4f}m"
+              f"  std={d_g.std():.4f}m"
+              f"  rmse={np.sqrt(np.mean(d_g**2)):.4f}m"
+              f"  [{d_g.min():.3f}, {d_g.max():.3f}]m")
+
+    if n_missing > 0:
+        print(f"  NOTE: {n_missing} day(s) skipped – Copernicus ADT not found")
+
+    # Convert lists to arrays
+    for bname in adt_basin_stats:
+        for k in adt_basin_stats[bname]:
+            adt_basin_stats[bname][k] = np.array(adt_basin_stats[bname][k])
+
+    return adt_basin_stats, spatial
+
+
+# =========================================================================== #
 #  Main
 # =========================================================================== #
 def main():
@@ -1281,14 +1735,17 @@ def main():
                              "(default: parallel)")
     parser.add_argument("--ostia-dir", default="ostia_raw",
                         help="OSTIA raw data directory (default: ostia_raw)")
+    parser.add_argument("--adt-dir", default="adt_raw",
+                        help="Copernicus ADT raw data directory (default: adt_raw)")
     parser.add_argument("--mask-file",
                         default="RECCAP2_region_masks_all.nc",
                         help="RECCAP2 basin mask file")
     parser.add_argument("--output-dir", default="plots_sfc",
                         help="Output directory for plots (default: plots_sfc)")
     parser.add_argument("--variables", default="both",
-                        choices=["sst", "ice", "both"],
-                        help="Which variables to process: sst, ice, or both "
+                        choices=["sst", "ice", "adt", "both", "all"],
+                        help="Which variables to process: sst, ice, adt, "
+                             "both (sst+ice), or all (sst+ice+adt) "
                              "(default: both)")
     args = parser.parse_args()
 
@@ -1316,17 +1773,17 @@ def main():
     if not run_specs:
         parser.error("Provide at least one directory with --exps-dir")
 
-    do_sst = args.variables in ("sst", "both")
-    do_ice = args.variables in ("ice", "both")
+    do_sst = args.variables in ("sst", "both", "all")
+    do_ice = args.variables in ("ice", "both", "all")
+    do_adt = args.variables in ("adt", "all")
 
-    # --- Load basin masks ---
-    if do_sst:
+    # --- Load basin masks (needed for SST and ADT per-basin stats) ---
+    if do_sst or do_adt:
         print(f"Loading basin masks from {args.mask_file} ...")
         basins = load_basin_masks(args.mask_file)
         print(f"  Basins: {sorted(basins.keys())}")
-
-        # --- Basin map ---
-        plot_basin_map(basins, args.output_dir)
+        if do_sst:
+            plot_basin_map(basins, args.output_dir)
     else:
         basins = {}
 
@@ -1354,6 +1811,27 @@ def main():
         ice_stats_by_run[label] = ice_stats
         spatial_by_run[label] = spatial
 
+    # --- ADT: discover ocean files and compute stats ---
+    adt_stats_by_run = {}
+    adt_spatial_by_run = {}
+
+    if do_adt:
+        for label, run_dir in run_specs:
+            print(f"\nScanning {run_dir}/ for ocean ADT files (12Z) ...")
+            ocean_days = discover_ocean_adt_files(run_dir)
+            print(f"  Found {len(ocean_days)} days")
+
+            if ocean_days:
+                print(f"\n--- {label} ADT vs Copernicus ---")
+                adt_stats, adt_spatial = compute_daily_adt_stats(
+                    ocean_days, args.adt_dir, basins,
+                    out_dir=args.output_dir, exp_label=label)
+            else:
+                adt_stats, adt_spatial = {}, None
+
+            adt_stats_by_run[label] = adt_stats
+            adt_spatial_by_run[label] = adt_spatial
+
     # --- Sea-ice extent on common mask ---
     if do_ice:
         print("\n--- Sea-ice extent (common mask) ---")
@@ -1378,6 +1856,8 @@ def main():
                 continue
             plot_spatial_maps(spatial, label, "sst", args.output_dir,
                               vmax_bias=sst_vmax_b, vmax_rmse=sst_vmax_r)
+            plot_regional_maps(spatial, label, "sst", args.output_dir,
+                               vmax_bias=sst_vmax_b, vmax_rmse=sst_vmax_r)
 
     if do_ice:
         polar_vmax_b, polar_vmax_r = _shared_polar_limits(
@@ -1388,6 +1868,18 @@ def main():
             plot_ice_spatial_polar(spatial, label, args.output_dir,
                                    vmax_bias=polar_vmax_b,
                                    vmax_rmse=polar_vmax_r)
+
+    if do_adt:
+        plot_timeseries(adt_stats_by_run, "adt", args.output_dir)
+        adt_vmax_b, adt_vmax_r = _shared_spatial_limits(
+            list(adt_spatial_by_run.values()), "adt")
+        for label, adt_spatial in adt_spatial_by_run.items():
+            if adt_spatial is None:
+                continue
+            plot_spatial_maps(adt_spatial, label, "adt", args.output_dir,
+                              vmax_bias=adt_vmax_b, vmax_rmse=adt_vmax_r)
+            plot_regional_maps(adt_spatial, label, "adt", args.output_dir,
+                               vmax_bias=adt_vmax_b, vmax_rmse=adt_vmax_r)
 
     # --- Plot sea-ice extent ---
     if do_ice:
