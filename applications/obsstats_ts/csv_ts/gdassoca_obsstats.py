@@ -125,7 +125,10 @@ class ObsStats:
             try:
                 with nc.Dataset(filepath, 'r') as dataset:
                     # Read metadata
-                    depths = dataset.groups['MetaData']['depth'][:]
+                    if variable_name == 'seaSurfaceTemperature':  
+                        depths = 0
+                    else:
+                        depths = dataset.groups['MetaData']['depth'][:]
                     ocean_basins = dataset.groups['MetaData']['oceanBasin'][:]
 
                     # Read observation data
@@ -410,8 +413,8 @@ if __name__ == "__main__":
             print(f"Found files: {flist}")
             for fname in flist:
                 inst_name = get_inst(fname)
-                # Only process insitu temperature and salinity for now
-                if 'insitu_temp' in inst_name or 'insitu_salt' in inst_name:
+                # Only process insitu temperature and salinity for now (and sst)
+                if 'insitu_temp' in inst_name or 'insitu_salt' in inst_name or 'sst' in inst_name:
                     insts.append(inst_name)
     insts = list(set(insts))
     insts.sort()
