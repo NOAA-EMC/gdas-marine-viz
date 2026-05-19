@@ -99,7 +99,7 @@ class ObsStats:
             try:
                 path_parts = filepath.split('/')
                 for part in path_parts:
-                    if part.startswith('gdas.') and len(part) >= 13:
+                    if (part.startswith('gdas.')  or part.startswith('enkfgdas.')) and len(part) >= 13:
                         date_str = part.split('.')[1]  # Extract YYYYMMDD
                         hour_part = None
                         # Look for hour in next parts
@@ -125,7 +125,10 @@ class ObsStats:
             try:
                 with nc.Dataset(filepath, 'r') as dataset:
                     # Read metadata
-                    depths = dataset.groups['MetaData']['depth'][:]
+                    if variable_name == 'seaSurfaceTemperature':  
+                        depths = 0
+                    else:
+                        depths = dataset.groups['MetaData']['depth'][:]
                     ocean_basins = dataset.groups['MetaData']['oceanBasin'][:]
 
                     # Read observation data
@@ -136,8 +139,10 @@ class ObsStats:
                             continue
 
                         obs_values = dataset.groups['ObsValue'][variable_name][:]
-                        hofx_values = dataset.groups['hofx0'][variable_name][:]  # background
+                        #hofx_values = dataset.groups['hofx0'][variable_name][:]  # background ; letkf only has this for each ens mem, not for ensmean
                         obs_errors = dataset.groups['ObsError'][variable_name][:]
+
+                        innov = dataset.groups[bganl][variable_name][:] ## this works for both 3dvar and letkf;  can use OMAN or OMBG (lowercase)
 
                         # Quality control
                         if 'EffectiveQC0' in dataset.groups and variable_name in dataset.groups['EffectiveQC0'].variables:
@@ -149,7 +154,7 @@ class ObsStats:
                         continue
 
                     # Calculate observation minus background
-                    ombg = obs_values - hofx_values
+                    #ombg = obs_values - hofx_values ## this does not work for LETKF
 
                     # Process each depth layer and ocean basin combination
                     for depth_min, depth_max in depth_layers:
@@ -176,37 +181,37 @@ class ObsStats:
                             #       f"({get_ocean_basin_name(int(basin_code))}) in {depth_min}-{depth_max}m")
 
                             # Extract data for this combination
-                            ombg_subset = ombg[combined_mask]
+                            innov_subset = innov[combined_mask]
                             obs_err_subset = obs_errors[combined_mask]
                             qc_subset = qc_flags[combined_mask]
 
                             # Remove fill values and invalid data
-                            valid_mask = (~np.isnan(ombg_subset)
+                            valid_mask = (~np.isnan(innov_subset)
                                           & ~np.isnan(obs_err_subset)
-                                          & np.isfinite(ombg_subset)
+                                          & np.isfinite(innov_subset)
                                           & np.isfinite(obs_err_subset))
 
                             if np.sum(valid_mask) == 0:
                                 continue
 
-                            ombg_valid = ombg_subset[valid_mask]
+                            innov_valid = innov_subset[valid_mask]
                             obs_err_valid = obs_err_subset[valid_mask]
                             qc_valid = qc_subset[valid_mask]
 
                             # Compute statistics for all data (no QC)
-                            rmse_noqc = np.sqrt(np.mean(ombg_valid**2))
-                            bias_noqc = np.mean(ombg_valid)
-                            count_noqc = len(ombg_valid)
+                            rmse_noqc = np.sqrt(np.mean(innov_valid**2))
+                            bias_noqc = np.mean(innov_valid)
+                            count_noqc = len(innov_valid)
                             obs_err_mean_noqc = np.mean(obs_err_valid)
 
                             # Compute statistics for QC'd data (assuming QC=0 is good)
                             qc_good_mask = qc_valid == 0
                             if np.sum(qc_good_mask) > 0:
-                                ombg_qc = ombg_valid[qc_good_mask]
+                                innov_qc = innov_valid[qc_good_mask]
                                 obs_err_qc = obs_err_valid[qc_good_mask]
-                                rmse_qc = np.sqrt(np.mean(ombg_qc**2))
-                                bias_qc = np.mean(ombg_qc)
-                                count_qc = len(ombg_qc)
+                                rmse_qc = np.sqrt(np.mean(innov_qc**2))
+                                bias_qc = np.mean(innov_qc)
+                                count_qc = len(innov_qc)
                                 obs_err_mean_qc = np.mean(obs_err_qc)
                             else:
                                 rmse_qc = bias_qc = count_qc = obs_err_mean_qc = np.nan
@@ -218,7 +223,7 @@ class ObsStats:
                             # No QC record
                             all_stats.append({
                                 'Exp': exp_name,
-                                'Variable': 'ombg_noqc',
+                                'Variable': f'{bganl}_noqc',
                                 'Ocean': basin_name,
                                 'DepthLayer': depth_layer,
                                 'date': file_date,
@@ -232,7 +237,7 @@ class ObsStats:
                             # QC record
                             all_stats.append({
                                 'Exp': exp_name,
-                                'Variable': 'ombg_qc',
+                                'Variable': f'{bganl}_qc',
                                 'Ocean': basin_name,
                                 'DepthLayer': depth_layer,
                                 'date': file_date,
@@ -274,7 +279,7 @@ class ObsStats:
 
         # Get unique experiments
         experiments = filtered_data['Exp'].unique()
-        experiments.sort()
+        #experiments.sort()
         print(experiments)
 
         # Plot settings
@@ -295,12 +300,12 @@ class ObsStats:
             # Plot RMSE, obs error, obs error + spread
             axs[0].plot(exp_data['date'], exp_data['RMSE'], marker='o', linestyle='-',
                         color=colors[exp_counter], linewidth=2, label='RMSE ' + exp)
-            if (exp.endswith("letkf")):
-                axs[0].plot(exp_data['date'], exp_data['EnsStd'] + exp_data['ObsErr'], marker='x', linestyle='--',
-                            color=colors[exp_counter], linewidth=2, label='EnsStd+ObsErr ' + exp)
-            if (exp.endswith("letkf")):
-                axs[0].plot(exp_data['date'], exp_data['EnsStd'], marker='s', linestyle='-',
-                            color=colors[exp_counter], linewidth=2, label='EnsStd ' + exp)
+            #if (exp.endswith("letkf")): ## comment for now
+            #    axs[0].plot(exp_data['date'], exp_data['EnsStd'] + exp_data['ObsErr'], marker='x', linestyle='--',
+            #                color=colors[exp_counter], linewidth=2, label='EnsStd+ObsErr ' + exp)
+            #if (exp.endswith("letkf")):
+            #    axs[0].plot(exp_data['date'], exp_data['EnsStd'], marker='s', linestyle='-',
+            #                color=colors[exp_counter], linewidth=2, label='EnsStd ' + exp)
             axs[0].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H'))
             axs[0].xaxis.set_major_locator(mdates.DayLocator())
             axs[0].tick_params(labelbottom=False)
@@ -348,7 +353,8 @@ if __name__ == "__main__":
         "./gdassoca_obsstats.py --exps cp1/COMROOT/cp1 --inst sst_abi_g16_l3c --dirout output",
         "# NetCDF mode with depth layers:",
         "./gdassoca_obsstats.py --source netcdf --exps cp1/COMROOT/cp1 --inst 'insitu_temp*' --dirout output",
-        "./gdassoca_obsstats.py --source netcdf --depth-layers 0-10 10-50 --dirout output"
+        "./gdassoca_obsstats.py --source netcdf --depth-layers 0-10 10-50 --dirout output",
+        "./gdassoca_obsstats.py --source netcdf  --exps cp1/COMROOT/cp1 --inst 'sst*' --both --bganl oman --dirout output"
     ]
     parser = argparse.ArgumentParser(description="Observation space RMSE's and BIAS's",
                                      formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -363,15 +369,20 @@ if __name__ == "__main__":
     )
     parser.add_argument("--dirout", required=True, help="Output directory")
     parser.add_argument("--letkf", action="store_true", help="Generate stats for LETKF diag files")
+    parser.add_argument("--both", action="store_true", help="Generate stats for both 3DVar and LETKF diag files")
     parser.add_argument("--source", choices=['csv', 'netcdf'], default='csv',
                         help="Data source: 'csv' for pre-computed stats or 'netcdf' for original data")
     parser.add_argument("--depth-layers", nargs='*', default=['0-10'],
                         help="Depth layers to process (format: 'min-max', e.g., '0-10' '10-50')")
+    parser.add_argument("--bganl", required=False, choices=['ombg', 'oman'], default='ombg',
+                        help="Choice for ob diags: 'ombg' for background or 'oman' for analysis")
     args = parser.parse_args()
 
     insts = []
     inst = args.inst if args.inst else "*"  # Use wildcard if no instrument specified
     os.makedirs(args.dirout, exist_ok=True)
+
+    bganl = args.bganl if args.bganl else 'ombg'
 
     # Parse depth layers
     depth_layers = []
@@ -407,8 +418,8 @@ if __name__ == "__main__":
             print(f"Found files: {flist}")
             for fname in flist:
                 inst_name = get_inst(fname)
-                # Only process insitu temperature and salinity for now
-                if 'insitu_temp' in inst_name or 'insitu_salt' in inst_name:
+                # Only process insitu temperature and salinity for now (and sst)
+                if 'insitu_temp' in inst_name or 'insitu_salt' in inst_name or 'sst' in inst_name:
                     insts.append(inst_name)
     insts = list(set(insts))
     insts.sort()
@@ -431,10 +442,6 @@ if __name__ == "__main__":
 
         else:  # netcdf
             for exp in args.exps:
-                exp_name = os.path.basename(exp.rstrip('/'))
-                wc = exp + f'/*.*/??/analysis/ocean/diags/*{inst}*.nc'
-                flist = glob.glob(wc)
-
                 # Determine variable name from instrument
                 if 'temp_profile' in inst:
                     var_name = 'waterTemperature'
@@ -442,25 +449,47 @@ if __name__ == "__main__":
                     var_name = 'seaSurfaceTemperature'
                 elif 'salt' in inst:
                     var_name = 'salinity'
+                elif 'sst' in inst:
+                    var_name = 'seaSurfaceTemperature' 
                 else:
                     print(f"Unknown variable type for {inst}")
                     continue
 
-                obsStats.read_netcdf(flist, exp_name, var_name, depth_layers)
+                if args.both:
+                    wc_3dvar = exp + f'/gdas.*/??/analysis/ocean/diags/*{inst}*.nc'
+                    exp_name = os.path.basename(exp.rstrip('/')) + '_3dvar'
+                    flist = glob.glob(wc_3dvar)
+                    obsStats.read_netcdf(flist, exp_name, var_name, depth_layers)
+
+                    wc_letkf = exp + f'/enkfgdas.*/??/ensstat/analysis/ocean/*{inst}*.nc'
+                    exp_name = os.path.basename(exp.rstrip('/')) + '_letkf'
+                    flist = glob.glob(wc_letkf)
+                    print(flist)
+                    obsStats.read_netcdf(flist, exp_name, var_name, depth_layers)
+                elif args.letkf:
+                    wc = exp + f'/enkfgdas.*/??/ensstat/analysis/ocean/*{inst}*.nc'
+                    exp_name = os.path.basename(exp.rstrip('/'))
+                    flist = glob.glob(wc)
+                    obsStats.read_netcdf(flist, exp_name, var_name, depth_layers)
+                else: 
+                    wc = exp + f'/gdas.*/??/analysis/ocean/diags/*{inst}*.nc'
+                    exp_name = os.path.basename(exp.rstrip('/'))
+                    flist = glob.glob(wc)
+                    obsStats.read_netcdf(flist, exp_name, var_name, depth_layers)
 
         # Generate plots
         if args.source == 'netcdf':
             # For NetCDF, iterate over depth layers
             for depth_min, depth_max in depth_layers:
                 depth_layer = f"{int(depth_min)}-{int(depth_max)}m"
-                for var, ocean in product(['ombg_noqc', 'ombg_qc'],
+                for var, ocean in product([f'{bganl}_noqc', f'{bganl}_qc'],
                                           ['Global', 'Atlantic', 'Pacific', 'Indian', 'Arctic', 'Southern']):
                     print(f"OCEAN: {ocean}, DEPTH: {depth_layer}")
                     experiments.extend(obsStats.plot_timeseries(
                         ocean, var, inst=inst, dirout=args.dirout, depth_layer=depth_layer))
         else:
             # For CSV, use original logic
-            for var, ocean in product(['ombg_noqc', 'ombg_qc'],
+            for var, ocean in product([f'{bganl}_noqc', f'{bganl}_qc'],
                                       ['Global', 'Atlantic', 'Pacific', 'Indian', 'Arctic', 'Southern']):
                 print(f"OCEAN: {ocean}")
                 experiments.extend(obsStats.plot_timeseries(ocean, var, inst=inst, dirout=args.dirout))
