@@ -72,7 +72,8 @@ def plot_vertical_profile(ix, iy, lon2d, lat2d, data, depth, ax_profile, is_atmo
 def load_obsfile(obsfile, longitude_max=None, variable='Temp'):
     print(f"Loading observation file: {obsfile}")
     print(f"Longitude min: {longitude_max}")
-    var_map = {'Temp': 'waterTemperature', 'Salt': 'salinity', 'u': 'waterU', 'v': 'waterV'}
+    var_map = {'Temp': 'waterTemperature', 'Salt': 'salinity', 'u': 'waterU', 'v': 'waterV',
+               'SST': 'seaSurfaceTemperature'}
     nc_var = var_map[variable]
     with Dataset(obsfile, 'r') as f:
         lat_obs = f.groups['MetaData'].variables['latitude'][:]
@@ -309,11 +310,14 @@ def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_varianc
         raise ValueError("Could not find vertical dimension (tried 'z_l', 'zl', and 'zaxis_1')")
     dsg.close()
 
+    # Map SST to Temp for model file lookup (SST uses top-level Temp)
+    model_varname = 'Temp' if oceanvarname == 'SST' else oceanvarname
+
     ds = xr.open_dataset(oceanfile)
     if 'time' in ds.dims:
-        data = ds[oceanvarname].isel(time=0)
+        data = ds[model_varname].isel(time=0)
     elif 'Time' in ds.dims:
-        data = ds[oceanvarname].isel(Time=0)
+        data = ds[model_varname].isel(Time=0)
     else:
         raise ValueError("Could not find time dimension (tried both 'time' and 'Time')")
     data = data * mask3d
@@ -416,6 +420,9 @@ def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_varianc
             ax_obs.plot(model_profile, model_depth, '.-', color='tab:purple',
                        label='Bkg Error', markersize=8)
         ax_obs.invert_yaxis()
+        # Limit y-axis to the max observation depth
+        max_obs_depth = float(np.nanmax(obs_depths))
+        ax_obs.set_ylim(max_obs_depth * 1.05, 0)
         ax_obs.set_xlabel(f'Innovation / Increment ({units})')
         ax_obs.set_ylabel('Depth (m)')
         ax_obs.set_title(f'OMB/OMA/Increment at lon={obs_lon:.2f}, lat={obs_lat:.2f}')
@@ -469,6 +476,12 @@ def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_varianc
                                         bkg_at_obs + bkgerr_at_obs,
                                         color='tab:green', alpha=0.2, label='Bkg ± Bkg Error')
         ax_obsval.invert_yaxis()
+        # Set x-axis limits based on obs values with padding
+        obs_padding = 1.0 if oceanvarname == 'Salt' else 2.0  # ±1 PSU or ±2°C
+        finite_obs = obs_values[np.isfinite(obs_values)]
+        if len(finite_obs) > 0:
+            ax_obsval.set_xlim(float(np.nanmin(finite_obs)) - obs_padding,
+                               float(np.nanmax(finite_obs)) + obs_padding)
         ax_obsval.set_xlabel(f'Obs Value ({units})')
         ax_obsval.set_ylabel('Depth (m)')
         ax_obsval.set_title('Obs Value')
@@ -2097,6 +2110,9 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
                 ax_obs.plot(model_profile, model_depth, '.-', color='tab:purple',
                            label='Bkg Error', markersize=8)
             ax_obs.invert_yaxis()
+            # Limit y-axis to the max observation depth
+            max_obs_depth = float(np.nanmax(depth_values))
+            ax_obs.set_ylim(max_obs_depth * 1.05, 0)
             ax_obs.set_xlabel(f'Innovation / Increment ({units})')
             ax_obs.set_ylabel('Depth (m)')
             ax_obs.set_title(f'OMB/OMA/Increment at lon={obs["lon"][iobs]:.2f}, lat={obs["lat"][iobs]:.2f}')
@@ -2154,6 +2170,12 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
                                             bkg_at_obs + bkgerr_at_obs,
                                             color='tab:green', alpha=0.2, label='Bkg ± Bkg Error')
             ax_obsval.invert_yaxis()
+            # Set x-axis limits based on obs values with padding
+            obs_padding = 1.0 if oceanvarname == 'Salt' else 2.0  # ±1 PSU or ±2°C
+            finite_obs = obs_value[np.isfinite(obs_value)]
+            if len(finite_obs) > 0:
+                ax_obsval.set_xlim(float(np.nanmin(finite_obs)) - obs_padding,
+                                   float(np.nanmax(finite_obs)) + obs_padding)
             ax_obsval.set_xlabel(f'Obs Value ({units})')
             ax_obsval.set_ylabel('Depth (m)')
             ax_obsval.set_title('Obs Value')

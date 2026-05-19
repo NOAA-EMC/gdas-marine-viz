@@ -2,19 +2,30 @@
 #
 # Generate Interactive HTML Map for Ocean Observations
 #
-# Usage: ./generate_html_map.sh
+# Usage: ./generate_html_map.sh [yyyy] [mm] [dd] [cyc] [expname] [--skip-png]
 #
 
 set -e  # Exit on error
 
+# Check for --skip-png flag
+SKIP_PNG=false
+remaining_args=()
+for arg in "$@"; do
+    if [ "$arg" = "--skip-png" ]; then
+        SKIP_PNG=true
+    else
+        remaining_args+=("$arg")
+    fi
+done
+
 # User configuration
 # ------------------
 # Default values
-yyyy="${1:-2024}"
-mm="${2:-09}"
-dd="${3:-28}"
-cyc="${4:-00}"
-expname="${5:-retrov17_01_stream2}"
+yyyy="${remaining_args[0]:-2024}"
+mm="${remaining_args[1]:-09}"
+dd="${remaining_args[2]:-28}"
+cyc="${remaining_args[3]:-00}"
+expname="${remaining_args[4]:-retrov17_01_stream2}"
 
 
 cycle="gdas.${yyyy}-${mm}-${dd}-${cyc}z"
@@ -46,29 +57,32 @@ mkdir -p scratch-${expname}-${cycle}
 cd scratch-${expname}-${cycle}
 
 echo "Step 1/3: Generating profile plots..."
+if [ "$SKIP_PNG" = true ]; then
+    echo "  --skip-png: Skipping PNG generation, jumping to HTML..."
+else
+
+#obs_sources="argo glider pirata rama taotriton tesac"
+obs_sources="argo glider pirata rama taotriton tesac"
 for var in Salt Temp; do
-    if [ "$var" = "Salt" ]; then
-        obsfile="insitu_salt_profile_argo.nc"
-    else
-        obsfile="insitu_temp_profile_argo.nc"
-    fi
-    if [ ! -f "${diags_dir}/${obsfile}" ]; then
-        echo "Skipping ${obsfile} as it does not exist."
-        continue
-    fi
-    python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
-        --oceanfile ${ocn_bkg} \
-        --gridfile ${soca_grid} \
-        --oceanvarname "$var" \
-        --hfile ${ocn_bkg} \
-        --obsfile "${diags_dir}/${obsfile}" \
-        --batch_obs_profiles \
-        --model_field_type bkgerr \
-        --oceanfile ${ocn_bkgerr_parametric} \
-        --gridfile ${soca_grid_lowres} \
-        --hfile ${soca_h_lowres}
-#--no_plot_background
+    for src in $obs_sources; do
+        obsfile="insitu_${var,,}_profile_${src}.nc"
+        if [ ! -f "${diags_dir}/${obsfile}" ]; then
+            echo "Skipping ${obsfile} as it does not exist."
+            continue
+        fi
+        python3 "${marineviz_dir}/applications/aquaslice/aquaslice.py" \
+            --oceanfile ${ocn_bkgerr_parametric} \
+            --gridfile ${soca_grid_lowres} \
+            --oceanvarname "$var" \
+            --hfile ${soca_h_lowres} \
+            --obsfile "${diags_dir}/${obsfile}" \
+            --batch_obs_profiles \
+            --model_field_type bkgerr
+    done
 done
+
+# Surface observations are handled directly as map markers (like drifters),
+# not as profile PNGs. See --ndbc-file and --drifter-file in generate_map.py.
 
 # Loop over background and increments
 for ocn_type in bkg jedi_inc mom6_inc; do
@@ -426,9 +440,12 @@ for dir in sections_bkg sections_jedi_inc sections_mom6_inc sections_ocn_bkgerr 
     fi
 done
 
+fi  # end of SKIP_PNG check
+
 echo "Step 3/3: Generating HTML map..."
 python3 "${marineviz_dir}/applications/interactive_html/generate_map.py" \
             --drifter-file "${diags_dir}/insitu_temp_surface_drifter.nc" \
+            --ndbc-file "${diags_dir}/insitu_temp_surface_ndbc.nc" \
             --cycle-name "$cycle" \
             --sections-dir "sections_bkg" \
             --sections-jedi-inc-dir "sections_jedi_inc" \

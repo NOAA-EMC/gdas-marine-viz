@@ -25,8 +25,9 @@ except ImportError:
 
 def parse_filename(filename):
     """Extract variable, platform, profile ID, longitude, and latitude from filename"""
-    # Pattern: insitu_salt_profile_argo_obs_profile_00000_lon-69.02_lat17.62.png
-    pattern = r'insitu_(\w+)_profile_(\w+)_obs_profile_(\d+)_lon(-?\d+\.?\d*)_lat(-?\d+\.?\d*)\.png'
+    # Profile obs:  insitu_salt_profile_argo_obs_profile_00000_lon-69.02_lat17.62.png
+    # Surface obs:  insitu_temp_surface_ndbc_obs_profile_00000_lon-69.02_lat17.62.png
+    pattern = r'insitu_(\w+)_(?:profile|surface)_(\w+)_obs_profile_(\d+)_lon(-?\d+\.?\d*)_lat(-?\d+\.?\d*)\.png'
     match = re.match(pattern, filename)
     if match:
         variable = match.group(1)
@@ -50,7 +51,14 @@ def get_all_profiles(profile_dir='obs_profiles'):
 
     # Platform name mapping
     platform_names = {
-        'argo': 'Argo'
+        'argo': 'Argo',
+        'glider': 'Glider',
+        'pirata': 'PIRATA',
+        'rama': 'RAMA',
+        'taotriton': 'TAO/TRITON',
+        'tesac': 'TESAC',
+        'ndbc': 'NDBC',
+        'drifter': 'Drifter',
     }
 
     if not os.path.exists(profile_dir):
@@ -104,8 +112,25 @@ def get_all_profiles(profile_dir='obs_profiles'):
     return profiles
 
 
-def get_drifter_data(nc_file='obs_profiles/insitu_temp_surface_drifter.nc'):
-    """Read surface drifter data from NetCDF file"""
+def get_surface_obs_data(nc_file, platform_name='Surface Drifter'):
+    """Read surface observation data (drifter, NDBC, etc.) from NetCDF file.
+
+    All insitu surface obs files share the same IODA structure:
+      MetaData/{longitude, latitude}, ombg/seaSurfaceTemperature,
+      oman/seaSurfaceTemperature, EffectiveQC0/seaSurfaceTemperature.
+
+    Parameters
+    ----------
+    nc_file : str
+        Path to the NetCDF file.
+    platform_name : str
+        Human-readable platform label stored with each observation.
+
+    Returns
+    -------
+    list[dict]
+        List of observation dicts with keys: lon, lat, ombg, oman, qc, platform.
+    """
     if nc is None:
         print("Warning: netCDF4 not available. Install with: pip install netCDF4")
         return []
@@ -132,8 +157,7 @@ def get_drifter_data(nc_file='obs_profiles/insitu_temp_surface_drifter.nc'):
 
         dataset.close()
 
-        # Create drifter data list
-        drifters = []
+        obs_list = []
         for i in range(len(lons)):
             # Skip if any value is fill value or invalid
             if np.ma.is_masked(lons[i]) or np.ma.is_masked(lats[i]) or np.ma.is_masked(ombg[i]):
@@ -141,20 +165,25 @@ def get_drifter_data(nc_file='obs_profiles/insitu_temp_surface_drifter.nc'):
             if not np.isfinite(lons[i]) or not np.isfinite(lats[i]) or not np.isfinite(ombg[i]):
                 continue
 
-            # Convert temperature from Kelvin to Celsius (assuming data is in K)
-            # OMB and OMA values remain the same (they're already temperature differences)
-            drifters.append({
+            obs_list.append({
                 'lon': round(float(lons[i]), 3),
                 'lat': round(float(lats[i]), 3),
                 'ombg': round(float(ombg[i]), 4),
                 'oman': round(float(oman[i]), 4) if not np.ma.is_masked(oman[i]) and np.isfinite(oman[i]) else None,
-                'qc': int(qc_flags[i]) if not np.ma.is_masked(qc_flags[i]) else None
+                'qc': int(qc_flags[i]) if not np.ma.is_masked(qc_flags[i]) else None,
+                'platform': platform_name
             })
 
-        return drifters
+        return obs_list
     except Exception as e:
         print(f"Error reading {nc_file}: {e}")
         return []
+
+
+# Backward-compatible alias
+def get_drifter_data(nc_file='obs_profiles/insitu_temp_surface_drifter.nc'):
+    """Read surface drifter data from NetCDF file (legacy wrapper)."""
+    return get_surface_obs_data(nc_file, platform_name='Surface Drifter')
 
 
 def load_sst_rasters_metadata(metadata_file='sst_rasters_metadata.json'):
@@ -524,8 +553,12 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
                   section_images_ocn_bkgerr=None,
                   surface_plots_ocn_ens_spread=None, surface_plots_ice_ens_spread=None,
                   section_images_ocn_ens_spread=None,
-                  colorbars=None, surface_stats=None):
+                  colorbars=None, surface_stats=None,
+                  ndbc_buoys=None):
     """Generate HTML map with all features"""
+
+    if ndbc_buoys is None:
+        ndbc_buoys = []
 
     # Convert satellite metadata to the format expected by HTML
     satellite_rasters_js = {}
@@ -1272,8 +1305,9 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
     <div class="info-box">
         <h3>Ocean Observations</h3>
         {'<p><strong>Cycle:</strong> ' + cycle_name + '</p>' if cycle_name else ''}
-        <p><strong>Argo Profiles:</strong> <span id="profile-count">0</span></p>
+        <p><strong>Insitu Profiles:</strong> <span id="profile-count">0</span></p>
         <p><strong>Surface Drifters:</strong> <span id="drifter-count">{len(drifters)}</span></p>
+        <p><strong>NDBC Buoys:</strong> <span id="ndbc-count">{len(ndbc_buoys)}</span></p>
         <p><strong>SST Satellites:</strong> <span id="sst-count">{sst_count}</span></p>
         <p><strong>Altimetry:</strong> <span id="altimetry-count">{altimetry_count}</span></p>
         <p><strong>Sea Ice:</strong> <span id="seaice-count">{seaice_count}</span></p>
@@ -1299,13 +1333,14 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
 
     <div class="legend-box">
         <h4>Platforms</h4>
-        <div class="legend-box-item">
-            <div class="legend-box-color" style="background-color: #0078d7;"></div>
-            <span class="legend-box-label">Argo Profiles</span>
-        </div>
+        <div id="platform-legend-items"></div>
         <div class="legend-box-item">
             <div class="legend-box-color" style="background-color: #666; width: 6px; height: 6px;"></div>
-            <span class="legend-box-label">Surface Drifters</span>
+            <span class="legend-box-label">Surface Drifters (OMB)</span>
+        </div>
+        <div class="legend-box-item">
+            <div class="legend-box-color" style="background-color: #a6761d; width: 6px; height: 6px;"></div>
+            <span class="legend-box-label">NDBC Buoys (OMB)</span>
         </div>
     </div>
 
@@ -1315,6 +1350,9 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
 
         // Drifter data
         const drifters = {json.dumps(drifters)};
+
+        // NDBC buoy data
+        const ndbcBuoys = {json.dumps(ndbc_buoys)};
 
         // Satellite raster data (SST and sea ice) - base64 embedded for map overlays
         const satelliteRasters = {json.dumps(satellite_rasters_js)};
@@ -1673,12 +1711,29 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
             `;
         }}        // Platform-specific marker colors and icons
         const platformColors = {{
-            'Argo': '#0078d7'
+            'Argo': '#0078d7',
+            'Glider': '#e6550d',
+            'PIRATA': '#31a354',
+            'RAMA': '#756bb1',
+            'TAO/TRITON': '#e7298a',
+            'TESAC': '#66c2a5',
+            'NDBC': '#a6761d',
+            'Drifter': '#666666'
         }};
 
-        // Create layer groups for different observation types
-        const argoLayer = L.layerGroup();
+        // Discover unique platforms from profile data and create per-platform layer groups
+        const platformSet = new Set();
+        profiles.forEach(p => platformSet.add(p.platform));
+        const platformLayers = {{}};
+        platformSet.forEach(name => {{
+            platformLayers[name] = L.layerGroup();
+        }});
+
+        // Create layer group for drifters
         const drifterLayer = L.layerGroup();
+
+        // Create layer group for NDBC buoys
+        const ndbcLayer = L.layerGroup();
 
         // Function to create colored circle marker icon
         function createMarkerIcon(color) {{
@@ -1760,13 +1815,47 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
             }});
         }});
 
+        // Add NDBC buoy markers with color based on ombg
+        ndbcBuoys.forEach(buoy => {{
+            const color = getOmbgColor(buoy.ombg);
+            const buoyIcon = createDrifterIcon(color);
+
+            const marker = L.marker([buoy.lat, buoy.lon], {{ icon: buoyIcon }})
+                .addTo(ndbcLayer);
+
+            const omaText = buoy.oman !== null ? buoy.oman.toFixed(3) : 'N/A';
+            const qcText = buoy.qc !== null ? buoy.qc : 'N/A';
+
+            const popupContent = `
+                <div class="profile-info">
+                    <strong>Platform:</strong> ${{buoy.platform}}<br>
+                    <strong>OMB:</strong> ${{buoy.ombg.toFixed(3)}} °C<br>
+                    <strong>OMA:</strong> ${{omaText}} °C<br>
+                    <strong>QC Flag:</strong> ${{qcText}}<br>
+                    <strong>Longitude:</strong> ${{buoy.lon.toFixed(2)}}°<br>
+                    <strong>Latitude:</strong> ${{buoy.lat.toFixed(2)}}°<br>
+                </div>
+            `;
+
+            marker.bindPopup(popupContent, {{
+                maxWidth: 300,
+                minWidth: 200
+            }});
+
+            marker.bindTooltip(`NDBC OMB: ${{buoy.ombg.toFixed(2)}}°C<br>Lon: ${{buoy.lon.toFixed(2)}}°, Lat: ${{buoy.lat.toFixed(2)}}°`, {{
+                permanent: false,
+                direction: 'top',
+                offset: [0, -3]
+            }});
+        }});
+
         // Add markers for each profile
         profiles.forEach(profile => {{
             const color = platformColors[profile.platform] || '#666666';
             const profileIcon = createMarkerIcon(color);
 
             const marker = L.marker([profile.lat, profile.lon], {{ icon: profileIcon }})
-                .addTo(argoLayer);
+                .addTo(platformLayers[profile.platform] || Object.values(platformLayers)[0]);
 
             // Create popup content with variables displayed side by side
             let variableImages = '<div class="profile-images-container">';
@@ -1816,9 +1905,20 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
         // Update profile count
         document.getElementById('profile-count').textContent = profiles.length;
 
-        // Add layers to map (both visible by default)
-        argoLayer.addTo(map);
+        // Add all platform layers and drifter layer to map (visible by default)
+        Object.values(platformLayers).forEach(layer => layer.addTo(map));
         drifterLayer.addTo(map);
+        ndbcLayer.addTo(map);
+
+        // Populate platform legend dynamically
+        const legendContainer = document.getElementById('platform-legend-items');
+        Object.keys(platformLayers).forEach(name => {{
+            const color = platformColors[name] || '#666666';
+            const item = document.createElement('div');
+            item.className = 'legend-box-item';
+            item.innerHTML = `<div class="legend-box-color" style="background-color: ${{color}};"></div><span class="legend-box-label">${{name}}</span>`;
+            legendContainer.appendChild(item);
+        }});
 
         // Create satellite raster overlays (SST and sea ice)
         const satelliteOverlays = {{}};
@@ -1853,15 +1953,22 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
             ensspread: []
         }};
 
-        // Add Argo and Drifter layers to observations
-        layersByCategory.observations.push({{
-            name: 'Argo Profiles',
-            layer: argoLayer,
-            visible: true
+        // Add per-platform insitu layers to observations
+        Object.keys(platformLayers).forEach(name => {{
+            layersByCategory.observations.push({{
+                name: name + ' Profiles',
+                layer: platformLayers[name],
+                visible: true
+            }});
         }});
         layersByCategory.observations.push({{
             name: 'Surface Drifters',
             layer: drifterLayer,
+            visible: true
+        }});
+        layersByCategory.observations.push({{
+            name: 'NDBC Buoys',
+            layer: ndbcLayer,
             visible: true
         }});
 
@@ -2192,6 +2299,7 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
     print(f"Generated {output_file}")
     print(f"  - {len(profiles)} Argo profiles")
     print(f"  - {len(drifters)} surface drifters")
+    print(f"  - {len(ndbc_buoys)} NDBC buoys")
     print(f"  - {sst_count} SST satellite layers")
     print(f"  - {altimetry_count} altimetry layers")
     print(f"  - {seaice_count} sea ice layers")
@@ -2237,6 +2345,10 @@ Examples:
     parser.add_argument('--drifter-file',
                         default='obs_profiles/insitu_temp_surface_drifter.nc',
                         help='Path to drifter NetCDF file (default: obs_profiles/insitu_temp_surface_drifter.nc)')
+
+    parser.add_argument('--ndbc-file',
+                        default=None,
+                        help='Path to NDBC buoy NetCDF file (optional)')
 
     parser.add_argument('--raster-metadata',
                         default='output/satellite_rasters_metadata.json',
@@ -2336,6 +2448,13 @@ Examples:
     print("\nReading drifter data...")
     drifters = get_drifter_data(nc_file=args.drifter_file)
     print(f"Found {len(drifters)} surface drifters")
+
+    # Get NDBC buoy data
+    ndbc_buoys = []
+    if args.ndbc_file:
+        print("\nReading NDBC buoy data...")
+        ndbc_buoys = get_surface_obs_data(args.ndbc_file, platform_name='NDBC')
+        print(f"Found {len(ndbc_buoys)} NDBC buoys")
 
     # Load surface plots for all three types
     print("\nScanning for surface plot images...")
@@ -2742,7 +2861,8 @@ Examples:
                   surface_plots_ice_ens_spread=surface_plots_ice_ens_spread,
                   section_images_ocn_ens_spread=section_images_ocn_ens_spread,
                   colorbars=colorbars,
-                  surface_stats=surface_stats)
+                  surface_stats=surface_stats,
+                  ndbc_buoys=ndbc_buoys)
 
     print(f"\nDone! Open {output_path} in a web browser.")
 
