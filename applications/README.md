@@ -31,7 +31,21 @@ A diagnostic application for generating figures related to state-space and obs-s
   - `gen_eva_obs_yaml.py` (generates configuration file for EVA)
   - `marine_eva_post.py` (run EVA)
 
-### 5. Obs Maps
+### 5. Obs Stats Deep
+Bins observation minus background (OMB) and observation minus analysis (OMA) statistics for in situ vertical profiles (Argo temperature and salinity), stratified by ocean basin and depth layer.
+
+- **Directory:** `obsstats_deep/`
+- **Main Components:**
+  - `plot_ts.py` (density plots, mean/RMSE profiles, and spatial maps)
+
+### 6. State Stats OSTIA
+Compares GFS background SST and sea-ice concentration against OSTIA L4 analyses, supporting multiple experiment runs side-by-side.
+
+- **Directory:** `statestats_ostia/`
+- **Main Components:**
+  - `compare_sfc_ostia.py` (per-basin time series, spatial maps, ice extent, and IIEE)
+
+### 7. Obs Maps
 Creates multiple frames containing maps of obs values for now.
 
 - **Directory:** `obsstats_maps/`
