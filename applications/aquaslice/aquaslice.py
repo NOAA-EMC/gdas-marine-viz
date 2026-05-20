@@ -10,6 +10,44 @@ import tarfile
 from tqdm import tqdm
 
 
+# UFO QC flag descriptions (from ufo/filters/QCflags.h)
+QC_FLAG_NAMES = {
+    0:  ('pass',             'observation accepted'),
+    1:  ('passive',          'H(x) computed but not assimilated'),
+    10: ('missing',          'missing values prevent use'),
+    11: ('preQC',            'rejected by pre-processing'),
+    12: ('bounds',           'value out of bounds'),
+    13: ('domain',           'not within domain of use'),
+    14: ('black',            'black listed'),
+    15: ('Hfailed',          'H(x) computation failed'),
+    16: ('thinned',          'removed due to thinning'),
+    17: ('diffref',          'metadata too far from reference'),
+    18: ('clw',              'removed due to cloud field'),
+    19: ('fguess',           'too far from guess'),
+    20: ('seaice',           'sea ice/land detection'),
+    21: ('track',            'inconsistent with rest of track'),
+    22: ('buddy',            'rejected by buddy check'),
+    23: ('derivative',       'metadata derivative value'),
+    24: ('profile',          'rejected by profile QC check'),
+    25: ('onedvar',          'failed 1D-Var convergence'),
+    26: ('bayesianQC',       'failed Bayesian background check'),
+    27: ('modelobthresh',    'failed model-ob threshold check'),
+    28: ('history',          'failed historical data comparison'),
+    29: ('processed',        'processed, H(x) not calculated'),
+    30: ('superrefraction',  'GNSSRO super refraction QC'),
+    31: ('superob',          'superob value not set'),
+}
+
+
+def qc_flag_label(flag):
+    """Return a human-readable label for a QC flag integer."""
+    entry = QC_FLAG_NAMES.get(int(flag))
+    if entry is not None:
+        name, desc = entry
+        return f"{int(flag)} ({name}: {desc})"
+    return f"{int(flag)} (unknown)"
+
+
 def plot_vertical_profile(ix, iy, lon2d, lat2d, data, depth, ax_profile, is_atmos=False):
     # Handle both xarray and numpy arrays for lon2d/lat2d
     lon_val = lon2d[iy, ix].values if hasattr(lon2d[iy, ix], 'values') else lon2d[iy, ix]
@@ -34,7 +72,8 @@ def plot_vertical_profile(ix, iy, lon2d, lat2d, data, depth, ax_profile, is_atmo
 def load_obsfile(obsfile, longitude_max=None, variable='Temp'):
     print(f"Loading observation file: {obsfile}")
     print(f"Longitude min: {longitude_max}")
-    var_map = {'Temp': 'waterTemperature', 'Salt': 'salinity', 'u': 'waterU', 'v': 'waterV'}
+    var_map = {'Temp': 'waterTemperature', 'Salt': 'salinity', 'u': 'waterU', 'v': 'waterV',
+               'SST': 'seaSurfaceTemperature'}
     nc_var = var_map[variable]
     with Dataset(obsfile, 'r') as f:
         lat_obs = f.groups['MetaData'].variables['latitude'][:]
@@ -55,6 +94,7 @@ def load_obsfile(obsfile, longitude_max=None, variable='Temp'):
         # Filter: only valid coordinates (keep both accepted and rejected obs)
         valid = (np.isfinite(lat_obs) & np.isfinite(lon_obs) & np.isfinite(depth_obs))
 
+        n_total = len(lat_obs)
         n_valid = np.sum(valid)
         n_accepted = np.sum(valid & (effective_qc == 0))
         n_rejected = np.sum(valid & (effective_qc != 0))
@@ -193,7 +233,7 @@ def load_atmospheric_data(atmfile, varname, level=0):
 
 
 def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_variance, gridfile, obsfile,
-                                      output_dir='obs_profiles', plot_background=True):
+                                      output_dir='obs_profiles', model_field_type='bkgerr'):
     """
     Create observation profiles for all unique observation locations and save as PNG files.
 
@@ -213,18 +253,21 @@ def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_varianc
         IODA observation file with ombg and oman
     output_dir : str
         Directory to save PNG files (default: 'obs_profiles')
-    plot_background : bool
-        Whether to plot the model background (default: True)
+    model_field_type : str or None
+        Type of model field being provided. Options:
+        - 'background' : plot the model field in the Obs Value panel (default)
+        - 'bkgerr'     : plot the model field in the OMB/OMA panel
+        - None         : do not plot the model field
 
     Returns:
     --------
     tarfile_path : str
         Path to the created tar archive
     """
-    print(f"\n{'=' * 70}")
-    print("BATCH PROCESSING: Creating observation profiles for all locations")
-    print(f"Plot background: {plot_background}")
-    print(f"{'=' * 70}\n")
+    print(f"\n{'='*70}")
+    print(f"BATCH PROCESSING: Creating observation profiles for all locations")
+    print(f"Model field type: {model_field_type}")
+    print(f"{'='*70}\n")
 
     if not os.path.exists(oceanfile):
         print(f"Warning: ocean file not found, skipping observation profiles for {oceanvarname}: {oceanfile}")
@@ -267,11 +310,14 @@ def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_varianc
         raise ValueError("Could not find vertical dimension (tried 'z_l', 'zl', and 'zaxis_1')")
     dsg.close()
 
+    # Map SST to Temp for model file lookup (SST uses top-level Temp)
+    model_varname = 'Temp' if oceanvarname == 'SST' else oceanvarname
+
     ds = xr.open_dataset(oceanfile)
     if 'time' in ds.dims:
-        data = ds[oceanvarname].isel(time=0)
+        data = ds[model_varname].isel(time=0)
     elif 'Time' in ds.dims:
-        data = ds[oceanvarname].isel(Time=0)
+        data = ds[model_varname].isel(Time=0)
     else:
         raise ValueError("Could not find time dimension (tried both 'time' and 'Time')")
     data = data * mask3d
@@ -297,7 +343,7 @@ def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_varianc
 
     print(f"Found {len(unique_locations)} unique observation locations")
     print(f"Output directory: {output_dir}/")
-    print("\nCreating profiles...\n")
+    print(f"\nCreating profiles...\n")
 
     # Function to find nearest neighbor index
     def find_nearest_2d(lon2d_vals, lat2d_vals, lon0, lat0):
@@ -351,26 +397,32 @@ def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_varianc
         # Plot accepted observations
         if np.any(accepted_mask):
             ax_obs.plot(ombg_values[accepted_mask], obs_depths[accepted_mask], '.-',
-                        color='tab:green', label='O-B Accepted', markersize=8)
+                       color='tab:green', label='O-B Accepted', markersize=8)
             ax_obs.plot(oman_values[accepted_mask], obs_depths[accepted_mask], '.-',
-                        color='tab:red', label='O-A Accepted', markersize=8)
+                       color='tab:red', label='O-A Accepted', markersize=8)
             ax_obs.plot(increment[accepted_mask], obs_depths[accepted_mask], '.-',
-                        color='tab:orange', label='A-B Accepted', markersize=8)
+                       color='tab:orange', label='A-B Accepted', markersize=8)
 
         # Plot rejected observations with X markers
         if np.any(rejected_mask):
             ax_obs.scatter(ombg_values[rejected_mask], obs_depths[rejected_mask],
-                           marker='x', s=80, color='darkgreen', label='O-B Rejected',
-                           alpha=0.7, linewidths=2)
+                          marker='x', s=80, color='darkgreen', label='O-B Rejected',
+                          alpha=0.7, linewidths=2)
             ax_obs.scatter(oman_values[rejected_mask], obs_depths[rejected_mask],
-                           marker='x', s=80, color='darkred', label='O-A Rejected',
-                           alpha=0.7, linewidths=2)
+                          marker='x', s=80, color='darkred', label='O-A Rejected',
+                          alpha=0.7, linewidths=2)
             ax_obs.scatter(increment[rejected_mask], obs_depths[rejected_mask],
-                           marker='x', s=80, color='darkorange', label='A-B Rejected',
-                           alpha=0.7, linewidths=2)
+                          marker='x', s=80, color='darkorange', label='A-B Rejected',
+                          alpha=0.7, linewidths=2)
 
         ax_obs.axvline(x=0, color='black', linestyle='--', linewidth=0.8, alpha=0.5)
+        if model_field_type == 'bkgerr':
+            ax_obs.plot(model_profile, model_depth, '.-', color='tab:purple',
+                       label='Bkg Error', markersize=8)
         ax_obs.invert_yaxis()
+        # Limit y-axis to the max observation depth
+        max_obs_depth = float(np.nanmax(obs_depths))
+        ax_obs.set_ylim(max_obs_depth * 1.05, 0)
         ax_obs.set_xlabel(f'Innovation / Increment ({units})')
         ax_obs.set_ylabel('Depth (m)')
         ax_obs.set_title(f'OMB/OMA/Increment at lon={obs_lon:.2f}, lat={obs_lat:.2f}')
@@ -380,34 +432,56 @@ def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_varianc
         # Obs value subplot
         # Plot Background and Analysis for all observations (always with solid lines)
         ax_obsval.plot(obs_values - ombg_values, obs_depths, '.-',
-                       color='tab:green', label='Background', markersize=8)
+                      color='tab:green', label='Background', markersize=8)
         ax_obsval.plot(obs_values - oman_values, obs_depths, '.-',
-                       color='tab:red', label='Analysis', markersize=8)
+                      color='tab:red', label='Analysis', markersize=8)
 
         # Plot accepted observations with error bounds (thin dashed lines)
         if np.any(accepted_mask):
             # Main observation line
             ax_obsval.plot(obs_values[accepted_mask], obs_depths[accepted_mask], '.-',
-                           color='tab:blue', label='Obs Accepted', markersize=8)
+                          color='tab:blue', label='Obs Accepted', markersize=8)
             # Upper error bound (obs + error)
             ax_obsval.plot(obs_values[accepted_mask] + obs_errors[accepted_mask],
-                           obs_depths[accepted_mask], '--',
-                           color='tab:blue', linewidth=0.8, alpha=0.5)
+                          obs_depths[accepted_mask], '--',
+                          color='tab:blue', linewidth=0.8, alpha=0.5)
             # Lower error bound (obs - error)
             ax_obsval.plot(obs_values[accepted_mask] - obs_errors[accepted_mask],
-                           obs_depths[accepted_mask], '--',
-                           color='tab:blue', linewidth=0.8, alpha=0.5)
+                          obs_depths[accepted_mask], '--',
+                          color='tab:blue', linewidth=0.8, alpha=0.5)
 
         # Plot rejected observations with X markers (no error bounds)
         if np.any(rejected_mask):
             ax_obsval.scatter(obs_values[rejected_mask], obs_depths[rejected_mask],
-                              marker='x', s=50, color='darkblue', label='Obs Rejected',
-                              alpha=0.7, linewidths=1.5)
+                             marker='x', s=50, color='darkblue', label='Obs Rejected',
+                             alpha=0.7, linewidths=1.5)
 
-        if plot_background:
+        if model_field_type == 'background':
             ax_obsval.plot(model_profile, model_depth, '.-', color='tab:purple',
-                           label="QC'ed Analysis", markersize=8)
+                          label="QC'ed Analysis", markersize=8)
+        elif model_field_type == 'bkgerr':
+            # Interpolate background error from model depths to observation depths
+            model_depth_vals = np.array(model_depth).flatten()
+            model_profile_vals = np.array(model_profile).flatten()
+            valid_model = np.isfinite(model_depth_vals) & np.isfinite(model_profile_vals)
+            if np.any(valid_model):
+                bkgerr_at_obs = np.interp(obs_depths,
+                                          model_depth_vals[valid_model],
+                                          model_profile_vals[valid_model],
+                                          left=np.nan, right=np.nan)
+                # Background at obs depths = ObsValue - O-B
+                bkg_at_obs = obs_values - ombg_values
+                ax_obsval.fill_betweenx(obs_depths,
+                                        bkg_at_obs - bkgerr_at_obs,
+                                        bkg_at_obs + bkgerr_at_obs,
+                                        color='tab:green', alpha=0.2, label='Bkg ± Bkg Error')
         ax_obsval.invert_yaxis()
+        # Set x-axis limits based on obs values with padding
+        obs_padding = 1.0 if oceanvarname == 'Salt' else 2.0  # ±1 PSU or ±2°C
+        finite_obs = obs_values[np.isfinite(obs_values)]
+        if len(finite_obs) > 0:
+            ax_obsval.set_xlim(float(np.nanmin(finite_obs)) - obs_padding,
+                               float(np.nanmax(finite_obs)) + obs_padding)
         ax_obsval.set_xlabel(f'Obs Value ({units})')
         ax_obsval.set_ylabel('Depth (m)')
         ax_obsval.set_title('Obs Value')
@@ -415,14 +489,18 @@ def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_varianc
         ax_obsval.grid()
 
         # QC flag subplot
-        # Use scatter plot to show QC values at each depth
+        # Use scatter plot to show QC values at each depth with human-readable labels
         ax_qc.scatter(qc_values, obs_depths, c='tab:cyan', s=50, alpha=0.7, edgecolors='black')
         ax_qc.invert_yaxis()
         ax_qc.set_xlabel('QC Flag')
         ax_qc.set_ylabel('Depth (m)')
         ax_qc.set_title('Effective QC Flag')
         ax_qc.grid()
-        ax_qc.set_xlim(-0.5, max(1, np.max(qc_values) + 0.5))
+        unique_qc = sorted(set(int(v) for v in qc_values))
+        ax_qc.set_xticks(unique_qc)
+        ax_qc.set_xticklabels([qc_flag_label(v) for v in unique_qc], rotation=45, ha='right', fontsize=8)
+        qc_margin = 0.5
+        ax_qc.set_xlim(min(unique_qc) - qc_margin, max(unique_qc) + qc_margin)
 
         # Statistics table subplot
         ax_stats.axis('off')
@@ -448,7 +526,7 @@ def batch_create_observation_profiles(hfile, oceanfile, oceanvarname, is_varianc
             # Create statistics table
             stats_text = f"""
 Statistics for Profile at ({obs_lon:.2f}°, {obs_lat:.2f}°)
-{'=' * 50}
+{'='*50}
 
 Total observations: {n_obs}
   Accepted (QC=0): {n_accepted}
@@ -473,7 +551,7 @@ Increment (A-B):
         else:
             stats_text = f"""
 Statistics for Profile at ({obs_lon:.2f}°, {obs_lat:.2f}°)
-{'=' * 50}
+{'='*50}
 
 Total observations: {n_obs}
   Accepted (QC=0): {n_accepted}
@@ -483,8 +561,8 @@ No accepted observations available for statistics.
             """
 
         ax_stats.text(0.1, 0.95, stats_text, transform=ax_stats.transAxes,
-                      fontsize=10, verticalalignment='top', family='monospace',
-                      bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
+                     fontsize=10, verticalalignment='top', family='monospace',
+                     bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
 
         plt.tight_layout()
 
@@ -505,18 +583,18 @@ No accepted observations available for statistics.
     ds.close()
 
     # Create tar archive
-    print("\nCreating tar archive...")
+    print(f"\nCreating tar archive...")
     tarfile_path = f"{output_dir}.tar.gz"
     with tarfile.open(tarfile_path, "w:gz") as tar:
         for png_file in tqdm(png_files, desc="Archiving files", unit="file"):
             tar.add(os.path.join(output_dir, png_file), arcname=png_file)
 
-    print(f"\n{'=' * 70}")
-    print("COMPLETED!")
+    print(f"\n{'='*70}")
+    print(f"COMPLETED!")
     print(f"Created {len(png_files)} profile plots")
     print(f"Saved to: {output_dir}/")
     print(f"Tar archive: {tarfile_path}")
-    print(f"{'=' * 70}\n")
+    print(f"{'='*70}\n")
 
     return tarfile_path
 
@@ -569,9 +647,9 @@ def batch_create_surface_plots(hfile, oceanfile, oceanvarname, is_variance, grid
         print(f"Warning: h file not found, skipping surface plot for {oceanvarname}: {hfile}")
         return
 
-    print(f"\n{'=' * 70}")
+    print(f"\n{'='*70}")
     print(f"BATCH PROCESSING: Creating surface plot for {oceanvarname}")
-    print(f"{'=' * 70}\n")
+    print(f"{'='*70}\n")
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -633,7 +711,7 @@ def batch_create_surface_plots(hfile, oceanfile, oceanvarname, is_variance, grid
 
     if use_web_mercator:
         # Create Web Mercator raster (like satellite rasters)
-        print("Creating Web Mercator projection raster...")
+        print(f"Creating Web Mercator projection raster...")
 
         # Define global extent in Web Mercator
         global_lat_min, global_lat_max = -85.0, 85.0
@@ -744,14 +822,14 @@ def batch_create_surface_plots(hfile, oceanfile, oceanvarname, is_variance, grid
 
     else:
         # Create standard cartopy plot with coastlines
-        print("Creating standard cartopy plot...")
+        print(f"Creating standard cartopy plot...")
         fig = plt.figure(figsize=(16, 10))
         ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
 
         # Plot data
         pcm = ax.pcolormesh(lon2d_vals, lat2d_vals, surface_data_vals,
-                            vmin=vmin, vmax=vmax, shading='auto', cmap=cmap,
-                            transform=ccrs.PlateCarree())
+                           vmin=vmin, vmax=vmax, shading='auto', cmap=cmap,
+                           transform=ccrs.PlateCarree())
 
         # Add coastlines and features
         ax.coastlines(resolution='110m', linewidth=0.5)
@@ -786,11 +864,11 @@ def batch_create_surface_plots(hfile, oceanfile, oceanvarname, is_variance, grid
 
     ds.close()
 
-    print(f"\n{'=' * 70}")
-    print("COMPLETED!")
+    print(f"\n{'='*70}")
+    print(f"COMPLETED!")
     print(f"Created surface plot: {filename}")
     print(f"Saved to: {output_dir}/")
-    print(f"{'=' * 70}\n")
+    print(f"{'='*70}\n")
 
     return filepath
 
@@ -824,10 +902,10 @@ def batch_create_zonal_sections(hfile, oceanfile, oceanvarname, is_variance, gri
     vmin, vmax : float, optional
         Color bounds
     """
-    print(f"\n{'=' * 70}")
-    print("BATCH PROCESSING: Creating zonal section plots")
+    print(f"\n{'='*70}")
+    print(f"BATCH PROCESSING: Creating zonal section plots")
     print(f"Latitude range: {lat_start}° to {lat_end}° (step: {lat_step}°)")
-    print(f"{'=' * 70}\n")
+    print(f"{'='*70}\n")
 
     if not os.path.exists(oceanfile):
         print(f"Warning: ocean file not found, skipping zonal sections for {oceanvarname}: {oceanfile}")
@@ -880,6 +958,7 @@ def batch_create_zonal_sections(hfile, oceanfile, oceanvarname, is_variance, gri
     grid.close()
 
     # Convert to numpy arrays
+    lon2d_vals = lon2d.values if hasattr(lon2d, 'values') else lon2d
     lat2d_vals = lat2d.values if hasattr(lat2d, 'values') else lat2d
 
     # Function to find nearest latitude index
@@ -890,7 +969,7 @@ def batch_create_zonal_sections(hfile, oceanfile, oceanvarname, is_variance, gri
         return iy
 
     # Generate latitudes
-    latitudes = np.arange(lat_start, lat_end + lat_step / 2, lat_step)
+    latitudes = np.arange(lat_start, lat_end + lat_step/2, lat_step)
 
     png_files = []
     for target_lat in tqdm(latitudes, desc="Creating zonal sections", unit="section"):
@@ -898,6 +977,8 @@ def batch_create_zonal_sections(hfile, oceanfile, oceanvarname, is_variance, gri
         target_lat = round(target_lat)
 
         iy = find_nearest_lat(lat2d_vals, target_lat)
+        actual_lat = lat2d_vals[iy, 0]
+
         # Extract zonal slice
         zonal_profile = data[:, iy, :]
         zonal_lon = lon2d[iy, :]
@@ -907,7 +988,7 @@ def batch_create_zonal_sections(hfile, oceanfile, oceanvarname, is_variance, gri
         fig, ax = plt.subplots(figsize=(14, 8))
 
         pcm = ax.pcolormesh(zonal_lon, zonal_depth, zonal_profile,
-                            vmin=vmin, vmax=vmax, shading='auto', cmap=cmap)
+                           vmin=vmin, vmax=vmax, shading='auto', cmap=cmap)
         ax.invert_yaxis()
         ax.set_xlabel('Longitude')
         ax.set_ylabel('Depth (m)')
@@ -926,11 +1007,11 @@ def batch_create_zonal_sections(hfile, oceanfile, oceanvarname, is_variance, gri
 
     ds.close()
 
-    print(f"\n{'=' * 70}")
-    print("COMPLETED!")
+    print(f"\n{'='*70}")
+    print(f"COMPLETED!")
     print(f"Created {len(png_files)} zonal section plots")
     print(f"Saved to: {output_dir}/")
-    print(f"{'=' * 70}\n")
+    print(f"{'='*70}\n")
 
     return output_dir
 
@@ -964,10 +1045,10 @@ def batch_create_meridional_sections(hfile, oceanfile, oceanvarname, is_variance
     vmin, vmax : float, optional
         Color bounds
     """
-    print(f"\n{'=' * 70}")
-    print("BATCH PROCESSING: Creating meridional section plots")
+    print(f"\n{'='*70}")
+    print(f"BATCH PROCESSING: Creating meridional section plots")
     print(f"Longitude range: {lon_start}° to {lon_end}° (step: {lon_step}°)")
-    print(f"{'=' * 70}\n")
+    print(f"{'='*70}\n")
 
     if not os.path.exists(oceanfile):
         print(f"Warning: ocean file not found, skipping meridional sections for {oceanvarname}: {oceanfile}")
@@ -1021,6 +1102,7 @@ def batch_create_meridional_sections(hfile, oceanfile, oceanvarname, is_variance
 
     # Convert to numpy arrays
     lon2d_vals = lon2d.values if hasattr(lon2d, 'values') else lon2d
+    lat2d_vals = lat2d.values if hasattr(lat2d, 'values') else lat2d
 
     # Function to find nearest longitude index
     def find_nearest_lon(lon2d_vals, target_lon):
@@ -1033,7 +1115,7 @@ def batch_create_meridional_sections(hfile, oceanfile, oceanvarname, is_variance
         return ix
 
     # Generate longitudes
-    longitudes = np.arange(lon_start, lon_end + lon_step / 2, lon_step)
+    longitudes = np.arange(lon_start, lon_end + lon_step/2, lon_step)
 
     png_files = []
     for target_lon in tqdm(longitudes, desc="Creating meridional sections", unit="section"):
@@ -1041,6 +1123,8 @@ def batch_create_meridional_sections(hfile, oceanfile, oceanvarname, is_variance
         target_lon = round(target_lon)
 
         ix = find_nearest_lon(lon2d_vals, target_lon)
+        actual_lon = lon2d_vals[0, ix]
+
         # Extract meridional slice
         meridional_profile = data[:, :, ix]
         meridional_lat = lat2d[:, ix]
@@ -1050,7 +1134,7 @@ def batch_create_meridional_sections(hfile, oceanfile, oceanvarname, is_variance
         fig, ax = plt.subplots(figsize=(14, 8))
 
         pcm = ax.pcolormesh(meridional_lat, meridional_depth, meridional_profile,
-                            vmin=vmin, vmax=vmax, shading='auto', cmap=cmap)
+                           vmin=vmin, vmax=vmax, shading='auto', cmap=cmap)
         ax.invert_yaxis()
         ax.set_xlabel('Latitude')
         ax.set_ylabel('Depth (m)')
@@ -1069,18 +1153,18 @@ def batch_create_meridional_sections(hfile, oceanfile, oceanvarname, is_variance
 
     ds.close()
 
-    print(f"\n{'=' * 70}")
-    print("COMPLETED!")
+    print(f"\n{'='*70}")
+    print(f"COMPLETED!")
     print(f"Created {len(png_files)} meridional section plots")
     print(f"Saved to: {output_dir}/")
-    print(f"{'=' * 70}\n")
+    print(f"{'='*70}\n")
 
     return output_dir
 
 
 def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, gridfile, obsfile=None, level=None,
          vmin=None, vmax=None, ocean_vmin=None, ocean_vmax=None, atmos_vmin=None, atmos_vmax=None, atmos_to_celsius=False,
-         batch_obs_profiles=False, plot_background=True, batch_zonal_sections=False, batch_meridional_sections=False,
+         batch_obs_profiles=False, model_field_type='bkgerr', batch_zonal_sections=False, batch_meridional_sections=False,
          batch_surface_plots=False, use_web_mercator=False, mercator_resolution=0.5,
          lat_start=None, lat_end=None, lat_step=5.0, lon_start=None, lon_end=None, lon_step=5.0,
          sections_output_dir='sections', surface_output_dir='surface_plots', cmap='gist_ncar'):
@@ -1090,9 +1174,9 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
             print("ERROR: Batch observation profile mode requires:")
             print("  --oceanfile, --obsfile, --hfile, --gridfile, and --oceanvarname")
             return
-        print(f"DEBUG: plot_background = {plot_background}")
+        print(f"DEBUG: model_field_type = {model_field_type}")
         batch_create_observation_profiles(
-            hfile, oceanfile, oceanvarname, is_variance, gridfile, obsfile, plot_background=plot_background
+            hfile, oceanfile, oceanvarname, is_variance, gridfile, obsfile, model_field_type=model_field_type
         )
         return
 
@@ -1444,14 +1528,14 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
             # This ensures observations appear correctly across the -180 to 180 longitude range
             if lons_all_accepted:
                 ax_ocean.scatter(lons_all_accepted, lats_all_accepted, s=2, c='green',
-                                 label='All Obs Accepted', alpha=1.0, zorder=3)
+                                label='All Obs Accepted', alpha=1.0, zorder=3)
                 ax_ocean.scatter(np.array(lons_all_accepted) + 360, lats_all_accepted, s=2, c='green',
-                                 alpha=1.0, zorder=3)
+                                alpha=1.0, zorder=3)
             if lons_has_rejected:
                 ax_ocean.scatter(lons_has_rejected, lats_has_rejected, s=2, c='red',
-                                 label='Has Rejected Obs', alpha=1.0, zorder=3)
+                                label='Has Rejected Obs', alpha=1.0, zorder=3)
                 ax_ocean.scatter(np.array(lons_has_rejected) + 360, lats_has_rejected, s=2, c='red',
-                                 alpha=1.0, zorder=3)
+                                alpha=1.0, zorder=3)
             ax_ocean.legend(loc='lower left')
         ax_ocean.set_title(f'Ocean: {os.path.basename(oceanfile)} - {oceanvarname} (Level {ocean_level})')
         fig.colorbar(pcm_ocean, ax=ax_ocean, label=f'{oceanvarname}', shrink=0.5, pad=0.02)
@@ -1512,10 +1596,10 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
             # Plot with different colors
             if lons_all_accepted:
                 ax.scatter(lons_all_accepted, lats_all_accepted, s=2, c='green',
-                           label='All Obs Accepted', alpha=1.0, zorder=3)
+                          label='All Obs Accepted', alpha=1.0, zorder=3)
             if lons_has_rejected:
                 ax.scatter(lons_has_rejected, lats_has_rejected, s=2, c='red',
-                           label='Has Rejected Obs', alpha=1.0, zorder=3)
+                          label='Has Rejected Obs', alpha=1.0, zorder=3)
             ax.legend(loc='lower left')
 
         filename = os.path.basename(atmosfile if is_atmos else oceanfile)
@@ -1652,22 +1736,22 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
 
                     # Plot accepted observations - main line
                     ax_profile.plot(accepted_values, accepted_depths, 'o-', color='red',
-                                    label='Obs Accepted (QC=0)',
+                                    label=f'Obs Accepted (QC=0)',
                                     markersize=6, linewidth=2, alpha=0.5)
                     # Upper error bound (obs + error)
                     ax_profile.plot(accepted_values + accepted_errors, accepted_depths, '--',
-                                    color='red', linewidth=0.8, alpha=0.4)
+                                   color='red', linewidth=0.8, alpha=0.4)
                     # Lower error bound (obs - error)
                     ax_profile.plot(accepted_values - accepted_errors, accepted_depths, '--',
-                                    color='red', linewidth=0.8, alpha=0.4)
+                                   color='red', linewidth=0.8, alpha=0.4)
 
                 # Plot rejected observations with different marker
                 if np.any(rejected_mask):
                     rejected_depths = obs_depths[rejected_mask]
                     rejected_values = obs_values[rejected_mask]
                     ax_profile.scatter(rejected_values, rejected_depths, marker='x', s=80,
-                                       color='gray', label='Obs Rejected (QC≠0)',
-                                       alpha=0.7, linewidths=2)
+                                      color='gray', label=f'Obs Rejected (QC≠0)',
+                                      alpha=0.7, linewidths=2)
 
             # Plot model profile on top
             plot_vertical_profile(ix, iy, lon2d_to_use, lat2d_to_use, data_to_use, depth_to_use, ax_profile, is_atmos=is_atmos_to_use)
@@ -1876,22 +1960,22 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
 
                     # Main observation line
                     ax_combined.plot(accepted_values, accepted_norm, 'o-', color='red',
-                                     label='Obs Accepted (QC=0)',
-                                     markersize=6, linewidth=2, alpha=0.5)
+                                    label='Obs Accepted (QC=0)',
+                                    markersize=6, linewidth=2, alpha=0.5)
                     # Upper error bound (obs + error)
                     ax_combined.plot(accepted_values + accepted_errors, accepted_norm, '--',
-                                     color='red', linewidth=0.8, alpha=0.4)
+                                    color='red', linewidth=0.8, alpha=0.4)
                     # Lower error bound (obs - error)
                     ax_combined.plot(accepted_values - accepted_errors, accepted_norm, '--',
-                                     color='red', linewidth=0.8, alpha=0.4)
+                                    color='red', linewidth=0.8, alpha=0.4)
 
                 # Plot rejected observations with different marker
                 if np.any(rejected_mask):
                     rejected_norm = obs_norm[rejected_mask]
                     rejected_values = obs_values[rejected_mask]
                     ax_combined.scatter(rejected_values, rejected_norm, marker='x', s=80,
-                                        color='gray', label='Obs Rejected (QC≠0)',
-                                        alpha=0.7, linewidths=2)
+                                       color='gray', label='Obs Rejected (QC≠0)',
+                                       alpha=0.7, linewidths=2)
 
             # Plot atmospheric profile (top half: 0 to 0.5) - on top
             ax_combined.plot(atmos_profile_to_plot, atmos_norm, '-o', color='tab:red',
@@ -2006,23 +2090,29 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
             # Plot accepted observations
             if np.any(accepted_mask):
                 ax_obs.plot(ombg_values[accepted_mask], depth_values[accepted_mask], '.-',
-                            color='tab:green', label='O-B Accepted', markersize=8)
+                           color='tab:green', label='O-B Accepted', markersize=8)
                 ax_obs.plot(oman_values[accepted_mask], depth_values[accepted_mask], '.-',
-                            color='tab:red', label='O-A Accepted', markersize=8)
+                           color='tab:red', label='O-A Accepted', markersize=8)
                 ax_obs.plot(increment[accepted_mask], depth_values[accepted_mask], '.-',
-                            color='tab:orange', label='A-B Accepted', markersize=8)
+                           color='tab:orange', label='A-B Accepted', markersize=8)
 
             # Plot rejected observations with X markers
             if np.any(rejected_mask):
                 ax_obs.scatter(ombg_values[rejected_mask], depth_values[rejected_mask],
-                               marker='x', s=80, color='darkgreen', label='O-B Rejected', alpha=0.7, linewidths=2)
+                              marker='x', s=80, color='darkgreen', label='O-B Rejected', alpha=0.7, linewidths=2)
                 ax_obs.scatter(oman_values[rejected_mask], depth_values[rejected_mask],
-                               marker='x', s=80, color='darkred', label='O-A Rejected', alpha=0.7, linewidths=2)
+                              marker='x', s=80, color='darkred', label='O-A Rejected', alpha=0.7, linewidths=2)
                 ax_obs.scatter(increment[rejected_mask], depth_values[rejected_mask],
-                               marker='x', s=80, color='darkorange', label='A-B Rejected', alpha=0.7, linewidths=2)
+                              marker='x', s=80, color='darkorange', label='A-B Rejected', alpha=0.7, linewidths=2)
 
             ax_obs.axvline(x=0, color='black', linestyle='--', linewidth=0.8, alpha=0.5)
+            if model_field_type == 'bkgerr':
+                ax_obs.plot(model_profile, model_depth, '.-', color='tab:purple',
+                           label='Bkg Error', markersize=8)
             ax_obs.invert_yaxis()
+            # Limit y-axis to the max observation depth
+            max_obs_depth = float(np.nanmax(depth_values))
+            ax_obs.set_ylim(max_obs_depth * 1.05, 0)
             ax_obs.set_xlabel(f'Innovation / Increment ({units})')
             ax_obs.set_ylabel('Depth (m)')
             ax_obs.set_title(f'OMB/OMA/Increment at lon={obs["lon"][iobs]:.2f}, lat={obs["lat"][iobs]:.2f}')
@@ -2037,33 +2127,55 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
 
             # Plot Background and Analysis for all observations (always with solid lines)
             ax_obsval.plot(obs_value - ombg_values, depth_values, '.-',
-                           color='tab:green', label='Background', markersize=8)
+                          color='tab:green', label='Background', markersize=8)
             ax_obsval.plot(obs_value - oman_values, depth_values, '.-',
-                           color='tab:red', label='Analysis', markersize=8)
+                          color='tab:red', label='Analysis', markersize=8)
 
             # Plot accepted observations with error bounds (thin dashed lines)
             if np.any(accepted_mask):
                 # Main observation line
                 ax_obsval.plot(obs_value[accepted_mask], depth_values[accepted_mask], '.-',
-                               color='tab:blue', label='Obs Accepted', markersize=8)
+                              color='tab:blue', label='Obs Accepted', markersize=8)
                 # Upper error bound (obs + error)
                 ax_obsval.plot(obs_value[accepted_mask] + obs_errors[accepted_mask],
-                               depth_values[accepted_mask], '--',
-                               color='tab:blue', linewidth=0.8, alpha=0.5)
+                              depth_values[accepted_mask], '--',
+                              color='tab:blue', linewidth=0.8, alpha=0.5)
                 # Lower error bound (obs - error)
                 ax_obsval.plot(obs_value[accepted_mask] - obs_errors[accepted_mask],
-                               depth_values[accepted_mask], '--',
-                               color='tab:blue', linewidth=0.8, alpha=0.5)
+                              depth_values[accepted_mask], '--',
+                              color='tab:blue', linewidth=0.8, alpha=0.5)
 
             # Plot rejected observations with X markers (no error bounds)
             if np.any(rejected_mask):
                 ax_obsval.scatter(obs_value[rejected_mask], depth_values[rejected_mask],
-                                  marker='x', s=50, color='darkblue', label='Obs Rejected',
-                                  alpha=0.7, linewidths=1.5)
+                                 marker='x', s=50, color='darkblue', label='Obs Rejected',
+                                 alpha=0.7, linewidths=1.5)
 
-            if plot_background:
+            if model_field_type == 'background':
                 ax_obsval.plot(model_profile, model_depth, '.-', color='tab:purple', label="QC'ed Analysis", markersize=8)
+            elif model_field_type == 'bkgerr':
+                # Interpolate background error from model depths to observation depths
+                model_depth_vals = np.array(model_depth).flatten()
+                model_profile_vals = np.array(model_profile).flatten()
+                valid_model = np.isfinite(model_depth_vals) & np.isfinite(model_profile_vals)
+                if np.any(valid_model):
+                    bkgerr_at_obs = np.interp(depth_values,
+                                              model_depth_vals[valid_model],
+                                              model_profile_vals[valid_model],
+                                              left=np.nan, right=np.nan)
+                    # Background at obs depths = ObsValue - O-B
+                    bkg_at_obs = obs_value - ombg_values
+                    ax_obsval.fill_betweenx(depth_values,
+                                            bkg_at_obs - bkgerr_at_obs,
+                                            bkg_at_obs + bkgerr_at_obs,
+                                            color='tab:green', alpha=0.2, label='Bkg ± Bkg Error')
             ax_obsval.invert_yaxis()
+            # Set x-axis limits based on obs values with padding
+            obs_padding = 1.0 if oceanvarname == 'Salt' else 2.0  # ±1 PSU or ±2°C
+            finite_obs = obs_value[np.isfinite(obs_value)]
+            if len(finite_obs) > 0:
+                ax_obsval.set_xlim(float(np.nanmin(finite_obs)) - obs_padding,
+                                   float(np.nanmax(finite_obs)) + obs_padding)
             ax_obsval.set_xlabel(f'Obs Value ({units})')
             ax_obsval.set_ylabel('Depth (m)')
             ax_obsval.set_title('Obs Value')
@@ -2071,14 +2183,18 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
             ax_obsval.grid()
 
             # QC flag subplot
-            # Use scatter plot to show QC values at each depth
+            # Use scatter plot to show QC values at each depth with human-readable labels
             ax_qc.scatter(qc_values, depth_values, c='tab:cyan', s=50, alpha=0.7, edgecolors='black')
             ax_qc.invert_yaxis()
             ax_qc.set_xlabel('QC Flag')
             ax_qc.set_ylabel('Depth (m)')
             ax_qc.set_title('Effective QC Flag')
             ax_qc.grid()
-            ax_qc.set_xlim(-0.5, max(1, np.max(qc_values) + 0.5))
+            unique_qc = sorted(set(int(v) for v in qc_values))
+            ax_qc.set_xticks(unique_qc)
+            ax_qc.set_xticklabels([qc_flag_label(v) for v in unique_qc], rotation=45, ha='right', fontsize=8)
+            qc_margin = 0.5
+            ax_qc.set_xlim(min(unique_qc) - qc_margin, max(unique_qc) + qc_margin)
 
             # Statistics table subplot
             ax_stats.axis('off')
@@ -2104,7 +2220,7 @@ def main(hfile, oceanfile, atmosfile, oceanvarname, atmosvarname, is_variance, g
                 # Create statistics table
                 stats_text = f"""
 Statistics for Profile at ({obs["lon"][iobs]:.2f}°, {obs["lat"][iobs]:.2f}°)
-{'=' * 50}
+{'='*50}
 
 Total observations: {n_obs}
   Accepted (QC=0): {n_accepted}
@@ -2129,7 +2245,7 @@ Increment (A-B):
             else:
                 stats_text = f"""
 Statistics for Profile at ({obs["lon"][iobs]:.2f}°, {obs["lat"][iobs]:.2f}°)
-{'=' * 50}
+{'='*50}
 
 Total observations: {n_obs}
   Accepted (QC=0): {n_accepted}
@@ -2139,8 +2255,8 @@ No accepted observations available for statistics.
                 """
 
             ax_stats.text(0.1, 0.95, stats_text, transform=ax_stats.transAxes,
-                          fontsize=10, verticalalignment='top', family='monospace',
-                          bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
+                         fontsize=10, verticalalignment='top', family='monospace',
+                         bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
 
             plt.tight_layout()
             plt.show()
@@ -2406,8 +2522,8 @@ No accepted observations available for statistics.
                                     levels=[level], colors='black', linewidths=linewidth,
                                     linestyles=linestyle, alpha=0.5)
                 ax_combined.contour(ocean_lon_mesh + 360, ocean_norm_mesh, ocean_zonal,
-                                    levels=[level], colors='black', linewidths=linewidth,
-                                    linestyles=linestyle, alpha=0.5)
+                                levels=[level], colors='black', linewidths=linewidth,
+                                linestyles=linestyle, alpha=0.5)
             ax_combined.contour(ocean_lon_mesh, ocean_norm_mesh, ocean_zonal,
                                 levels=contour_levels_ocean, colors='black', linewidths=0.5, alpha=0.5)
             ax_combined.contour(ocean_lon_mesh + 360, ocean_norm_mesh, ocean_zonal,
@@ -2515,8 +2631,11 @@ if __name__ == "__main__":
                         help='Convert atmospheric temperature from Kelvin to Celsius')
     parser.add_argument('--batch_obs_profiles', action='store_true',
                         help='Create observation profiles for all locations (batch mode)')
+    parser.add_argument('--model_field_type', choices=['background', 'bkgerr'], default='bkgerr',
+                        help='Type of model field: "background" plots in obs value panel, '
+                             '"bkgerr" plots in OMB/OMA panel (default: bkgerr)')
     parser.add_argument('--no_plot_background', action='store_true',
-                        help='Do not plot model background in observation profile plots')
+                        help='Do not plot model field in observation profile plots')
     parser.add_argument('--batch_zonal_sections', action='store_true',
                         help='Create zonal section plots for specified latitudes (batch mode)')
     parser.add_argument('--lat_start', required=False, type=float, default=None,
@@ -2597,7 +2716,7 @@ if __name__ == "__main__":
          args.variance, args.gridfile, obsfile=args.obsfile, level=args.level,
          vmin=vmin, vmax=vmax, ocean_vmin=ocean_vmin, ocean_vmax=ocean_vmax,
          atmos_vmin=atmos_vmin, atmos_vmax=atmos_vmax, atmos_to_celsius=args.atmos_to_celsius,
-         batch_obs_profiles=args.batch_obs_profiles, plot_background=not args.no_plot_background,
+         batch_obs_profiles=args.batch_obs_profiles, model_field_type=None if args.no_plot_background else args.model_field_type,
          batch_zonal_sections=args.batch_zonal_sections, batch_meridional_sections=args.batch_meridional_sections,
          batch_surface_plots=args.batch_surface_plots, use_web_mercator=args.use_web_mercator,
          mercator_resolution=args.mercator_resolution,
@@ -2605,3 +2724,5 @@ if __name__ == "__main__":
          lon_start=args.lon_start, lon_end=args.lon_end, lon_step=args.lon_step,
          sections_output_dir=args.sections_output_dir, surface_output_dir=args.surface_output_dir,
          cmap=args.cmap)
+
+

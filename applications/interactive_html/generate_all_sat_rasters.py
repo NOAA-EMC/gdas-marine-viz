@@ -6,7 +6,9 @@ import os
 import json
 import yaml
 import glob
+import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 from generate_generic_raster import generate_observation_raster
 
 
@@ -114,8 +116,8 @@ def main():
 
         # Create output filename based on base filename (without date)
         base_no_ext = base_filename.rsplit('.', 1)[0]  # Remove .nc
-        output_file = os.path.join(
-            output_dir, f"satellite_raster_{base_no_ext}.png")
+        output_file = os.path.join(output_dir,
+                                    f"satellite_raster_{base_no_ext}.png")
 
         print(f"\n{dataset_name} ({info['description']})")
         print("-" * 60)

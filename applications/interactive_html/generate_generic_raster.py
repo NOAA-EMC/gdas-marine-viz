@@ -174,7 +174,7 @@ if __name__ == '__main__':
         print(f"Success! {result['n_obs']} observations")
         print(f"Bounds: {result['bounds']}")
 
-    print("\n" + "=" * 60)
+    print("\n" + "="*60)
     print("Testing with sea ice data:")
     result = generate_observation_raster(
         'obs_profiles/icec_amsr2_north.2021070618.nc',
