@@ -1511,7 +1511,7 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
 
             for (const key in meridionalSections) {{
                 // Parse key like "Background: ('Temp', -90)" or "JEDI Increment: ('Salt', 45)"
-                const match = key.match(/^(.+?):\s*\('(\w+)',\s*([+-]?\d+)\)/);
+                const match = key.match(/^(.+?):\\s*\\('(\\w+)',\\s*([+-]?\\d+)\\)/);
                 if (match) {{
                     const fieldType = match[1];
                     const keyVarName = match[2];
@@ -1637,7 +1637,7 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
 
             for (const key in zonalSections) {{
                 // Parse key like "Background: ('Temp', 45)" or "JEDI Increment: ('Salt', -30)"
-                const match = key.match(/^(.+?):\s*\('(\w+)',\s*([+-]?\d+)\)/);
+                const match = key.match(/^(.+?):\\s*\\('(\\w+)',\\s*([+-]?\\d+)\\)/);
                 if (match) {{
                     const fieldType = match[1];
                     const keyVarName = match[2];

@@ -2,3 +2,11 @@
 max-line-length = 135
 exclude = .git,__pycache__
 ignore = E203, W503
+per-file-ignores =
+    applications/aquaslice/aquaslice.py: E128,E226,E241,F541,F821,F841,W391
+    applications/interactive_html/generate_all_sat_rasters.py: E127,F401
+    applications/interactive_html/generate_generic_raster.py: E226
+    applications/interactive_html/generate_map.py: E231,E241,E501,F401
+    applications/obsstats_deep/plot_ts.py: F841
+    applications/obsstats_ts/csv_ts/gdassoca_obsstats.py: E261,E262,E265,E272,E501,W291
+    applications/statestats_ostia/compare_sfc_ostia.py: E126,E127,E201,E221,E226,E241,E261,E402,F401,F541,F841,W504
