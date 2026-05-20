@@ -99,7 +99,7 @@ class ObsStats:
             try:
                 path_parts = filepath.split('/')
                 for part in path_parts:
-                    if (part.startswith('gdas.')  or part.startswith('enkfgdas.')) and len(part) >= 13:
+                    if (part.startswith('gdas.') or part.startswith('enkfgdas.')) and len(part) >= 13:
                         date_str = part.split('.')[1]  # Extract YYYYMMDD
                         hour_part = None
                         # Look for hour in next parts
@@ -125,7 +125,7 @@ class ObsStats:
             try:
                 with nc.Dataset(filepath, 'r') as dataset:
                     # Read metadata
-                    if variable_name == 'seaSurfaceTemperature':  
+                    if variable_name == 'seaSurfaceTemperature':
                         depths = 0
                     else:
                         depths = dataset.groups['MetaData']['depth'][:]
@@ -139,10 +139,13 @@ class ObsStats:
                             continue
 
                         obs_values = dataset.groups['ObsValue'][variable_name][:]
-                        #hofx_values = dataset.groups['hofx0'][variable_name][:]  # background ; letkf only has this for each ens mem, not for ensmean
+                        # hofx_values = dataset.groups['hofx0'][variable_name][:]
+                        # background; letkf only has this for each ensemble member,
+                        # not for the ensemble mean
                         obs_errors = dataset.groups['ObsError'][variable_name][:]
 
-                        innov = dataset.groups[bganl][variable_name][:] ## this works for both 3dvar and letkf;  can use OMAN or OMBG (lowercase)
+                        # this works for both 3dvar and letkf;  can use OMAN or OMBG (lowercase)
+                        innov = dataset.groups[bganl][variable_name][:]
 
                         # Quality control
                         if 'EffectiveQC0' in dataset.groups and variable_name in dataset.groups['EffectiveQC0'].variables:
@@ -154,7 +157,7 @@ class ObsStats:
                         continue
 
                     # Calculate observation minus background
-                    #ombg = obs_values - hofx_values ## this does not work for LETKF
+                    # ombg = obs_values - hofx_values ## this does not work for LETKF
 
                     # Process each depth layer and ocean basin combination
                     for depth_min, depth_max in depth_layers:
@@ -279,7 +282,7 @@ class ObsStats:
 
         # Get unique experiments
         experiments = filtered_data['Exp'].unique()
-        #experiments.sort()
+        # experiments.sort()
         print(experiments)
 
         # Plot settings
@@ -300,10 +303,10 @@ class ObsStats:
             # Plot RMSE, obs error, obs error + spread
             axs[0].plot(exp_data['date'], exp_data['RMSE'], marker='o', linestyle='-',
                         color=colors[exp_counter], linewidth=2, label='RMSE ' + exp)
-            #if (exp.endswith("letkf")): ## comment for now
+            # if (exp.endswith("letkf")): ## comment for now
             #    axs[0].plot(exp_data['date'], exp_data['EnsStd'] + exp_data['ObsErr'], marker='x', linestyle='--',
             #                color=colors[exp_counter], linewidth=2, label='EnsStd+ObsErr ' + exp)
-            #if (exp.endswith("letkf")):
+            # if (exp.endswith("letkf")):
             #    axs[0].plot(exp_data['date'], exp_data['EnsStd'], marker='s', linestyle='-',
             #                color=colors[exp_counter], linewidth=2, label='EnsStd ' + exp)
             axs[0].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H'))
@@ -450,7 +453,7 @@ if __name__ == "__main__":
                 elif 'salt' in inst:
                     var_name = 'salinity'
                 elif 'sst' in inst:
-                    var_name = 'seaSurfaceTemperature' 
+                    var_name = 'seaSurfaceTemperature'
                 else:
                     print(f"Unknown variable type for {inst}")
                     continue
@@ -471,7 +474,7 @@ if __name__ == "__main__":
                     exp_name = os.path.basename(exp.rstrip('/'))
                     flist = glob.glob(wc)
                     obsStats.read_netcdf(flist, exp_name, var_name, depth_layers)
-                else: 
+                else:
                     wc = exp + f'/gdas.*/??/analysis/ocean/diags/*{inst}*.nc'
                     exp_name = os.path.basename(exp.rstrip('/'))
                     flist = glob.glob(wc)

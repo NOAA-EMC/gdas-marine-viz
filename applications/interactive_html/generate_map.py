@@ -9,18 +9,11 @@ import json
 import argparse
 import base64
 import shutil
-import glob
 import numpy as np
 try:
     import netCDF4 as nc
 except ImportError:
     nc = None
-
-try:
-    from PIL import Image, ImageDraw
-    PIL_AVAILABLE = True
-except ImportError:
-    PIL_AVAILABLE = False
 
 
 def parse_filename(filename):
@@ -1266,25 +1259,29 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
         </div>
         <div class="layer-control-box background">
             <h3>Model Background</h3>
-            <select id="background-select" style="width: 100%; padding: 4px; border-radius: 4px; border: 1px solid #ccc; font-size: 12px;">
+            <select id="background-select"
+                    style="width: 100%; padding: 4px; border-radius: 4px; border: 1px solid #ccc; font-size: 12px;">
                 <option value="">— None —</option>
             </select>
         </div>
         <div class="layer-control-box increments">
             <h3>Increments</h3>
-            <select id="increments-select" style="width: 100%; padding: 4px; border-radius: 4px; border: 1px solid #ccc; font-size: 12px;">
+            <select id="increments-select"
+                    style="width: 100%; padding: 4px; border-radius: 4px; border: 1px solid #ccc; font-size: 12px;">
                 <option value="">— None —</option>
             </select>
         </div>
         <div class="layer-control-box errors">
             <h3>Parametric Background Error</h3>
-            <select id="errors-select" style="width: 100%; padding: 4px; border-radius: 4px; border: 1px solid #ccc; font-size: 12px;">
+            <select id="errors-select"
+                    style="width: 100%; padding: 4px; border-radius: 4px; border: 1px solid #ccc; font-size: 12px;">
                 <option value="">— None —</option>
             </select>
         </div>
         <div class="layer-control-box ensspread">
             <h3>Ensemble Spread</h3>
-            <select id="ensspread-select" style="width: 100%; padding: 4px; border-radius: 4px; border: 1px solid #ccc; font-size: 12px;">
+            <select id="ensspread-select"
+                    style="width: 100%; padding: 4px; border-radius: 4px; border: 1px solid #ccc; font-size: 12px;">
                 <option value="">— None —</option>
             </select>
         </div>
@@ -1566,7 +1563,11 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
                         </div>
                     `;
                 }});
-                allContentHtml += `<div class="section-field-group" data-field-type="${{ft}}" style="display: ${{display}}; gap: 10px; flex-wrap: nowrap;">${{imagesHtml}}</div>`;
+                allContentHtml += (
+                    `<div class="section-field-group" data-field-type="${{ft}}" `
+                    + `style="display: ${{display}}; gap: 10px; flex-wrap: nowrap;">`
+                    + `${{imagesHtml}}</div>`
+                );
             }});
 
             return `
@@ -1692,7 +1693,11 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
                         </div>
                     `;
                 }});
-                allContentHtml += `<div class="section-field-group" data-field-type="${{ft}}" style="display: ${{display}}; gap: 10px; flex-wrap: nowrap;">${{imagesHtml}}</div>`;
+                allContentHtml += (
+                    `<div class="section-field-group" data-field-type="${{ft}}" `
+                    + `style="display: ${{display}}; gap: 10px; flex-wrap: nowrap;">`
+                    + `${{imagesHtml}}</div>`
+                );
             }});
 
             return `
@@ -1737,7 +1742,11 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
 
         // Function to create colored circle marker icon
         function createMarkerIcon(color) {{
-            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="${{color}}" stroke="white" stroke-width="2"/></svg>`;
+            const svg = (
+                `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">`
+                + `<circle cx="8" cy="8" r="6" fill="${{color}}" stroke="white" stroke-width="2"/>`
+                + `</svg>`
+            );
             return L.icon({{
                 iconUrl: 'data:image/svg+xml;base64,' + btoa(svg),
                 iconSize: [16, 16],
@@ -1748,7 +1757,11 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
 
         // Function to create smaller drifter marker icon (no border)
         function createDrifterIcon(color) {{
-            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="6" height="6" viewBox="0 0 6 6"><circle cx="3" cy="3" r="2.5" fill="${{color}}" stroke="${{color}}" stroke-width="0.5"/></svg>`;
+            const svg = (
+                `<svg xmlns="http://www.w3.org/2000/svg" width="6" height="6" viewBox="0 0 6 6">`
+                + `<circle cx="3" cy="3" r="2.5" fill="${{color}}" stroke="${{color}}" stroke-width="0.5"/>`
+                + `</svg>`
+            );
             return L.icon({{
                 iconUrl: 'data:image/svg+xml;base64,' + btoa(svg),
                 iconSize: [6, 6],
@@ -1808,11 +1821,15 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
                 minWidth: 200
             }});
 
-            marker.bindTooltip(`Drifter OMB: ${{drifter.ombg.toFixed(2)}}°C<br>Lon: ${{drifter.lon.toFixed(2)}}°, Lat: ${{drifter.lat.toFixed(2)}}°`, {{
+            marker.bindTooltip(
+                `Drifter OMB: ${{drifter.ombg.toFixed(2)}}°C<br>`
+                + `Lon: ${{drifter.lon.toFixed(2)}}°, Lat: ${{drifter.lat.toFixed(2)}}°`,
+                {{
                 permanent: false,
                 direction: 'top',
                 offset: [0, -8]
-            }});
+                }}
+            );
         }});
 
         // Add NDBC buoy markers with color based on ombg
@@ -1842,11 +1859,15 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
                 minWidth: 200
             }});
 
-            marker.bindTooltip(`NDBC OMB: ${{buoy.ombg.toFixed(2)}}°C<br>Lon: ${{buoy.lon.toFixed(2)}}°, Lat: ${{buoy.lat.toFixed(2)}}°`, {{
+            marker.bindTooltip(
+                `NDBC OMB: ${{buoy.ombg.toFixed(2)}}°C<br>`
+                + `Lon: ${{buoy.lon.toFixed(2)}}°, Lat: ${{buoy.lat.toFixed(2)}}°`,
+                {{
                 permanent: false,
                 direction: 'top',
                 offset: [0, -3]
-            }});
+                }}
+            );
         }});
 
         // Add markers for each profile
@@ -1894,12 +1915,16 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
 
             // Add tooltip with platform and variables
             const varList = profile.variable_list.join(', ');
-            marker.bindTooltip(`${{profile.platform}}: ${{varList}}<br>Lon: ${{profile.lon.toFixed(2)}}°, Lat: ${{profile.lat.toFixed(2)}}°`, {{
+            marker.bindTooltip(
+                `${{profile.platform}}: ${{varList}}<br>`
+                + `Lon: ${{profile.lon.toFixed(2)}}°, Lat: ${{profile.lat.toFixed(2)}}°`,
+                {{
                 permanent: false,
                 direction: 'top',
                 offset: [0, -8],
                 opacity: 0.9
-            }});
+                }}
+            );
         }});
 
         // Update profile count
@@ -1916,7 +1941,10 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
             const color = platformColors[name] || '#666666';
             const item = document.createElement('div');
             item.className = 'legend-box-item';
-            item.innerHTML = `<div class="legend-box-color" style="background-color: ${{color}};"></div><span class="legend-box-label">${{name}}</span>`;
+            item.innerHTML = (
+                `<div class="legend-box-color" style="background-color: ${{color}};"></div>`
+                + `<span class="legend-box-label">${{name}}</span>`
+            );
             legendContainer.appendChild(item);
         }});
 
@@ -2026,7 +2054,11 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
                     layer: surfacePlotOverlays[varName],
                     visible: false
                 }});
-            }} else if (varName.includes('Ocean Bkg Error:') || varName.includes('Ice Bkg Error:') || varName.includes('Recentering Error:')) {{
+            }} else if (
+                varName.includes('Ocean Bkg Error:')
+                || varName.includes('Ice Bkg Error:')
+                || varName.includes('Recentering Error:')
+            ) {{
                 layersByCategory.errors.push({{
                     name: varName,
                     fullName: varName,
@@ -2078,7 +2110,12 @@ def generate_html(profiles, drifters, satellite_metadata=None, section_images=No
 
         // Function to hide colorbar if no surface plots or satellite rasters are active
         function hideColorbarIfNoSurfacePlots() {{
-            const allSurfacePlots = [...layersByCategory.background, ...layersByCategory.increments, ...layersByCategory.errors, ...layersByCategory.ensspread];
+            const allSurfacePlots = [
+                ...layersByCategory.background,
+                ...layersByCategory.increments,
+                ...layersByCategory.errors,
+                ...layersByCategory.ensspread
+            ];
             const activeSurfacePlots = allSurfacePlots.filter(layerInfo => {{
                 return layerInfo.fullName && map.hasLayer(layerInfo.layer);
             }});
@@ -2392,15 +2429,18 @@ Examples:
 
     parser.add_argument('--surface-plots-ice-jedi-inc-dir',
                         default='surface_plots_ice_jedi_inc',
-                        help='Directory containing sea ice JEDI increment surface plot PNG images (default: surface_plots_ice_jedi_inc)')
+                        help=('Directory containing sea ice JEDI increment surface plot PNG images '
+                              '(default: surface_plots_ice_jedi_inc)'))
 
     parser.add_argument('--surface-plots-ocn-bkgerr-dir',
                         default='surface_plots_ocn_bkgerr',
-                        help='Directory containing ocean parametric background error surface plot PNG images (default: surface_plots_ocn_bkgerr)')
+                        help=('Directory containing ocean parametric background error surface plot PNG images '
+                              '(default: surface_plots_ocn_bkgerr)'))
 
     parser.add_argument('--surface-plots-ice-bkgerr-dir',
                         default='surface_plots_ice_bkgerr',
-                        help='Directory containing ice parametric background error surface plot PNG images (default: surface_plots_ice_bkgerr)')
+                        help=('Directory containing ice parametric background error surface plot PNG images '
+                              '(default: surface_plots_ice_bkgerr)'))
 
     parser.add_argument('--surface-plots-recentering-err-dir',
                         default='surface_plots_recentering_err',
@@ -2408,11 +2448,13 @@ Examples:
 
     parser.add_argument('--surface-plots-ocn-ens-spread-dir',
                         default='surface_plots_ocn_ens_spread',
-                        help='Directory containing ocean ensemble spread surface plot PNG images (default: surface_plots_ocn_ens_spread)')
+                        help=('Directory containing ocean ensemble spread surface plot PNG images '
+                              '(default: surface_plots_ocn_ens_spread)'))
 
     parser.add_argument('--surface-plots-ice-ens-spread-dir',
                         default='surface_plots_ice_ens_spread',
-                        help='Directory containing ice ensemble spread surface plot PNG images (default: surface_plots_ice_ens_spread)')
+                        help=('Directory containing ice ensemble spread surface plot PNG images '
+                              '(default: surface_plots_ice_ens_spread)'))
 
     parser.add_argument('--sections-ocn-ens-spread-dir',
                         default='sections_ocn_ens_spread',
@@ -2483,7 +2525,10 @@ Examples:
     print(f"Found {len(surface_plots_recentering_err)} recentering error surface plots: {list(surface_plots_recentering_err.keys())}")
 
     surface_plots_ocn_ens_spread = get_surface_plot_images(surface_dir=args.surface_plots_ocn_ens_spread_dir)
-    print(f"Found {len(surface_plots_ocn_ens_spread)} ocean ensemble spread surface plots: {list(surface_plots_ocn_ens_spread.keys())}")
+    print(
+        f"Found {len(surface_plots_ocn_ens_spread)} ocean ensemble spread surface plots: "
+        f"{list(surface_plots_ocn_ens_spread.keys())}"
+    )
 
     surface_plots_ice_ens_spread = get_surface_plot_images(surface_dir=args.surface_plots_ice_ens_spread_dir)
     print(f"Found {len(surface_plots_ice_ens_spread)} ice ensemble spread surface plots: {list(surface_plots_ice_ens_spread.keys())}")
@@ -2798,7 +2843,10 @@ Examples:
                    os.path.getmtime(src) > os.path.getmtime(dst):
                     shutil.copy2(src, dst)
                 surface_ocn_ens_spread_copy_count += 1
-    print(f"  Synced {surface_ocn_ens_spread_copy_count} ocean ensemble spread surface plot images to {out_surface_ocn_ens_spread_dir}")
+    print(
+        f"  Synced {surface_ocn_ens_spread_copy_count} ocean ensemble spread surface plot images "
+        f"to {out_surface_ocn_ens_spread_dir}"
+    )
 
     # Copy ice ensemble spread surface plots
     out_surface_ice_ens_spread_dir = os.path.join(args.output_dir, 'surface_plots_ice_ens_spread')
@@ -2823,14 +2871,14 @@ Examples:
     # Collect from every surface plot directory using the same prefix logic as generate_html
     colorbars = {}
     _colorbar_dir_prefixes = [
-        (args.surface_plots_dir,               'Background: '),
-        (args.surface_plots_jedi_inc_dir,       'JEDI Increment: '),
-        (args.surface_plots_mom6_inc_dir,       'MOM6 Increment: '),
-        (args.surface_plots_ice_bkg_dir,        'Sea Ice Background: '),
-        (args.surface_plots_ice_jedi_inc_dir,   'Sea Ice JEDI Increment: '),
-        (args.surface_plots_ocn_bkgerr_dir,     'Ocean Bkg Error: '),
-        (args.surface_plots_ice_bkgerr_dir,     'Ice Bkg Error: '),
-        (args.surface_plots_recentering_err_dir,'Recentering Error: '),
+        (args.surface_plots_dir, 'Background: '),
+        (args.surface_plots_jedi_inc_dir, 'JEDI Increment: '),
+        (args.surface_plots_mom6_inc_dir, 'MOM6 Increment: '),
+        (args.surface_plots_ice_bkg_dir, 'Sea Ice Background: '),
+        (args.surface_plots_ice_jedi_inc_dir, 'Sea Ice JEDI Increment: '),
+        (args.surface_plots_ocn_bkgerr_dir, 'Ocean Bkg Error: '),
+        (args.surface_plots_ice_bkgerr_dir, 'Ice Bkg Error: '),
+        (args.surface_plots_recentering_err_dir, 'Recentering Error: '),
         (args.surface_plots_ocn_ens_spread_dir, 'Ocean Ens Spread: '),
         (args.surface_plots_ice_ens_spread_dir, 'Ice Ens Spread: '),
     ]
