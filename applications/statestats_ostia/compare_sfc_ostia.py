@@ -25,14 +25,12 @@ import argparse
 import glob
 import os
 import re
+import warnings
 from collections import defaultdict
 from datetime import datetime
 
-import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-import matplotlib.ticker as mticker
 from matplotlib.lines import Line2D
 import netCDF4 as nc
 import numpy as np
@@ -40,7 +38,8 @@ from scipy.interpolate import RegularGridInterpolator
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from cartopy.util import add_cyclic_point
-import warnings
+
+plt.switch_backend("Agg")
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 
@@ -55,20 +54,20 @@ _R_EARTH_KM = 6371.0
 _DLAT = np.radians(0.5)
 _DLON = np.radians(0.5)
 _LAT_EDGES = np.radians(np.arange(-90.0, 90.5, 0.5))  # 361 edges
-CELL_AREA = (_R_EARTH_KM ** 2 * _DLON *
-             (np.sin(_LAT_EDGES[1:]) - np.sin(_LAT_EDGES[:-1])))[:, None] \
-            * np.ones((1, len(TGT_LON)))   # (360, 720) km²
+CELL_AREA = (_R_EARTH_KM ** 2 * _DLON
+             * (np.sin(_LAT_EDGES[1:]) - np.sin(_LAT_EDGES[:-1])))[:, None] \
+    * np.ones((1, len(TGT_LON)))   # (360, 720) km²
 
 # Ice-extent threshold
 ICE_EXTENT_THRESH = 0.15
 
 # Major western boundary current regions (lon in [-180,180], lat standard)
 WBC_REGIONS = [
-    {"key": "gulf_stream",    "label": "Gulf Stream",     "lon": (-82, -40), "lat": (24, 52)},
-    {"key": "kuroshio",       "label": "Kuroshio",        "lon": (120, 165), "lat": (18, 50)},
-    {"key": "brazil",         "label": "Brazil Current",  "lon": (-58, -28), "lat": (-50,  -8)},
-    {"key": "east_australia", "label": "E. Australian",   "lon": (145, 178), "lat": (-45, -15)},
-    {"key": "agulhas",        "label": "Agulhas",         "lon": ( 15,  55), "lat": (-50, -22)},
+    {"key": "gulf_stream", "label": "Gulf Stream", "lon": (-82, -40), "lat": (24, 52)},
+    {"key": "kuroshio", "label": "Kuroshio", "lon": (120, 165), "lat": (18, 50)},
+    {"key": "brazil", "label": "Brazil Current", "lon": (-58, -28), "lat": (-50, -8)},
+    {"key": "east_australia", "label": "E. Australian", "lon": (145, 178), "lat": (-45, -15)},
+    {"key": "agulhas", "label": "Agulhas", "lon": (15, 55), "lat": (-50, -22)},
 ]
 
 
@@ -150,9 +149,9 @@ def _interp_gaussian_to_target(lat2d, lon2d, field2d):
     ilon = np.clip(np.digitize(flat_lon, lon_edges) - 1, 0, nlon - 1)
 
     sumv = np.zeros((nlat, nlon))
-    cnt  = np.zeros((nlat, nlon))
+    cnt = np.zeros((nlat, nlon))
     np.add.at(sumv, (ilat, ilon), flat_val)
-    np.add.at(cnt,  (ilat, ilon), 1.0)
+    np.add.at(cnt, (ilat, ilon), 1.0)
 
     result = np.where(cnt > 0, sumv / cnt, np.nan)
     return result
@@ -195,9 +194,9 @@ def read_bkg(filepath):
     ds = nc.Dataset(filepath)
     lat2d = ds.variables["lat"][:].squeeze()
     lon2d = ds.variables["lon"][:].squeeze()
-    tref  = ds.variables["tref"][0, :, :].astype(np.float64)
-    icec  = ds.variables["icec"][0, :, :].astype(np.float64)
-    land  = ds.variables["land"][0, :, :].astype(np.float64)
+    tref = ds.variables["tref"][0, :, :].astype(np.float64)
+    icec = ds.variables["icec"][0, :, :].astype(np.float64)
+    land = ds.variables["land"][0, :, :].astype(np.float64)
     ds.close()
 
     # SST: ocean only (land==0)
@@ -236,8 +235,8 @@ def read_ostia(filepath):
     ds = nc.Dataset(filepath)
     olat = ds.variables["lat"][:].astype(np.float64)
     olon = ds.variables["lon"][:].astype(np.float64)
-    sst  = ds.variables["analysed_sst"][0, :, :].astype(np.float64)
-    ice  = ds.variables["sea_ice_fraction"][0, :, :].astype(np.float64)
+    sst = ds.variables["analysed_sst"][0, :, :].astype(np.float64)
+    ice = ds.variables["sea_ice_fraction"][0, :, :].astype(np.float64)
     ds.close()
 
     # Fill masked values with NaN
@@ -265,7 +264,7 @@ def load_basin_masks(mask_file):
 
     basins = {}
     for bname in ("open_ocean", "atlantic", "pacific",
-                   "indian", "southern", "arctic"):
+                  "indian", "southern", "arctic"):
         raw = ds.variables[bname][:].astype(np.float64)
         # Nearest-neighbour to 0.5° target grid
         ilat = np.clip(np.searchsorted(mlat, TGT_LAT) , 0, len(mlat) - 1)
@@ -348,14 +347,14 @@ def compute_daily_stats(bkg_files_by_day, ostia_dir, basins):
         ice_good = np.isfinite(ice_diff)
 
         # SST spatial
-        spatial["sst_diff_sum"][sst_good]    += sst_diff[sst_good]
+        spatial["sst_diff_sum"][sst_good] += sst_diff[sst_good]
         spatial["sst_diff_sq_sum"][sst_good] += sst_diff[sst_good] ** 2
-        spatial["sst_count"][sst_good]       += 1.0
+        spatial["sst_count"][sst_good] += 1.0
 
         # Ice spatial
-        spatial["ice_diff_sum"][ice_good]    += ice_diff[ice_good]
+        spatial["ice_diff_sum"][ice_good] += ice_diff[ice_good]
         spatial["ice_diff_sq_sum"][ice_good] += ice_diff[ice_good] ** 2
-        spatial["ice_count"][ice_good]       += 1.0
+        spatial["ice_count"][ice_good] += 1.0
 
         dt = datetime.strptime(day_str, "%Y%m%d")
 
@@ -419,7 +418,7 @@ def compute_ice_extent(days_by_run, ostia_dir):
         { "north"|"south": { "dates": [], "ostia_km2": [],
                              "runs": {run_label: []} } }
     """
-    nlat, nlon = len(TGT_LAT), len(TGT_LON)
+    nlon = len(TGT_LON)
     LAT_2D = TGT_LAT[:, None] * np.ones((1, nlon))
     hemi_masks = {"north": LAT_2D >= 45, "south": LAT_2D < -45}
 
@@ -505,7 +504,7 @@ def compute_ice_edge_error(days_by_run, ostia_dir):
             { "dates": [],
                             "runs": {run_label: {"iiee": [], "over": [], "under": []}} } }
     """
-    nlat, nlon = len(TGT_LAT), len(TGT_LON)
+    nlon = len(TGT_LON)
     LAT_2D = TGT_LAT[:, None] * np.ones((1, nlon))
     hemi_masks = {"north": LAT_2D >= 45, "south": LAT_2D < -45}
 
@@ -694,7 +693,7 @@ def plot_spatial_maps(spatial, exp_label, var, out_dir,
     cnt_safe = np.where(cnt > 0, cnt, np.nan)
 
     mean_diff = spatial[f"{var}_diff_sum"] / cnt_safe
-    rmse      = np.sqrt(spatial[f"{var}_diff_sq_sum"] / cnt_safe)
+    rmse = np.sqrt(spatial[f"{var}_diff_sq_sum"] / cnt_safe)
 
     if var == "sst":
         units, title_var, obs_label = "K", "Foundation SST", "OSTIA"
@@ -705,7 +704,7 @@ def plot_spatial_maps(spatial, exp_label, var, out_dir,
 
     # Add cyclic point to avoid seam at 0/360°
     mean_diff_c, lon_c = add_cyclic_point(mean_diff, coord=TGT_LON)
-    rmse_c, _          = add_cyclic_point(rmse,      coord=TGT_LON)
+    rmse_c, _ = add_cyclic_point(rmse, coord=TGT_LON)
     LON_c, LAT_c = np.meshgrid(lon_c, TGT_LAT)
 
     proj = ccrs.PlateCarree(central_longitude=0)
@@ -752,7 +751,7 @@ def plot_spatial_maps(spatial, exp_label, var, out_dir,
     ax_rmse.coastlines(lw=0.5, zorder=3)
     ax_rmse.set_global()
     fig.colorbar(im2, ax=ax_rmse, shrink=0.7, label=f"RMSE ({units})")
-    ax_rmse.set_title(f"Time-mean RMSE")
+    ax_rmse.set_title("Time-mean RMSE")
 
     tag = _safe_tag(exp_label)
     outfile = os.path.join(out_dir, f"{var}_maps_{tag}.png")
@@ -771,7 +770,7 @@ def plot_regional_maps(spatial, exp_label, var, out_dir,
     cnt = spatial[f"{var}_count"]
     cnt_safe = np.where(cnt > 0, cnt, np.nan)
     mean_diff = spatial[f"{var}_diff_sum"] / cnt_safe
-    rmse      = np.sqrt(spatial[f"{var}_diff_sq_sum"] / cnt_safe)
+    rmse = np.sqrt(spatial[f"{var}_diff_sq_sum"] / cnt_safe)
 
     if var == "sst":
         units, title_var, obs_label = "K", "Foundation SST", "OSTIA"
@@ -788,7 +787,7 @@ def plot_regional_maps(spatial, exp_label, var, out_dir,
         vmax_rmse = max(float(np.percentile(finite_r, 95)), 0.01) if len(finite_r) > 0 else 1.0
 
     mean_diff_c, lon_c = add_cyclic_point(mean_diff, coord=TGT_LON)
-    rmse_c, _          = add_cyclic_point(rmse,      coord=TGT_LON)
+    rmse_c, _ = add_cyclic_point(rmse, coord=TGT_LON)
     LON_c, LAT_c = np.meshgrid(lon_c, TGT_LAT)
 
     nreg = len(WBC_REGIONS)
@@ -851,7 +850,7 @@ def plot_ice_extent(ice_extent, out_dir):
     """
     fig, ax = plt.subplots(figsize=(12, 5), constrained_layout=True)
     ax.set_title(f"Sea-Ice Extent "
-                 f"(>{ICE_EXTENT_THRESH*100:.0f}% conc., common mask)",
+                 f"(>{ICE_EXTENT_THRESH * 100:.0f}% conc., common mask)",
                  fontsize=14, fontweight="bold")
 
     for hname in ("north", "south"):
@@ -904,8 +903,8 @@ def plot_ice_edge_error(iiee, out_dir):
       3. Underestimation area (OSTIA ice where bkg has open water)
     """
     row_info = [
-        ("iiee",  "Total IIEE"),
-        ("over",  "Overestimation (bkg ice, OSTIA open)"),
+        ("iiee", "Total IIEE"),
+        ("over", "Overestimation (bkg ice, OSTIA open)"),
         ("under", "Underestimation (OSTIA ice, bkg open)"),
     ]
 
@@ -918,7 +917,7 @@ def plot_ice_edge_error(iiee, out_dir):
         fig, axes = plt.subplots(3, 1, figsize=(14, 10),
                                  constrained_layout=True, squeeze=False)
         fig.suptitle(f"{pole_label} — Integrated Ice Edge Error vs OSTIA "
-                     f"(>{ICE_EXTENT_THRESH*100:.0f}% threshold)",
+                     f"(>{ICE_EXTENT_THRESH * 100:.0f}% threshold)",
                      fontsize=14, fontweight="bold")
 
         dates = d["dates"]
@@ -965,13 +964,13 @@ def plot_ice_spatial_polar(spatial, exp_label, out_dir,
     cnt_safe = np.where(cnt > 0, cnt, np.nan)
 
     mean_diff = spatial["ice_diff_sum"] / cnt_safe
-    rmse      = np.sqrt(spatial["ice_diff_sq_sum"] / cnt_safe)
+    rmse = np.sqrt(spatial["ice_diff_sq_sum"] / cnt_safe)
 
     tag = _safe_tag(exp_label)
 
     # Add cyclic point to avoid seam at 0/360°
     mean_diff_c, lon_c = add_cyclic_point(mean_diff, coord=TGT_LON)
-    rmse_c, _          = add_cyclic_point(rmse,      coord=TGT_LON)
+    rmse_c, _ = add_cyclic_point(rmse, coord=TGT_LON)
 
     for hname in ("north", "south"):
         pole_label = "Arctic" if hname == "north" else "Antarctic"
@@ -1019,7 +1018,7 @@ def plot_ice_spatial_polar(spatial, exp_label, out_dir,
         ax_bias.set_extent(extent, crs=ccrs.PlateCarree())
         ax_bias.add_feature(cfeature.LAND, facecolor="0.85", edgecolor="0.5", lw=0.4, zorder=2)
         ax_bias.coastlines(lw=0.5, zorder=3)
-        gl = ax_bias.gridlines(draw_labels=False, lw=0.3, color="gray", alpha=0.5)
+        ax_bias.gridlines(draw_labels=False, lw=0.3, color="gray", alpha=0.5)
         ax_bias.set_title("Time-mean Bias (bkg − OSTIA)")
         fig.colorbar(im, ax=ax_bias, shrink=0.7, label="Bias (fraction)")
 
@@ -1040,7 +1039,7 @@ def plot_ice_spatial_polar(spatial, exp_label, out_dir,
         ax_rmse.set_extent(extent, crs=ccrs.PlateCarree())
         ax_rmse.add_feature(cfeature.LAND, facecolor="0.85", edgecolor="0.5", lw=0.4, zorder=2)
         ax_rmse.coastlines(lw=0.5, zorder=3)
-        gl2 = ax_rmse.gridlines(draw_labels=False, lw=0.3, color="gray", alpha=0.5)
+        ax_rmse.gridlines(draw_labels=False, lw=0.3, color="gray", alpha=0.5)
         ax_rmse.set_title("Time-mean RMSE")
         fig.colorbar(im2, ax=ax_rmse, shrink=0.7, label="RMSE (fraction)")
 
@@ -1212,7 +1211,7 @@ def plot_daily_ice_edges(days_by_run, ostia_dir, out_dir):
             ax.legend(handles=handles, loc="lower left", fontsize=9)
 
             ax.set_title(f"{pole_label} Sea-Ice Edge "
-                         f"({ICE_EXTENT_THRESH*100:.0f}% conc.) — {day_str}",
+                         f"({ICE_EXTENT_THRESH * 100:.0f}% conc.) — {day_str}",
                          fontsize=13, fontweight="bold")
 
             outfile = os.path.join(edge_dir,
@@ -1264,9 +1263,9 @@ def plot_basin_map(basins, out_dir):
                            subplot_kw={"projection": proj})
     ax.set_title("RECCAP2 Ocean Basins", fontsize=15, fontweight="bold")
 
-    im = ax.pcolormesh(LON_c, LAT_c, basin_map_c,
-                       transform=ccrs.PlateCarree(),
-                       cmap=cmap, norm=norm, shading="auto")
+    ax.pcolormesh(LON_c, LAT_c, basin_map_c,
+                  transform=ccrs.PlateCarree(),
+                  cmap=cmap, norm=norm, shading="auto")
     ax.add_feature(cfeature.LAND, facecolor="0.85", edgecolor="0.5",
                    lw=0.4, zorder=2)
     ax.coastlines(lw=0.5, zorder=3)
@@ -1306,23 +1305,23 @@ def plot_diff_ops_vs_par(ops_spatial, par_spatial, var, out_dir):
 
     # |bias| difference and RMSE difference: positive ⇒ ops worse
     abias_diff = np.abs(bias_ops) - np.abs(bias_par)
-    rmse_diff  = rmse_ops - rmse_par
+    rmse_diff = rmse_ops - rmse_par
 
     units = "K" if var == "sst" else "fraction"
     title_var = "Foundation SST" if var == "sst" else "Ice Concentration"
 
     # Add cyclic point
     abias_diff_c, lon_c = add_cyclic_point(abias_diff, coord=TGT_LON)
-    rmse_diff_c, _      = add_cyclic_point(rmse_diff,  coord=TGT_LON)
+    rmse_diff_c, _ = add_cyclic_point(rmse_diff, coord=TGT_LON)
     LON_c, LAT_c = np.meshgrid(lon_c, TGT_LAT)
 
     # Symmetric colour limits
     finite_b = abias_diff[np.isfinite(abias_diff)]
     finite_r = rmse_diff[np.isfinite(rmse_diff)]
     vmax_b = max(float(np.percentile(np.abs(finite_b), 95)), 0.001) \
-             if len(finite_b) > 0 else 0.1
+        if len(finite_b) > 0 else 0.1
     vmax_r = max(float(np.percentile(np.abs(finite_r), 95)), 0.001) \
-             if len(finite_r) > 0 else 0.1
+        if len(finite_r) > 0 else 0.1
 
     proj = ccrs.PlateCarree(central_longitude=0)
     fig, (ax_bias, ax_rmse) = plt.subplots(
@@ -1427,8 +1426,8 @@ def read_copernicus_adt(filepath):
     ds = nc.Dataset(filepath)
     alat = ds.variables["latitude"][:].astype(np.float64)
     alon = ds.variables["longitude"][:].astype(np.float64)
-    adt      = ds.variables["adt"][0, :, :]      # scale applied by nc4
-    flag_ice = ds.variables["flag_ice"][0, :, :] # 0=ocean, 1=ice, FV=masked
+    adt = ds.variables["adt"][0, :, :]      # scale applied by nc4
+    flag_ice = ds.variables["flag_ice"][0, :, :]  # 0=ocean, 1=ice, FV=masked
     ds.close()
 
     if hasattr(adt, "mask"):
@@ -1444,8 +1443,8 @@ def read_copernicus_adt(filepath):
     else:
         flag_ice = np.array(flag_ice, dtype=np.float64)
 
-    adt_tgt  = _interp_copernicus_adt_to_target(alat, alon, adt)
-    ice_tgt  = _interp_copernicus_adt_to_target(alat, alon, flag_ice)
+    adt_tgt = _interp_copernicus_adt_to_target(alat, alon, adt)
+    ice_tgt = _interp_copernicus_adt_to_target(alat, alon, flag_ice)
     # Only mask where the interpolated ice flag is finite and positive.
     # NaN ice_tgt means land-adjacent; those cells are already excluded by
     # the common valid mask (model ADT and obs ADT are both NaN over land).
@@ -1500,8 +1499,8 @@ def plot_adt_daily_map(model_anom, obs_anom, diff, day_str, exp_label, out_dir):
 
     # Add cyclic column to avoid seam at 0/360°
     model_c, lon_c = add_cyclic_point(model_anom, coord=TGT_LON)
-    obs_c, _       = add_cyclic_point(obs_anom,   coord=TGT_LON)
-    diff_c, _      = add_cyclic_point(diff,        coord=TGT_LON)
+    obs_c, _ = add_cyclic_point(obs_anom, coord=TGT_LON)
+    diff_c, _ = add_cyclic_point(diff, coord=TGT_LON)
     LON_c, LAT_c = np.meshgrid(lon_c, TGT_LAT)
 
     proj = ccrs.PlateCarree(central_longitude=0)
@@ -1512,8 +1511,8 @@ def plot_adt_daily_map(model_anom, obs_anom, diff, day_str, exp_label, out_dir):
 
     panels = [
         (axes[0], model_c, vmax_anom, "Model ADT anomaly (m)"),
-        (axes[1], obs_c,   vmax_anom, "Copernicus ADT anomaly (m)"),
-        (axes[2], diff_c,  vmax_diff, "Model − Copernicus (m)"),
+        (axes[1], obs_c, vmax_anom, "Copernicus ADT anomaly (m)"),
+        (axes[2], diff_c, vmax_diff, "Model − Copernicus (m)"),
     ]
     for ax, field, vmax, title in panels:
         im = ax.pcolormesh(LON_c, LAT_c, field, transform=ccrs.PlateCarree(),
@@ -1535,7 +1534,7 @@ def plot_adt_daily_map(model_anom, obs_anom, diff, day_str, exp_label, out_dir):
 
 
 def plot_adt_daily_map_wbc(model_anom, obs_anom, diff, day_str, exp_label,
-                            out_dir, vmax_anom, vmax_diff):
+                           out_dir, vmax_anom, vmax_diff):
     """
     3-row × N-column regional zoom figure for daily ADT at each western
     boundary current.  Row 0 = model anomaly, row 1 = Copernicus anomaly,
@@ -1545,8 +1544,8 @@ def plot_adt_daily_map_wbc(model_anom, obs_anom, diff, day_str, exp_label,
     os.makedirs(daily_dir, exist_ok=True)
 
     model_c, lon_c = add_cyclic_point(model_anom, coord=TGT_LON)
-    obs_c, _       = add_cyclic_point(obs_anom,   coord=TGT_LON)
-    diff_c, _      = add_cyclic_point(diff,        coord=TGT_LON)
+    obs_c, _ = add_cyclic_point(obs_anom, coord=TGT_LON)
+    diff_c, _ = add_cyclic_point(diff, coord=TGT_LON)
     LON_c, LAT_c = np.meshgrid(lon_c, TGT_LAT)
 
     nreg = len(WBC_REGIONS)
@@ -1554,8 +1553,8 @@ def plot_adt_daily_map_wbc(model_anom, obs_anom, diff, day_str, exp_label,
 
     row_defs = [
         (model_c, vmax_anom, "Model ADT anomaly (m)"),
-        (obs_c,   vmax_anom, "Copernicus ADT (m)"),
-        (diff_c,  vmax_diff, "Model − Copernicus (m)"),
+        (obs_c, vmax_anom, "Copernicus ADT (m)"),
+        (diff_c, vmax_diff, "Model − Copernicus (m)"),
     ]
 
     fig, axes = plt.subplots(3, nreg, figsize=(4.5 * nreg, 9),
@@ -1597,7 +1596,7 @@ def plot_adt_daily_map_wbc(model_anom, obs_anom, diff, day_str, exp_label,
 #  Accumulate daily ADT statistics
 # =========================================================================== #
 def compute_daily_adt_stats(model_files_by_day, adt_dir, basins,
-                             out_dir=None, exp_label=None):
+                            out_dir=None, exp_label=None):
     """
     Compare model ADT (ave_ssh) with Copernicus gridded ADT per day.
 
@@ -1650,7 +1649,7 @@ def compute_daily_adt_stats(model_files_by_day, adt_dir, basins,
         # This is the single, consistent ice mask: wherever Copernicus flags
         # ≥15 % sea-ice concentration, both model and obs are excluded.
         model_adt = np.where(ice_mask, np.nan, model_adt)
-        obs_adt   = np.where(ice_mask, np.nan, obs_adt)
+        obs_adt = np.where(ice_mask, np.nan, obs_adt)
 
         # Common valid ocean mask (land + ice already removed above)
         common = np.isfinite(model_adt) & np.isfinite(obs_adt)
@@ -1661,10 +1660,10 @@ def compute_daily_adt_stats(model_files_by_day, adt_dir, basins,
 
         # Datum removal: subtract per-field spatial mean over common mask
         model_mean = float(model_adt[common].mean())
-        obs_mean   = float(obs_adt[common].mean())
+        obs_mean = float(obs_adt[common].mean())
         model_anom = np.where(common, model_adt - model_mean, np.nan)
-        obs_anom   = np.where(common, obs_adt   - obs_mean,   np.nan)
-        diff       = model_anom - obs_anom   # NaN outside common mask
+        obs_anom = np.where(common, obs_adt - obs_mean, np.nan)
+        diff = model_anom - obs_anom   # NaN outside common mask
 
         # Colour limits shared between global and regional daily maps
         all_anom = np.concatenate([model_anom[np.isfinite(model_anom)],
@@ -1684,9 +1683,9 @@ def compute_daily_adt_stats(model_files_by_day, adt_dir, basins,
                                    vmax_anom_day, vmax_diff_day)
 
         # Spatial accumulation
-        spatial["adt_diff_sum"][common]    += diff[common]
+        spatial["adt_diff_sum"][common] += diff[common]
         spatial["adt_diff_sq_sum"][common] += diff[common] ** 2
-        spatial["adt_count"][common]       += 1.0
+        spatial["adt_count"][common] += 1.0
 
         dt = datetime.strptime(day_str, "%Y%m%d")
 

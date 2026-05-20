@@ -509,8 +509,6 @@ Examples:
         b_depth = depth[mask]
         b_ombg = ombg[mask]
         b_oman = oman[mask] if has_oman else None
-        b_lat = lat[mask]
-        b_lon = lon[mask]
         b_nobs = len(b_depth)
 
         if b_nobs == 0:
