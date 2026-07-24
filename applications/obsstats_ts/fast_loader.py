@@ -49,8 +49,6 @@ def load_ioda_diags(netcdf_file, var_name_short, geovar_group='ObsValue'):
     - Argo files used 18 times → 18x faster
     - Overall improvement: 5-50x depending on configuration
     """
-    global _CACHE, _STATS, _CACHE_LOCK
-
     # Create cache key
     cache_key = f"{netcdf_file}::{var_name_short}::{geovar_group}"
 
@@ -110,7 +108,7 @@ def print_cache_stats():
 
 def clear_cache():
     """Clear the cache - useful between experiments (thread-safe)."""
-    global _CACHE, _STATS, _CACHE_LOCK
+    global _STATS
     with _CACHE_LOCK:
         _CACHE.clear()
         _STATS = {'hits': 0, 'misses': 0}
