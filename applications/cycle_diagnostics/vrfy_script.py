@@ -375,7 +375,7 @@ if plot_increment:
                                                'hs_h': [-0.1, 0.1]},
                               colormap='seismic',
                               projs=['North', 'South'],
-                              vrfyout=os.path.join(vrfyout, 'vrfy', 'incr'))],   # sea ice increment
+                              vrfyout=os.path.join(vrfyout, 'vrfy', 'incr'))]   # sea ice increment
 #                   plotConfig(grid_file=grid_file,
 #                              data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.ice.incr.postproc.nc'),
 #                              lats=np.arange(-60, 60, 10),
