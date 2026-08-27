@@ -66,3 +66,16 @@ save_dir: './test-frames'
 varname: 'sst'
 bounds: [-2, 35]
 ```
+
+### 8. LETKF Verification
+Scores any number of marine DA experiments — LETKF or 3DVar, in any mix — against a chosen reference, and assembles a single self-contained HTML report covering observation space (common-sample O-B/O-A, Desroziers, rank histograms, CRPS), state space (increment and ensemble-spread profiles and maps, applied inflation), and the surface state against CMEMS ADT, CMEMS SSS and OSTIA SST.
+
+Work is split in two: an expensive per-experiment precompute that can run as independent parallel jobs, and a cheap step that builds the comparison page from those caches.
+
+- **Directory:** `letkf_verif/`
+- **Main Components:**
+  - `preflight.py` (check the environment and inputs before a long job)
+  - `precompute_experiment.py` (per-experiment cache; the expensive step)
+  - `build_comparison.py` (rejoins the observations, then builds the page)
+
+Overlaps `statestats_ostia` on SST only, and on a different grid — see `letkf_verif/README.md`.
