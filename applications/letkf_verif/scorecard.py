@@ -131,8 +131,9 @@ def build(cfg, cycles):
         L.append('')
         L.append('### %s' % label)
         L.append('')
-        L.append('| obs type | %s | %s |' % (ref, ' | '.join(others)))
-        L.append('|---|' + '---|' * (len(others) + 1))
+        hdr = [ref] + others
+        L.append('| obs type | ' + ' | '.join(hdr) + ' |')
+        L.append('|---|' + '---|' * len(hdr))
         for c in rows:
             L.append('| %s |' % ' | '.join(c))
     L.append('')
@@ -206,9 +207,9 @@ def build(cfg, cycles):
                  'so its bias is zero by construction and only the RMS is '
                  'meaningful.')
         L.append('')
-        L.append('| product | state | %s | %s |'
-                 % (ref, ' | '.join(others)))
-        L.append('|---|---|' + '---|' * (len(others) + 1))
+        hdr = [ref] + others
+        L.append('| product | state | ' + ' | '.join(hdr) + ' |')
+        L.append('|---|---|' + '---|' * len(hdr))
         for p in prods:
             spec = LV.PRODUCTS[p]
             for state in LV.STATES:

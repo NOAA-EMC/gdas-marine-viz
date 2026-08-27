@@ -143,6 +143,11 @@ def build(cfg, cycles):
     ens = [n for n in names
            if any(np.isfinite(P.get(data['obs'][t], 'common', n, 'all',
                                     'spread_b')) for t in types)]
+    # Rank histograms, spread-skill, consistency and spread-reduction figures
+    # all read ensemble spread, which a var-only comparison never has -- those
+    # panels are then correctly absent rather than a renamed figure gone
+    # missing, so only require them when some experiment is an ensemble.
+    has_ens = bool(ens)
     rows = []
     for t in types:
         for n in ens:
@@ -191,7 +196,8 @@ def build(cfg, cycles):
     f_bkgreg = img(fig_path(figs, 'bkg_profiles_regions', last),
                    'Background mean by region, band = spatial spread')
     f_cons = img(os.path.join(figs, 'obs_consistency.png'),
-                 'Departure against the spread that should match it')
+                 'Departure against the spread that should match it',
+                 optional=not has_ens)
     f_bkgprof = img(fig_path(figs, 'bkg_profiles', last),
                     'Background mean temperature and salinity against depth')
     f_bkgocn = img(fig_path(figs, 'bkg_maps_ocean', last),
@@ -241,25 +247,32 @@ def build(cfg, cycles):
         f_departures=img(os.path.join(figs, 'obs_departures.png'),
                          'Background and analysis fit to observations, common sample'),
         f_spread=img(os.path.join(figs, 'obs_spread.png'),
-                     'Consistency ratio and posterior/prior spread'),
+                     'Consistency ratio and posterior/prior spread',
+                     optional=not has_ens),
         f_rank=img(os.path.join(figs, 'obs_rank_histograms.png'),
-                   'Rank histograms of the observation within the prior ensemble'),
+                   'Rank histograms of the observation within the prior ensemble',
+                   optional=not has_ens),
         f_ss=img(os.path.join(figs, 'obs_spread_skill.png'),
-                 'Spread-skill relationship, binned by ensemble spread'),
+                 'Spread-skill relationship, binned by ensemble spread',
+                 optional=not has_ens),
         f_prof=img(os.path.join(figs, 'obs_profiles.png'),
                    'Profile observation departures by region, with the error budget'),
         f_counts=img(os.path.join(figs, 'cycle_obs_counts.png'),
                      'Observations passing QC per cycle, one panel per obs type'),
         f_incr=img(fig_path(figs, 'state_increment_profiles', last), 'RMS analysis increment against depth'),
-        f_sprprof=img(fig_path(figs, 'state_spread_profiles', last), 'Prior and posterior ensemble spread against depth'),
+        f_sprprof=img(fig_path(figs, 'state_spread_profiles', last),
+                      'Prior and posterior ensemble spread against depth',
+                      optional=not has_ens),
         f_sprreg=img(fig_path(figs, 'state_spread_regions', last),
-                     'Ensemble spread and spread reduction by region'),
+                     'Ensemble spread and spread reduction by region',
+                     optional=not has_ens),
         f_map_ocn=img(fig_path(figs, 'state_maps_ocean_increment', last), 'Ocean analysis increment maps'),
-        f_map_spr=img(fig_path(figs, 'state_maps_ocean_spread_reduction', last), 'Ocean ensemble spread reduction maps'),
+        f_map_spr=img(fig_path(figs, 'state_maps_ocean_spread_reduction', last),
+                      'Ocean ensemble spread reduction maps', optional=not has_ens),
         f_map_ice=hemi_imgs(figs, 'state_maps_ice_increment', last,
                             'Sea-ice analysis increment maps'),
         f_ice=hemi_imgs(figs, 'state_maps_ice_spread_reduction', last,
-                        'Sea-ice ensemble spread reduction maps'),
+                        'Sea-ice ensemble spread reduction maps', optional=not has_ens),
         # only written when the post-inflation variance file is present, so
         # optional -- but reported as missing if it is, like every other figure
         f_map_inf=img(fig_path(figs, 'state_maps_ocean_inflation', last),
