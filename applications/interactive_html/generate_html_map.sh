@@ -29,11 +29,11 @@ expname="${remaining_args[4]:-retrov17_01_stream2}"
 
 
 cycle="gdas.${yyyy}-${mm}-${dd}-${cyc}z"
-expbase="/scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfs-dev/${expname}/COMROOT/${expname}/"
-expdir="${expbase}/gdas.${yyyy}${mm}${dd}/${cyc}/"
-expdir_enkf="${expbase}/enkfgdas.${yyyy}${mm}${dd}/${cyc}/"
+andyretros="/scratch3/NCEPDEV/da/Andrew.Eichmann/hpss"
+expdir="${andyretros}/${expname}/gdas.${yyyy}${mm}${dd}/${cyc}/"
+expdir_enkf="${andyretros}/${expname}/enkfgdas.${yyyy}${mm}${dd}/${cyc}/"
 
-marineviz_dir="/scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfs-dev/gdas-marine-viz"
+marineviz_dir="/scratch3/NCEPDEV/da/Guillaume.Vernieres/common/monitor_rt/gdas-marine-viz-htmlmap"
 diags_dir="${expdir}/analysis/ocean/diags/"
 ocn_bkg="${expdir}/model/ocean/history/gdas.t${cyc}z.inst.f006.nc"
 ocn_jedi_inc="${expdir}/analysis/ocean/gdas.t${cyc}z.jedi_increment.i006.nc"
@@ -201,7 +201,7 @@ for ice_type in bkg jedi_inc; do
     else
         ice_file="${ice_jedi_inc}"
         echo "Generating sea ice surface plots for JEDI increment..."
-        ice_vars="aice_h hi_div_aice_h hs_div_aice_h"
+        ice_vars="aice_h hi_h hs_h"
         ice_cmap="jet"
     fi
 
