@@ -165,6 +165,10 @@ class Experiment:
         ev = dict(ENSVAR_PATTERNS)
         ev.update(d.get('ensvar_patterns') or {})
         self.ensvar_patterns = ev
+        # Older archives name the analysis increment differently (e.g.
+        # ocn.incr.nc / ice.incr.nc rather than jedi_increment*.nc); override
+        # per experiment rather than hardcoding every convention ever used.
+        self.incr_pattern = d.get('increment_pattern')
 
     def dir_for(self, cycle, stem=None, realm=''):
         """cycle is a 10-character YYYYMMDDHH string."""
@@ -223,8 +227,9 @@ class Experiment:
 
     # -- state space --------------------------------------------------------
     def increment(self, cycle, realm):
-        pat = ('%s/*ensmean_incr.nc' if self.kind == 'letkf'
-               else '%s/*jedi_increment*.nc') % realm
+        default = ('*ensmean_incr.nc' if self.kind == 'letkf'
+                   else '*jedi_increment*.nc')
+        pat = '%s/%s' % (realm, self.incr_pattern or default)
         return self._glob1(cycle, pat, required=False)
 
     def ensvar(self, cycle, realm, when):
@@ -357,6 +362,74 @@ def in_region(r, lat, lon=None):
     if lon0 <= lon1:
         return sel & (lon >= lon0) & (lon < lon1)
     return sel & ((lon >= lon0) | (lon < lon1))    # straddles the dateline
+
+
+# --------------------------------------------------------------------------
+# ocean-basin mask (RECCAP2 open_ocean), the real-geography alternative to a
+# hand-drawn `regions:` box for the broad basin breakdown. `corr_regions:`
+# keeps using boxes -- the correlation-length fit needs an actual box extent
+# to fit within, which a basin mask cannot give it.
+# --------------------------------------------------------------------------
+
+_BASIN_MASK_CACHE = {}
+
+
+def _load_basin_mask(path):
+    """(lat, lon, open_ocean codes, {code: name}), cached by path.
+
+    Only open_ocean is read: it is the file's whole-basin classification
+    (Atlantic/Pacific/Indian/Arctic/Southern, 0 = not open ocean), separate
+    from its `coastal_marcats` sub-regions this suite has no use for. Codes
+    and names both come from the variable's own `region_names` attribute --
+    "1.Atlantic, 2.Pacific, ..." -- rather than being hardcoded here, so a
+    differently-coded mask file still reads correctly.
+    """
+    path = expand(path)
+    if path not in _BASIN_MASK_CACHE:
+        with Dataset(path) as ds:
+            lat = np.asarray(ds['lat'][:], dtype='f8')
+            lon = np.asarray(ds['lon'][:], dtype='f8')
+            codes = np.asarray(ds['open_ocean'][:], dtype='i4')
+            names = dict(kv.strip().split('.', 1)
+                        for kv in ds['open_ocean'].region_names.split(','))
+            names = {int(k): v for k, v in names.items()}
+        _BASIN_MASK_CACHE[path] = (lat, lon, codes, names)
+    return _BASIN_MASK_CACHE[path]
+
+
+def basin_regions(path):
+    """[(code, name), ...] in ascending code order, from the mask file."""
+    return sorted(_load_basin_mask(path)[3].items())
+
+
+def basin_at(path, lat, lon):
+    """RECCAP2 open_ocean code at each (lat, lon), any matching shape.
+
+    Nearest cell on the mask's own 1-degree grid -- exact for a uniform axis,
+    same approach as lv_verif.sample_to_grid. ``lon`` is wrapped into the
+    mask's 0..360 convention (cell centres 0.5..359.5) first, since callers
+    pass either that or -180..180.
+    """
+    mlat, mlon, codes, _names = _load_basin_mask(path)
+    dla = (mlat[-1] - mlat[0]) / (mlat.size - 1)
+    dlo = (mlon[-1] - mlon[0]) / (mlon.size - 1)
+    j = np.clip(np.rint((np.asarray(lat) - mlat[0]) / dla).astype(int),
+               0, mlat.size - 1)
+    i = np.mod(np.rint((np.mod(lon, 360.0) - mlon[0]) / dlo).astype(int),
+              mlon.size)
+    return codes[j, i]
+
+
+def region_list(cfg):
+    """Every region name in display order: basins first (if configured),
+    then the explicit `regions:` boxes -- shared so the grid masks, the
+    observation strata and figure ordering all agree on one list."""
+    names = []
+    mask_path = cfg.get('ocean_basin_mask')
+    if mask_path:
+        names += [name for _code, name in basin_regions(mask_path)]
+    names += [r['name'] for r in cfg.get('regions', []) if r['name'] not in names]
+    return names
 
 
 def corr_regions(cfg):
@@ -506,15 +579,21 @@ class Grid:
         return float(np.interp(q / 100.0, c, v))
 
     def regions(self, cfg):
-        """{name: bool mask} from the ``regions:`` config, always incl. global.
+        """{name: bool mask} from ``ocean_basin_mask:`` and ``regions:``,
+        always including global.
 
         Boxes are given in conventional longitude, so selection uses lon180
         rather than the gridspec's native -300..60 range.
         """
         out = {'global': self.mask.copy()}
+        mask_path = cfg.get('ocean_basin_mask')
+        if mask_path:
+            codes = basin_at(mask_path, self.lat, self.lon180)
+            for code, name in basin_regions(mask_path):
+                out[name] = self.mask & (codes == code)
         for r in cfg.get('regions', []):
             name = r['name']
-            if name == 'global':
+            if name == 'global' or name in out:
                 continue
             out[name] = self.mask & in_region(r, self.lat, self.lon180)
         return out
@@ -673,6 +752,8 @@ class ObsSet:
         return self.qc == 0
 
     def qc_counts(self):
+        if self.qc is None:
+            return {}
         vals, cnt = np.unique(self.qc, return_counts=True)
         return {qc_name(v): int(c) for v, c in zip(vals, cnt)}
 

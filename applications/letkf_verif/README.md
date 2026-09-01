@@ -89,6 +89,7 @@ Everything lands under `--outdir`.
 | `regions:` | Named lat/lon boxes for the regional profiles; `global` is always included |
 | `verification:` | One directory per gridded product — they come from unrelated archives, so each names its own |
 | `depth_max:` | Cut every depth panel at N metres; a view setting, so it needs no recompute |
+| `map_limits:` | Fixed (vmin, vmax) per state variable/level, so a map figure's color scale holds across cycles and experiments instead of being recomputed per figure; optional, per-hemisphere override for ice thickness/snow depth |
 
 ## Relationship to `statestats_ostia`
 

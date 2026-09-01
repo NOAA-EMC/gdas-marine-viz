@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """Build the self-contained HTML verification report from the cache and figures.
 
-Figures are embedded as data URIs so the page stands alone. Everything shown
+Figures are embedded as data URIs so each page stands alone. Everything shown
 comes from cache/<cycle>.json -- the report never re-reads the model output.
+
+The report is 8 pages, one per section, so no single page carries every
+figure in the suite (state maps, verif maps and cycling figures across every
+field/level/realm/product add up fast -- see MAX_SIZE_MB below). Every page
+repeats the masthead, experiment legend and a nav strip to the other 7
+sections, so any page works as an entry point, not just the first.
 """
 
 import argparse
@@ -10,6 +16,7 @@ import base64
 import html
 import os
 import sys
+import tarfile
 from string import Template
 
 import numpy as np
@@ -17,8 +24,9 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import lv_plot as P  # noqa: E402
+import lv_verif as LV  # noqa: E402
 import plot_statespace as PS  # noqa: E402
-from lv_common import load_config  # noqa: E402
+from lv_common import basin_regions, load_config, region_list  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # html helpers
@@ -64,6 +72,246 @@ def img(path, alt, optional=False):
                                                       html.escape(alt)))
 
 
+def picker_widget(group, items, label_fn, panel_fn, style_fn=None,
+                  collapsible=None, dropdown=None):
+    """Pure-CSS radio-button tabs, or (``dropdown``) a native <select>: one
+    panel visible at a time. At most one of ``collapsible``/``dropdown``.
+
+    The chip form (the default) needs no JavaScript at all: each item gets
+    a hidden radio input plus a label styled as a chip, and one generated
+    CSS rule per item reveals that item's panel when its radio is checked
+    (the first is checked by default). ``group`` scopes the radio group
+    name and every id, so more than one picker (region, obs type, ...) can
+    live on the same page without their ids or radio groups colliding.
+
+    ``collapsible``, if given (a <summary> label string), tucks the chip row
+    itself inside a <details> disclosure, collapsed by default -- for a
+    picker with many items where the chip row is the clutter, not just the
+    panels. That nests the radios one level deeper than '.picker-panels', so
+    the plain ":checked ~ sibling" rule used otherwise can no longer reach
+    across to it; this switches to a ":has()" rule instead, which does not
+    require a shared parent. Every browser this report has ever needed to
+    support already ships :has() (Chrome/Edge and Safari since early 2022,
+    Firefox since Dec 2023).
+
+    ``dropdown``, if given (a label used as the <select>'s accessible name),
+    renders a native <select> instead of chips -- the one widget in this
+    whole report with any JavaScript, because CSS genuinely has no rule for
+    this one: nothing lets a <select>'s chosen VALUE affect an unrelated
+    sibling's display the way :checked does for a radio. The swap is a few
+    lines of inline vanilla JS on the select's "change" event; nothing else
+    on the page needs or uses JS, and ``style_fn`` (no reliable cross-browser
+    way to colour an <option>) is ignored in this mode.
+
+    ``label_fn``/``panel_fn``/``style_fn`` take one raw item (not its slug)
+    and return its chip/option label, its panel's inner HTML, and (chip mode
+    only) an optional ` style="..."` string for the chip (e.g. to colour-
+    match a companion map) respectively.
+    """
+    tabs, rules, panels, options = [], [], [], []
+    for i, item in enumerate(items):
+        s = P.slug(item)
+        tid, pid = '%s-tab-%s' % (group, s), '%s-panel-%s' % (group, s)
+        label = label_fn(item)
+        default = i == 0
+        if dropdown:
+            options.append('<option value="%s"%s>%s</option>'
+                           % (pid, ' selected' if default else '',
+                              html.escape(label)))
+        else:
+            style = style_fn(item) if style_fn else ''
+            tabs.append(
+                '<input type="radio" name="%s" id="%s" class="picker-tab"%s>'
+                '<label for="%s" class="picker-chip"%s>%s</label>'
+                % (group, tid, ' checked' if default else '', tid, style,
+                   html.escape(label)))
+            if collapsible:
+                rules.append(
+                    '.picker-widget:has(#%s:checked) .picker-panels #%s'
+                    '{display:block}' % (tid, pid))
+            else:
+                rules.append(
+                    '#%s:checked ~ .picker-panels #%s{display:block}'
+                    % (tid, pid))
+        panels.append(
+            '<div id="%s" class="picker-panel%s">%s</div>'
+            % (pid, ' default' if (dropdown and default) else '',
+               panel_fn(item)))
+    if not (tabs or options):
+        return ''
+
+    if dropdown:
+        chooser = (
+            '<select class="picker-select" aria-label="%s" '
+            'onchange="lvPickerShow(this)">%s</select>'
+            '<script>function lvPickerShow(s){'
+            'var w=s.closest(".picker-widget");'
+            'var p=w.querySelectorAll(".picker-panel");'
+            'for(var i=0;i<p.length;i++){p[i].style.display="none"}'
+            'var t=document.getElementById(s.value);'
+            'if(t){t.style.display="block"}}</script>'
+            % (html.escape(dropdown), ''.join(options)))
+    elif collapsible:
+        chooser = (
+            '<details class="picker-chooser"><summary>%s</summary>'
+            '<div class="picker-chips">%s</div></details>'
+            % (html.escape(collapsible), ''.join(tabs)))
+    else:
+        chooser = ''.join(tabs)
+
+    return ('<style>%s</style>'
+            '<div class="picker-widget">%s'
+            '<div class="picker-panels">%s</div></div>'
+            % (''.join(rules), chooser, ''.join(panels)))
+
+
+def basin_colors(cfg):
+    """{basin name: hex colour}, matching ocean_regions.png's legend order.
+
+    Shared by every region picker so a basin's chip is always the same
+    colour as its patch on that map -- same P.SERIES assignment, same basin
+    order. Empty when no `ocean_basin_mask:` is configured.
+    """
+    mask_path = cfg.get('ocean_basin_mask')
+    if not mask_path:
+        return {}
+    return {name: P.SERIES[i % len(P.SERIES)]
+           for i, (_code, name) in enumerate(basin_regions(mask_path))}
+
+
+def _basin_chip_style(basin_color, r):
+    """`regions:` boxes and 'global' (which ocean_regions.png draws as
+    outlines, not fills) get a neutral chip instead of chasing exact
+    polygon geometry for a colour that map never gave them either."""
+    c = basin_color.get(r)
+    return (' style="border-color:%s;background:%s1f;color:%s"'
+            % (c, c, c)) if c else ''
+
+
+def verif_widget(cycles, cfg, names, figs):
+    """Region picker + one panel per region for 'fit to gridded analyses'.
+
+    The product/region presence filter here MUST match plot_timeseries.
+    fig_verif_series exactly: that is what decided which verif_region_*.png
+    files exist to embed.
+    """
+    prods = [p for p in LV.PRODUCTS
+             if any(P.get(d, 'state', n, 'ocean', 'verif', p, default=None)
+                    for d in cycles.values() for n in names)]
+    if not prods:
+        return ''
+    regions = ['global'] + region_list(cfg)
+    regions = [r for r in regions
+               if any(P.get(d, 'state', n, 'ocean', 'verif', p, 'bkg', r,
+                            default=None)
+                      for d in cycles.values() for n in names for p in prods)]
+    if not regions:
+        return ''
+
+    basin_color = basin_colors(cfg)
+    return picker_widget(
+        'verif', regions,
+        label_fn=lambda r: r.replace('_', ' '),
+        panel_fn=lambda r: img(
+            os.path.join(figs, 'verif_region_%s.png' % P.slug(r)),
+            '%s: fit to gridded analyses' % r.replace('_', ' '),
+            optional=True),
+        style_fn=lambda r: _basin_chip_style(basin_color, r))
+
+
+def obstype_dropdown_widget(cycles, figs, base, label):
+    """Obs-type dropdown + one panel per type.
+
+    Shared by 'fit to observations' (obsfit_type_*.png) and 'observation
+    usage' (obscount_type_*.png) -- both are per-obs-type figure sets with
+    20-30 items, too many for even a collapsed chip row to feel light, so
+    both use picker_widget's ``dropdown`` mode (a native <select>) instead.
+
+    Filtered to types whose PNG actually exists rather than every type in
+    the cache: a type can be present with nothing plottable for it (e.g.
+    every departure QC'd away), which the figure-writing side then draws
+    nothing for -- without this filter that type still got an option, just
+    one that opened onto a blank panel.
+    """
+    types = sorted({t for d in cycles.values() for t in d.get('obs', {})})
+    types = [t for t in types if os.path.exists(
+        os.path.join(figs, '%s_type_%s.png' % (base, P.slug(t))))]
+    return picker_widget(
+        base, types,
+        label_fn=P.short,
+        panel_fn=lambda t: img(
+            os.path.join(figs, '%s_type_%s.png' % (base, P.slug(t))),
+            '%s: %s' % (P.short(t), label), optional=True),
+        dropdown='choose obs type')
+
+
+def obsfit_widget(cycles, cfg, figs):
+    """Obs-type picker + one panel per type for 'fit to observations'."""
+    return obstype_dropdown_widget(cycles, figs, 'obsfit',
+                                   'fit to observations')
+
+
+def counts_widget(cycles, cfg, figs):
+    """Obs-type picker + one panel per type for 'observation usage'."""
+    return obstype_dropdown_widget(cycles, figs, 'obscount',
+                                   'observations assimilated per cycle')
+
+
+def profiles_widget(data, cfg, figs):
+    """Region picker + one panel per region for profile obs departures.
+
+    Same pure-CSS tabs and basin colouring as verif_widget. Filtered to
+    regions whose PNG actually exists (mirroring obsfit_widget) since a
+    region can be configured with no stratified profile data at all -- e.g.
+    a `regions:` box drawn for the gridded-analysis or correlation-length
+    figures, which fig_profiles then has nothing to plot for.
+    """
+    types = [t for t in sorted(data['obs']) if data['obs'][t].get('is_profile')]
+    if not types:
+        return ''
+    regions = ['global'] + region_list(cfg)
+    regions = [r for r in regions if os.path.exists(
+        os.path.join(figs, 'obs_profiles_region_%s.png' % P.slug(r)))]
+    if not regions:
+        return ''
+
+    basin_color = basin_colors(cfg)
+    return picker_widget(
+        'profiles', regions,
+        label_fn=lambda r: r.replace('_', ' '),
+        panel_fn=lambda r: img(
+            os.path.join(figs, 'obs_profiles_region_%s.png' % P.slug(r)),
+            '%s: profile observations against depth' % r.replace('_', ' '),
+            optional=True),
+        style_fn=lambda r: _basin_chip_style(basin_color, r))
+
+
+def regional_widget(group, cfg, figs, last, base, label):
+    """Region picker + one panel per region for a fig_regional_profiles figure.
+
+    Shared by 'RMS increment by region' (state space) and 'background mean
+    by region' (background state) -- both come from the one
+    fig_regional_profiles() in plot_statespace.py, which writes one
+    '<base>_region_<slug>[_<cycle>].png' per region instead of one grid with
+    a column per region. fig_path() resolves the per-cycle tag the same way
+    every other state-space figure does.
+    """
+    regions = ['global'] + region_list(cfg)
+    regions = [r for r in regions if os.path.exists(
+        fig_path(figs, '%s_region_%s' % (base, P.slug(r)), last))]
+    if not regions:
+        return ''
+
+    basin_color = basin_colors(cfg)
+    return picker_widget(
+        group, regions,
+        label_fn=lambda r: r.replace('_', ' '),
+        panel_fn=lambda r: img(
+            fig_path(figs, '%s_region_%s' % (base, P.slug(r)), last),
+            '%s: %s by region' % (r.replace('_', ' '), label), optional=True),
+        style_fn=lambda r: _basin_chip_style(basin_color, r))
+
+
 def table(headers, rows, cls=''):
     h = ''.join('<th>%s</th>' % c for c in headers)
     body = ''.join('<tr>%s</tr>'
@@ -100,15 +348,72 @@ def target_cell(v, nd=3):
 
 
 # ---------------------------------------------------------------------------
+# page layout: one page per section, mechanically split at the same
+# boundaries the single-page report used to scroll through.
+# ---------------------------------------------------------------------------
 
-def build(cfg, cycles):
+SECTIONS = [
+    ('01', 'fit', 'Fit to observations'),
+    ('02', 'usage', 'Observation usage'),
+    ('03', 'state', 'State space'),
+    ('04', 'background', 'Background state'),
+    ('05', 'dates', 'Increments across dates'),
+    ('06', 'verif', 'Fit to gridded analyses'),
+    ('07', 'cycling', 'Cycling behaviour'),
+    ('08', 'calibration', 'Ensemble calibration'),
+]
+
+
+def page_names(out):
+    """Output path for each of the 8 pages. Page 1 keeps ``out`` exactly, so
+    any existing link to the report's original filename still resolves."""
+    stem, ext = os.path.splitext(out)
+    names = [out]
+    for num, slug, _title in SECTIONS[1:]:
+        names.append('%s_%s_%s%s' % (stem, num, slug, ext))
+    return names
+
+
+def _nav(current, names_out):
+    items = []
+    for i, (num, _slug, title) in enumerate(SECTIONS):
+        cls = ' class="on"' if i == current else ''
+        items.append('<a href="%s"%s><span class="sec-n">%s</span>%s</a>'
+                     % (html.escape(os.path.basename(names_out[i])), cls,
+                        num, html.escape(title)))
+    return '<nav class="secnav">%s</nav>' % ''.join(items)
+
+
+# ---------------------------------------------------------------------------
+
+def _series(cycles, obstype, name, key, sample):
+    """Metric value per cycle for one experiment, NaN where absent."""
+    return np.array([P.get(cycles[c].get('obs', {}).get(obstype, {}),
+                           sample, name, 'all', key)
+                     for c in sorted(cycles)], dtype='f8')
+
+
+def _mean(v):
+    """nanmean that returns NaN instead of warning on an all-NaN slice."""
+    return float(np.nanmean(v)) if np.any(np.isfinite(v)) else np.nan
+
+
+def _cycle_set(cycles, name):
+    return {c for c in cycles if name in P.exp_names(cycles[c])}
+
+
+def build(cfg, cycles, out):
     last = sorted(cycles)[-1]
     data = cycles[last]
-    names = P.exp_names(data)
-    labels = {n: data['experiments'][n].get('label', n) for n in names}
+    # The union across every cached cycle, not just exp_names() on ``last``:
+    # a config whose experiments cover disjoint cycle windows (see the
+    # caveat in experiments.yaml) has no single cycle where all of them are
+    # present, so reading the experiment list off one cycle -- even the
+    # latest -- silently drops whichever experiments do not reach that date.
+    names = P.all_exp_names(cfg, cycles)
+    labels = {e.name: e.label for e in cfg['experiments']}
     ref = cfg.get('reference') or names[0]
     others = [n for n in names if n != ref]
-    types = sorted(data['obs'])
     col = P.color_map(names)
     figs = cfg['figs']
 
@@ -120,29 +425,73 @@ def build(cfg, cycles):
         for n in names)
 
     # -- section 1: fit ------------------------------------------------------
+    # Averaged over every cycle each experiment actually has, not read off
+    # one snapshot cycle -- the earlier per-cycle version showed nothing at
+    # all for an experiment whose window excludes ``last``. The common
+    # sample is used wherever compute_cycle.py --rejoin actually joined it;
+    # cycles it could not join (nothing to join against, or not every
+    # experiment resolved the obs type) fall back to each experiment's own
+    # sample rather than being left blank. This is chosen per obs type (not
+    # once for the whole table): a type only one experiment assimilates must
+    # not push every OTHER, fully-shared type onto its own sample too.
+    types = sorted({t for d in cycles.values() for t in d.get('obs', {})})
     rows = []
     for t in types:
-        r = P.get(data['obs'][t], 'common', ref, 'all', 'ombg_rms')
-        ra = P.get(data['obs'][t], 'common', ref, 'all', 'oman_rms')
+        sample = P.type_sample(cycles, t)
+        r = _mean(_series(cycles, t, ref, 'ombg_rms', sample))
+        ra = _mean(_series(cycles, t, ref, 'oman_rms', sample))
+        # own_vals is keyed once per experiment so an obs type the REFERENCE
+        # doesn't assimilate (its r/ra above are then NaN) still gets a row
+        # -- gating on the reference alone dropped every type it lacks even
+        # when another experiment had real stats for it.
+        own_vals = {n: (_mean(_series(cycles, t, n, 'ombg_rms', sample)),
+                        _mean(_series(cycles, t, n, 'oman_rms', sample)))
+                   for n in others}
+        if not any(np.isfinite(v) for v in (r, ra) + tuple(
+                x for pair in own_vals.values() for x in pair)):
+            continue
         cells = [P.short(t), fmt(r, 4), fmt(ra, 4)]
         for n in others:
-            cells.append(delta_cell(
-                P.get(data['obs'][t], 'common', n, 'all', 'ombg_rms'), r))
-            cells.append(delta_cell(
-                P.get(data['obs'][t], 'common', n, 'all', 'oman_rms'), ra))
+            ob, oa = own_vals[n]
+            cells.append(delta_cell(ob, r))
+            cells.append(delta_cell(oa, ra))
         rows.append(cells)
     hdr = ['obs type', '%s O&minus;B' % ref, '%s O&minus;A' % ref]
     for n in others:
         hdr += ['%s O&minus;B' % n, '%s O&minus;A' % n]
     t1 = table(hdr, rows)
 
+    # An experiment sharing NO cached cycle with the reference is not a
+    # controlled comparison -- its column above is its own separate period
+    # sitting next to the reference's, not the same dates. Own-sample
+    # fallback (above) still prints real numbers for it; this says plainly
+    # that they are not paired.
+    ref_cycles = _cycle_set(cycles, ref)
+    disjoint = [n for n in others if not (_cycle_set(cycles, n) & ref_cycles)]
+    overlap_warning = ''
+    if disjoint:
+        overlap_warning = (
+            '<p class="warn"><b>%s</b> share%s no cached cycle with the '
+            'reference (%s) &mdash; %s column%s above %s its own separate '
+            'period next to the reference\'s, not a same-dates comparison.'
+            '</p>'
+            % (html.escape(' / '.join(labels[n] for n in disjoint)),
+               '' if len(disjoint) > 1 else 's',
+               html.escape(labels[ref]),
+               'their' if len(disjoint) > 1 else 'its',
+               's' if len(disjoint) > 1 else '',
+               'are' if len(disjoint) > 1 else 'is'))
+
     # -- calibration ---------------------------------------------------------
     # The Desroziers ratios and the rank-histogram end ratio are still computed
     # and still drive scorecard.md; they are off this table because reading a
     # tuning decision off them belongs with the figures, not a wide grid.
+    # Averaged over cycles like section 1, for the same reason: an ensemble
+    # experiment whose window excludes ``last`` would otherwise never appear.
     ens = [n for n in names
-           if any(np.isfinite(P.get(data['obs'][t], 'common', n, 'all',
-                                    'spread_b')) for t in types)]
+           if any(np.any(np.isfinite(_series(cycles, t, n, 'spread_b',
+                                             P.type_sample(cycles, t))))
+                  for t in types)]
     # Rank histograms, spread-skill, consistency and spread-reduction figures
     # all read ensemble spread, which a var-only comparison never has -- those
     # panels are then correctly absent rather than a renamed figure gone
@@ -150,14 +499,17 @@ def build(cfg, cycles):
     has_ens = bool(ens)
     rows = []
     for t in types:
+        sample = P.type_sample(cycles, t)
         for n in ens:
-            m = P.get(data['obs'][t], 'common', n, 'all', default={})
+            cr = _mean(_series(cycles, t, n, 'consistency_ratio', sample))
+            ss = _mean(_series(cycles, t, n, 'spread_skill', sample))
+            sr = _mean(_series(cycles, t, n, 'spread_ratio', sample))
+            cp = _mean(_series(cycles, t, n, 'crps', sample))
+            if not any(np.isfinite(v) for v in (cr, ss, sr, cp)):
+                continue
             rows.append([
                 P.short(t), html.escape(labels[n]),
-                target_cell(P.get(m, 'consistency_ratio')),
-                target_cell(P.get(m, 'spread_skill')),
-                fmt(P.get(m, 'spread_ratio')),
-                fmt(P.get(m, 'crps'), 4)])
+                target_cell(cr), target_cell(ss), fmt(sr), fmt(cp, 4)])
     t2 = table(['obs type', 'experiment', 'consistency ratio', 'spread / skill',
                 '&sigma;<sub>a</sub>/&sigma;<sub>b</sub>', 'CRPS'], rows)
 
@@ -191,10 +543,10 @@ def build(cfg, cycles):
                + ['&sigma;<sub>a</sub>/&sigma;<sub>b</sub> %s' % n
                   for n in names], rows)
 
-    f_increg = img(fig_path(figs, 'state_increment_regions', last),
-                   'RMS increment by region, band = spatial spread')
-    f_bkgreg = img(fig_path(figs, 'bkg_profiles_regions', last),
-                   'Background mean by region, band = spatial spread')
+    f_increg = regional_widget('increg', cfg, figs, last,
+                               'state_increment_regions', 'RMS increment')
+    f_bkgreg = regional_widget('bkgreg', cfg, figs, last,
+                               'bkg_profiles_regions', 'background mean')
     f_cons = img(os.path.join(figs, 'obs_consistency.png'),
                  'Departure against the spread that should match it',
                  optional=not has_ens)
@@ -206,16 +558,19 @@ def build(cfg, cycles):
     drift = img(os.path.join(figs, 'cycle_background_drift.png'),
                 'Background global means across cycles')
 
+    any_own = any(P.type_sample(cycles, t) == 'own' for t in types)
     sample_note = (
         'Headline comparisons use the <b>common sample</b> &mdash; observations '
         'present and passing quality control in <em>every</em> experiment '
         '&mdash; because the configurations do not assimilate the same '
-        'observations.' if data.get('common_valid', True) else
-        '<b>Own-sample scores.</b> These caches were computed in separate runs, '
-        'so no cross-experiment common sample exists and each experiment is '
-        'scored on the observations it assimilated; differences are confounded '
-        'by thinning and QC. Run <code>compute_cycle.py --rejoin</code> to '
-        'rebuild a true common sample.')
+        'observations.' if not any_own else
+        '<b>Some obs types above use own-sample scores.</b> No '
+        'cross-experiment common sample exists for them, because an '
+        'experiment does not assimilate that type or the caches were '
+        'computed in separate runs, so each experiment is scored on the '
+        'observations it assimilated; differences there are confounded by '
+        'thinning and QC. Run <code>compute_cycle.py --rejoin</code> to '
+        'rebuild a true common sample where possible.')
 
     seq_figs = ''.join(
         img(os.path.join(figs, f), 'Increment across dates: %s' % f[4:-4])
@@ -227,7 +582,7 @@ def build(cfg, cycles):
 
     cycle_figs = ''.join(
         img(os.path.join(figs, 'cycle_%s.png' % t),
-            '%s: headline metrics across cycles' % P.short(t))
+            '%s: headline metrics across cycles' % P.short(t), optional=True)
         for t in types)
 
     ncyc = len(cycles)
@@ -238,7 +593,7 @@ def build(cfg, cycles):
                 if ncyc < 6 else
                 '%d cycles cached.' % ncyc)
 
-    return Template(TEMPLATE).substitute(
+    subs = dict(
         cycle=last, ncyc=ncyc,
         cycle_list=', '.join(sorted(cycles)),
         nexp=len(names), ref=html.escape(ref),
@@ -255,10 +610,12 @@ def build(cfg, cycles):
         f_ss=img(os.path.join(figs, 'obs_spread_skill.png'),
                  'Spread-skill relationship, binned by ensemble spread',
                  optional=not has_ens),
-        f_prof=img(os.path.join(figs, 'obs_profiles.png'),
-                   'Profile observation departures by region, with the error budget'),
-        f_counts=img(os.path.join(figs, 'cycle_obs_counts.png'),
-                     'Observations passing QC per cycle, one panel per obs type'),
+        f_prof=profiles_widget(data, cfg, figs),
+        # only written when `ocean_basin_mask:` is configured
+        f_regions=img(os.path.join(figs, 'ocean_regions.png'),
+                      'Ocean basins and named regions used for every '
+                      'regional breakdown in this report', optional=True),
+        f_counts=counts_widget(cycles, cfg, figs),
         f_incr=img(fig_path(figs, 'state_increment_profiles', last), 'RMS analysis increment against depth'),
         f_sprprof=img(fig_path(figs, 'state_spread_profiles', last),
                       'Prior and posterior ensemble spread against depth',
@@ -281,13 +638,10 @@ def build(cfg, cycles):
                             'Sea-ice applied-inflation maps', optional=True),
         f_stab=img(os.path.join(figs, 'cycle_stability.png'),
                    'Cycling stability of the background fit', optional=True),
-        # written only when `verification:` names products, hence optional --
-        # but a miss is still reported rather than silently dropped
-        # across-date, so not per-cycle tagged
-        f_verif=img(os.path.join(figs, 'cycle_verif_scores.png'),
-                    'Fit to gridded analyses per cycle', optional=True),
-        f_obsfit=img(os.path.join(figs, 'cycle_obs_fit.png'),
-                     'Background and analysis fit per cycle', optional=True),
+        # empty when `verification:` names no products, or none resolved to
+        # a real file for any cached cycle
+        f_verif=verif_widget(cycles, cfg, names, figs),
+        f_obsfit=obsfit_widget(cycles, cfg, figs),
         # fields then their difference, per product: the fields say whether
         # the model reproduces the product, the difference is where the error
         # is actually legible
@@ -298,15 +652,25 @@ def build(cfg, cycles):
             + img(fig_path(figs, 'verif_diff_%s' % p, last),
                   'Model minus %s' % p.upper(), optional=True)
             for p in ('adt', 'sss', 'sst')),
-        sample_note=sample_note,
+        sample_note=sample_note, overlap_warning=overlap_warning,
         cycle_figs=cycle_figs, cyc_note=cyc_note,
         seq_figs=seq_figs, hov=hov, inc2d=inc2d,
         f_bkgprof=f_bkgprof, f_bkgocn=f_bkgocn, f_bkgice=f_bkgice,
         f_increg=f_increg, f_bkgreg=f_bkgreg, f_cons=f_cons,
         drift=drift)
 
+    names_out = page_names(out)
+    tail = Template(TAIL).substitute(subs)
+    pages = []
+    for i, (_num, _slug, title) in enumerate(SECTIONS):
+        page_subs = dict(subs, nav=_nav(i, names_out), page_title=title)
+        head = Template(HEAD).substitute(page_subs)
+        body = Template(SECTION_TEMPLATES[i]).substitute(subs)
+        pages.append((names_out[i], head + body + tail))
+    return pages
 
-TEMPLATE = r"""<title>Marine LETKF Scorecard</title>
+
+STYLE = r"""<title>Marine DA Verification &mdash; ${page_title}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -380,6 +744,17 @@ h1{font-family:var(--serif); font-weight:600; font-size:clamp(30px,4.4vw,44px);
 .exp em{font-style:normal; font-family:var(--mono); font-size:11.5px;
   color:var(--ink-3)}
 
+/* ---- section nav ---- */
+.secnav{display:flex; flex-wrap:wrap; gap:4px 2px}
+.secnav a{display:inline-flex; align-items:baseline; gap:7px;
+  padding:7px 12px; border-radius:8px; text-decoration:none;
+  color:var(--ink-2); font-size:13px; font-weight:500}
+.secnav a .sec-n{font-family:var(--mono); font-size:11px; color:var(--ink-3);
+  font-weight:600}
+.secnav a:hover{background:var(--surface-2); color:var(--ink)}
+.secnav a.on{background:var(--accent-soft); color:var(--accent)}
+.secnav a.on .sec-n{color:var(--accent)}
+
 /* ---- sections ---- */
 section{display:flex; flex-direction:column; gap:16px}
 .sec-head{display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;
@@ -426,6 +801,48 @@ td:first-child,td:nth-child(2){font-family:var(--sans)}
 .chip-flat{color:var(--ink-2)}
 .chip-bad{color:var(--alert); font-weight:500}
 
+/* ---- picker widget (fit to gridded analyses, fit to observations) ---- */
+.picker-widget{display:flex; flex-wrap:wrap; gap:8px; align-items:flex-start}
+.picker-tab{position:absolute; opacity:0; width:1px; height:1px}
+.picker-chip{display:inline-flex; align-items:center; padding:6px 14px;
+  border-radius:999px; border:1.5px solid var(--rule); background:var(--surface);
+  color:var(--ink-2); font-size:13px; font-weight:500; cursor:pointer;
+  user-select:none}
+.picker-chip:hover{border-color:var(--accent); color:var(--ink)}
+/* outline, not border/background -- a basin chip's colour is set inline
+   (to match ocean_regions.png) and inline style always wins over these
+   class rules, so the "selected" cue has to be a property inline never
+   touches */
+.picker-tab:checked+.picker-chip{outline:2px solid var(--ink); font-weight:700}
+.picker-tab:focus-visible+.picker-chip{outline:2px solid var(--accent);
+  outline-offset:2px}
+.picker-panels{flex:1 0 100%; margin-top:4px}
+.picker-panel{display:none}
+/* collapsible chooser (many-item pickers, e.g. obs type) -- wraps the same
+   .picker-tab/.picker-chip pairs above, just tucked behind a <summary> */
+.picker-chooser{flex:1 0 100%}
+.picker-chooser summary{cursor:pointer; list-style:none; font-size:13px;
+  font-weight:500; color:var(--ink-2); padding:4px 2px; user-select:none}
+.picker-chooser summary::-webkit-details-marker{display:none}
+.picker-chooser summary::before{content:'\25b8'; display:inline-block;
+  width:1em; transition:transform .12s ease}
+.picker-chooser[open] summary::before{transform:rotate(90deg)}
+.picker-chooser summary:hover{color:var(--ink)}
+.picker-chips{display:flex; flex-wrap:wrap; gap:8px; padding-top:8px}
+/* dropdown chooser (picker_widget(dropdown=...)) -- JS (see lvPickerShow)
+   swaps .picker-panel visibility on change; .default is this mode's only
+   static starting state, since there is no :checked to key a CSS rule off */
+.picker-select{flex:1 0 100%; font:inherit; font-size:13px; padding:7px 12px;
+  border-radius:8px; border:1.5px solid var(--rule); background:var(--surface);
+  color:var(--ink); cursor:pointer; max-width:100%}
+.picker-select:hover{border-color:var(--accent)}
+.picker-select:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+.picker-panel.default{display:block}
+
+/* ---- warning ---- */
+p.warn{margin:0; padding:12px 16px; border-radius:8px; font-weight:600;
+  color:var(--alert); background:var(--alert-bg); border:1px solid var(--alert)}
+
 /* ---- callout ---- */
 .callout{background:var(--surface); border:1px solid var(--rule);
   border-left:3px solid var(--accent); border-radius:0 10px 10px 0;
@@ -443,12 +860,14 @@ a{color:var(--accent)}
 @media (prefers-reduced-motion: reduce){*{animation:none!important;
   transition:none!important}}
 </style>
+"""
 
+HEAD = STYLE + r"""
 <div class="wrap">
 
 <header class="mast">
   <span class="eyebrow">Marine data assimilation &middot; verification</span>
-  <h1>LETKF against a tuned 3DVar</h1>
+  <h1>Marine analysis verification</h1>
   <p class="sub">Every number below is computed from the analysis output of
   ${nexp} experiments. ${sample_note}</p>
   <div class="meta">
@@ -459,23 +878,32 @@ a{color:var(--accent)}
   <div class="exps">${legend}</div>
 </header>
 
+${nav}
+"""
+
+SEC_FIT = r"""
 <section>
   <div class="sec-head"><span class="sec-n">01</span>
     <h2>Fit to observations</h2></div>
   <p class="lede">How close each background and analysis lands to the
-  observations it was scored against. Lower is better; percentages are the
-  change against <code>${ref}</code> on the common sample. In the profile
-  figure each depth bin carries the whole error budget on one axis:
+  observations it was scored against, averaged over every cycle each
+  experiment has cached. Lower is better; percentages are the change against
+  <code>${ref}</code>. In the profile figure each depth bin carries the whole
+  error budget on one axis:
   RMS(O&minus;B) against
   &radic;(&sigma;<sub>b</sub><sup>2</sup>&nbsp;+&nbsp;R<sup>2</sup>), the value
   it should equal when the ensemble and the assigned observation error are
   consistent, with those two contributions drawn behind it.</p>
+  ${f_regions}
+  ${overlap_warning}
   ${t1}
   ${f_departures}
   ${f_obsfit}
   ${f_prof}
 </section>
+"""
 
+SEC_USAGE = r"""
 <section>
   <div class="sec-head"><span class="sec-n">02</span>
     <h2>Observation usage</h2></div>
@@ -486,7 +914,9 @@ a{color:var(--accent)}
   <code>scorecard.md</code>.</p>
   ${f_counts}
 </section>
+"""
 
+SEC_STATE = r"""
 <section>
   <div class="sec-head"><span class="sec-n">03</span>
     <h2>State space</h2></div>
@@ -523,7 +953,9 @@ a{color:var(--accent)}
   ${f_ice}
   ${f_ice_inf}
 </section>
+"""
 
+SEC_BACKGROUND = r"""
 <section>
   <div class="sec-head"><span class="sec-n">04</span>
     <h2>Background state</h2></div>
@@ -539,7 +971,9 @@ a{color:var(--accent)}
   ${f_bkgocn}
   ${f_bkgice}
 </section>
+"""
 
+SEC_DATES = r"""
 <section>
   <div class="sec-head"><span class="sec-n">05</span>
     <h2>Increments across dates</h2></div>
@@ -552,7 +986,9 @@ a{color:var(--accent)}
   ${inc2d}
   ${seq_figs}
 </section>
+"""
 
+SEC_VERIF = r"""
 <section>
   <div class="sec-head"><span class="sec-n">06</span>
     <h2>Fit to gridded analyses</h2></div>
@@ -579,7 +1015,9 @@ a{color:var(--accent)}
   ${f_verif}
   ${f_verif_maps}
 </section>
+"""
 
+SEC_CYCLING = r"""
 <section>
   <div class="sec-head"><span class="sec-n">07</span>
     <h2>Cycling behaviour</h2></div>
@@ -589,7 +1027,9 @@ a{color:var(--accent)}
   ${f_stab}
   ${cycle_figs}
 </section>
+"""
 
+SEC_CALIBRATION = r"""
 <section>
   <div class="sec-head"><span class="sec-n">08</span>
     <h2>Ensemble calibration</h2></div>
@@ -605,7 +1045,12 @@ a{color:var(--accent)}
   ${f_rank}
   ${f_ss}
 </section>
+"""
 
+SECTION_TEMPLATES = [SEC_FIT, SEC_USAGE, SEC_STATE, SEC_BACKGROUND, SEC_DATES,
+                     SEC_VERIF, SEC_CYCLING, SEC_CALIBRATION]
+
+TAIL = r"""
 <section>
   <div class="callout">
     <h3>What these files cannot tell you</h3>
@@ -663,20 +1108,39 @@ def main(argv=None):
     # The output directory is the user's, not the code's, so it may not
     # exist yet.
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
-    with open(out, 'w') as f:
-        f.write(build(cfg, cycles))
-    size = os.path.getsize(out) / 1e6
-    print('wrote %s (%.1f MB)' % (out, size))
-    if size > 16.0:
-        # Publishing the report as an artifact caps at 16 MB, and every figure
-        # is embedded as base64, so the file grows with the number of FIELDS
-        # and REGIONS rather than with the number of cycles. Say so here rather
-        # than let it be discovered at publish time.
-        print('  ! over the 16 MB limit for publishing this as an artifact.\n'
-              '    It grows with the field and region counts. In order of\n'
-              '    least loss: lower VERIF_MAP_DPI, then MAP_DPI, in\n'
-              '    plot_statespace.py; shorten `regions:`; or drop fields from\n'
-              '    `background_vars:` / `state_vars:`.')
+    pages = build(cfg, cycles, out)
+    over = []
+    for path, content in pages:
+        with open(path, 'w') as f:
+            f.write(content)
+        size = os.path.getsize(path) / 1e6
+        print('wrote %s (%.1f MB)' % (path, size))
+        if size > 16.0:
+            over.append(path)
+
+    # One tarball of every report page, for handing the whole thing off in
+    # one file -- the report is 8 separate HTML pages so nav between
+    # sections works, but that also means "send me the report" needs all 8.
+    page_dir = os.path.dirname(os.path.abspath(out))
+    html_files = sorted(f for f in os.listdir(page_dir) if f.endswith('.html'))
+    tar_path = os.path.join(
+        page_dir, os.path.splitext(os.path.basename(out))[0] + '.tar')
+    with tarfile.open(tar_path, 'w') as tf:
+        for f in html_files:
+            tf.add(os.path.join(page_dir, f), arcname=f)
+    print('wrote %s (%d files)' % (tar_path, len(html_files)))
+
+    if over:
+        # Publishing a page as an artifact caps at 16 MB, and every figure is
+        # embedded as base64, so a page grows with the number of FIELDS and
+        # REGIONS on it rather than with the number of cycles. Say so here
+        # rather than let it be discovered at publish time.
+        print('  ! %d page(s) over the 16 MB limit for publishing as an '
+              'artifact:\n      %s\n'
+              '    In order of least loss: lower VERIF_MAP_DPI, then MAP_DPI, '
+              'in\n    plot_statespace.py; shorten `regions:`; or drop fields '
+              'from\n    `background_vars:` / `state_vars:`.'
+              % (len(over), '\n      '.join(os.path.basename(p) for p in over)))
     if _MISSING:
         # A figure the report expects but cannot find used to vanish in
         # silence, which is how renamed figures dropped out unnoticed.

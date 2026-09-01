@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import matplotlib.pyplot as plt  # noqa: E402
 import lv_plot as P  # noqa: E402
-from lv_common import load_config  # noqa: E402
+from lv_common import load_config, region_list  # noqa: E402
 
 
 def _grouped_bar(ax, types, names, values, colors, ylabel):
@@ -327,11 +327,25 @@ def _budget_panel(ax, data, t, names, col, labels, centres, pre):
     return drawn
 
 
+_PROFILE_METRICS = (
+    ('ombg_mean', 'mean O$-$B (bias), band = $\\pm$1 sd of departures'),
+    ('budget', 'departure and the spread that should match it'),
+    ('consistency_ratio', 'consistency ratio'))
+
+
 def fig_profiles(data, cfg):
-    """Argo temperature and salinity statistics against depth."""
+    """Argo temperature and salinity statistics against depth, one PNG per
+    region rather than one big grid with a column per region: with several
+    basins configured that grid squeezed every region into a sliver too
+    narrow to read, the same problem fig_verif_series had. build_report.py
+    embeds all of them behind a region picker; it derives the same region
+    list from the cache independently by checking which obs_profiles_region_
+    *.png files this wrote, so it needs no separate presence filter of its
+    own.
+    """
     types = [t for t in sorted(data['obs']) if data['obs'][t].get('is_profile')]
     if not types:
-        return None
+        return []
     names = P.exp_names(data)
     col = P.color_map(names)
     bins = cfg.get('depth_bins', [])
@@ -344,23 +358,21 @@ def fig_profiles(data, cfg):
     for t in types:
         for n in names:
             have |= set(P.get(data['obs'][t], 'common', n, default={}))
-    regions = ['global'] + [r['name'] for r in cfg.get('regions', [])
-                            if any(('%s/%s' % (r['name'], L)) in have
+    regions = ['global'] + [name for name in region_list(cfg)
+                            if any(('%s/%s' % (name, L)) in have
                                    for L in labels)]
 
-    metrics = (('ombg_mean', 'mean O$-$B (bias), band = $\\pm$1 sd of departures'),
-               ('budget', 'departure and the spread that should match it'),
-               ('consistency_ratio', 'consistency ratio'))
-    nrow = len(types) * len(metrics)
-    fig, axes = plt.subplots(nrow, len(regions),
-                             figsize=(3.5 * len(regions), 3.4 * nrow),
-                             squeeze=False)
-    for r0, t in enumerate(types):
-        for m, (key, title) in enumerate(metrics):
-            r = r0 * len(metrics) + m
-            for c, reg in enumerate(regions):
-                ax = axes[r][c]
-                pre = '' if reg == 'global' else reg + '/'
+    written = []
+    for reg in regions:
+        pre = '' if reg == 'global' else reg + '/'
+        fig, axes = plt.subplots(len(types), len(_PROFILE_METRICS),
+                                 figsize=(3.5 * len(_PROFILE_METRICS),
+                                          3.4 * len(types)),
+                                 squeeze=False)
+        drawn_any = False
+        for ri, t in enumerate(types):
+            for c, (key, title) in enumerate(_PROFILE_METRICS):
+                ax = axes[ri][c]
                 if key == 'budget':
                     drawn = _budget_panel(ax, data, t, names, col, labels,
                                           centres, pre)
@@ -369,7 +381,7 @@ def fig_profiles(data, cfg):
                     for n in names:
                         rec = [P.get(data['obs'][t], 'common', n, pre + L,
                                      default={}) for L in labels]
-                        v = np.array([r.get(key, np.nan) for r in rec],
+                        v = np.array([rr.get(key, np.nan) for rr in rec],
                                      dtype='f8')
                         if not np.any(np.isfinite(v)):
                             continue
@@ -384,6 +396,7 @@ def fig_profiles(data, cfg):
                 if not drawn:
                     ax.set_visible(False)
                     continue
+                drawn_any = True
                 if key == 'ombg_mean':
                     ax.axvline(0.0, color=P.MUTED, lw=1.2, ls=(0, (4, 3)))
                 if key == 'consistency_ratio':
@@ -392,17 +405,20 @@ def fig_profiles(data, cfg):
                 ax.invert_yaxis()
                 P.depth_limit(ax, cfg)
                 ax.set_xlabel(title)
-                if r == 0:
-                    ax.set_title(reg.replace('_', ' '), fontsize=10,
-                                 color=P.INK)
                 if c == 0:
                     ax.set_ylabel('%s\ndepth (m)' % P.short(t))
                 P.tidy(ax, xgrid=True)
-            P.maybe_legend(axes[r][0], fontsize=7)
-    fig.suptitle('Profile observations against depth by region, common sample '
-                 '- %s' % data['cycle'], y=1.0, fontsize=11.5, color=P.INK)
-    fig.tight_layout()
-    return P.save(fig, cfg, 'obs_profiles.png')
+            P.maybe_legend(axes[ri][0], fontsize=7)
+        if not drawn_any:
+            plt.close(fig)
+            continue
+        fig.suptitle('%s: profile observations against depth, common sample '
+                     '- %s' % (reg.replace('_', ' '), data['cycle']),
+                     y=1.0, fontsize=11.5, color=P.INK)
+        fig.tight_layout()
+        written.append(P.save(fig, cfg,
+                              'obs_profiles_region_%s.png' % P.slug(reg)))
+    return written
 
 
 def main(argv=None):

@@ -76,7 +76,7 @@ def _mark(p):
 
 
 def build(cfg, cycles):
-    names = P.exp_names(cycles[sorted(cycles)[-1]])
+    names = P.all_exp_names(cfg, cycles)
     ref = cfg.get('reference') or names[0]
     others = [n for n in names if n != ref]
     types = sorted({t for d in cycles.values() for t in d.get('obs', {})})
@@ -85,20 +85,26 @@ def build(cfg, cycles):
     L = []
     L.append('# LETKF verification scorecard')
     L.append('')
-    # Caches merged from separate runs cannot carry a real common sample:
-    # each run only ever joined its own experiment.
-    valid = all(cycles[c].get('common_valid', True) for c in cycles)
-    sample = 'common' if valid else 'own'
+    # Chosen per obs type, not once for the whole scorecard: a type only one
+    # experiment assimilates must not push every OTHER, fully-shared type
+    # onto its own (unjoined) sample too. Caches merged from separate runs
+    # cannot carry a real common sample either: each run only ever joined
+    # its own experiment.
+    any_own = any(P.type_sample(cycles, t) == 'own' for t in types)
     L.append('Reference experiment: **%s**  |  cycles: **%d** (%s)  |  '
-             'sample: **%s**' % (ref, ncyc, ', '.join(sorted(cycles)), sample))
-    if not valid:
+             'sample: **%s**'
+             % (ref, ncyc, ', '.join(sorted(cycles)),
+                'own for some obs types' if any_own else 'common'))
+    if any_own:
         L.append('')
-        L.append('> **Own-sample scores.** These caches were computed in '
-                 'separate runs, so no cross-experiment common sample exists: '
-                 'each experiment is scored on the observations it assimilated. '
-                 'Differences are confounded by thinning and QC. Run '
+        L.append('> **Some obs types use own-sample scores.** No '
+                 'cross-experiment common sample exists for them -- an '
+                 'experiment does not assimilate that type, or the caches '
+                 'were computed in separate runs -- so each experiment is '
+                 'scored on the observations it assimilated. Differences '
+                 'there are confounded by thinning and QC. Run '
                  '`compute_cycle.py --rejoin` to rebuild a true common sample '
-                 '(it re-reads only the observation files).')
+                 'where possible (it re-reads only the observation files).')
     if ncyc < 6:
         L.append('')
         L.append('> Significance testing needs at least 6 cycles; with %d '
@@ -114,12 +120,19 @@ def build(cfg, cycles):
     for key, label in LOWER_BETTER:
         rows = []
         for t in types:
+            sample = P.type_sample(cycles, t)
             r = _series(cycles, t, ref, key, sample)
-            if not np.any(np.isfinite(r)):
+            others_s = {n: _series(cycles, t, n, key, sample) for n in others}
+            # An obs type the REFERENCE doesn't assimilate still gets a row
+            # when another experiment has it -- gating on the reference alone
+            # dropped every such type even though section 3 (usage) shows it
+            # was actually assimilated.
+            if not (np.any(np.isfinite(r))
+                   or any(np.any(np.isfinite(s)) for s in others_s.values())):
                 continue
             cells = [P.short(t), _fmt(np.nanmean(r), 4)]
             for n in others:
-                s = _series(cycles, t, n, key, sample)
+                s = others_s[n]
                 pc = _pct(np.nanmean(s), np.nanmean(r))
                 cells.append('%s (%s%%)%s'
                              % (_fmt(np.nanmean(s), 4),
@@ -140,7 +153,8 @@ def build(cfg, cycles):
 
     # ---- ensemble calibration ---------------------------------------------
     ens = [n for n in names
-           if any(np.any(np.isfinite(_series(cycles, t, n, 'spread_b', sample)))
+           if any(np.any(np.isfinite(_series(cycles, t, n, 'spread_b',
+                                             P.type_sample(cycles, t))))
                   for t in types)]
     if ens:
         L.append('## 2. Ensemble calibration (target = 1)')
@@ -149,6 +163,7 @@ def build(cfg, cycles):
                  % ' | '.join(lab for _, lab in TARGET_ONE))
         L.append('|---|---|' + '---|' * (len(TARGET_ONE) + 2))
         for t in types:
+            sample = P.type_sample(cycles, t)
             for n in ens:
                 vals = [np.nanmean(_series(cycles, t, n, k, sample))
                         for k, _ in TARGET_ONE]

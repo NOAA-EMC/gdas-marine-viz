@@ -14,6 +14,18 @@ AVHRR and VIIRS radiances the system assimilates, so SST is a consistency
 check rather than independent validation. The number is reported the same way;
 read it knowing that.
 
+OSTIA's analysed_sst is a FOUNDATION temperature -- below the diurnal warm
+layer, effectively a settled value rather than one tied to a specific hour,
+which this module treats as valid at 12Z for the day. The model side of the
+comparison is built to match: instead of the single background/analysis
+instant at the cycle, it is the per-cell mean of Temp level 0 over that
+day's four synoptic cycles (00/06/12/18Z) -- a 24h window centred on 12Z,
+using the cycle-frequency snapshots this suite has rather than reading
+separate sub-daily history output. PRODUCTS['sst']['only_hour'] then
+restricts the comparison itself to the 12Z cycle, since OSTIA is a once-daily
+product and the other three cycles would just repeat the same day's score.
+See _daily_mean() below.
+
 Every product is a regular lat/lon grid on -180..180, which is what
 `Grid.lon180` already provides, so a model point is placed in a product by
 index arithmetic rather than by interpolation: no KD-tree and no scipy (which
@@ -57,7 +69,11 @@ PRODUCTS = {
         pattern='{Y}/{m}/{Ymd}*-UKMO-L4_GHRSST-SSTfnd-OSTIA-GLOB-*.nc',
         var='analysed_sst', lat='lat', lon='lon', idx=(0,),
         model_var='Temp', units='degC', label='SST (OSTIA)',
-        offset=-273.15, mask='mask', err='analysis_error'),
+        offset=-273.15, mask='mask', err='analysis_error',
+        # foundation temperature: the model side is a 24h-centred daily mean
+        # (see _daily_mean and the module docstring), scored once a day at
+        # the 12Z cycle rather than at every cycle.
+        daily_mean=True, only_hour='12'),
 }
 
 STATES = ('bkg', 'ana')
@@ -163,6 +179,60 @@ def _read(ds, name, idx):
     return np.ma.filled(a.astype('f8'), np.nan)
 
 
+def _level0(path, var):
+    """Level 0 (surface) of ``var`` from ``path``, or None.
+
+    Deliberately not lv_statespace.surface_state: lv_statespace imports this
+    module (compute() calls verify()), so importing it back here would be
+    circular. This is the same read _read_level does there, 2-D case only,
+    which is all _daily_mean needs.
+    """
+    if path is None:
+        return None
+    with Dataset(path) as ds:
+        if var not in ds.variables:
+            return None
+        v = ds[var]
+        a = v[0, 0] if v.ndim == 4 else v[0]
+        return np.ma.filled(a.astype('f8'), np.nan)
+
+
+def _daily_mean(exp, day, var, state):
+    """Per-cell mean of ``var`` level 0 over one calendar day's synoptic
+    cycles (00/06/12/18Z) -- a 24h window centred on the 12Z cycle.
+
+    Stands in for reading sub-daily history output, which this suite does
+    not keep: the day's own cycle-frequency snapshots are the finest time
+    resolution available. A cell is left out of a cycle's contribution only
+    where that cycle's field is itself NaN there (or the cycle has no
+    background/increment at all, e.g. a gap in the archive); it is NaN in
+    the result only where every cycle in the window was.
+
+    ``state`` is 'bkg' (the background alone) or 'ana' (background +
+    increment, matching surface_state's reconstruction of the analysis --
+    see its docstring for why that assumption is fine here too).
+    """
+    acc = cnt = None
+    for hh in ('00', '06', '12', '18'):
+        cycle = day + hh
+        fld = _level0(exp.background(cycle, 'ocean'), var)
+        if fld is not None and state == 'ana':
+            incr = _level0(exp.increment(cycle, 'ocean'), var)
+            fld = None if incr is None else fld + incr
+        if fld is None:
+            continue
+        if acc is None:
+            acc = np.zeros_like(fld)
+            cnt = np.zeros_like(fld)
+        ok = np.isfinite(fld)
+        acc[ok] += fld[ok]
+        cnt[ok] += 1
+    if acc is None or not np.any(cnt > 0):
+        return None
+    with np.errstate(invalid='ignore'):
+        return np.where(cnt > 0, acc / np.maximum(cnt, 1), np.nan)
+
+
 def load_product(grid, path, spec):
     """Product value, its error estimate and its valid mask, on the model grid."""
     with Dataset(path) as ds:
@@ -236,6 +306,12 @@ def verify(grid, exp, cycle, cfg, regions, model_level):
     scores, maps = {}, {}
     for name, entry in configured(cfg).items():
         spec = PRODUCTS.get(name)
+        if spec is not None and spec.get('only_hour') \
+                and cycle[8:10] != spec['only_hour']:
+            # Restricted to one cycle hour by design (see PRODUCTS), not a
+            # missing file -- routine at every other cycle, so quiet rather
+            # than reported like an actual miss below.
+            continue
         path = product_path(cfg, name, cycle)
         if spec is None or path is None:
             # Say so. A configured product that resolves to nothing used to be
@@ -248,7 +324,10 @@ def verify(grid, exp, cycle, cfg, regions, model_level):
         obs, err, keep = load_product(grid, path, spec)
         per_state = {}
         for state in STATES:
-            fld = model_level(spec['model_var'], state)
+            if spec.get('daily_mean'):
+                fld = _daily_mean(exp, cycle[:8], spec['model_var'], state)
+            else:
+                fld = model_level(spec['model_var'], state)
             if fld is None:
                 continue
             sel = grid.mask & keep & np.isfinite(fld)

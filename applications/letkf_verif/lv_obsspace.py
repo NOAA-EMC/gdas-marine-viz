@@ -10,7 +10,7 @@ observations.
 
 import numpy as np
 
-from lv_common import in_region, mean, rms, signed_sqrt
+from lv_common import basin_at, basin_regions, in_region, mean, rms, signed_sqrt
 
 # obs types whose statistics are meaningful per depth bin rather than per
 # latitude band
@@ -153,6 +153,11 @@ def strata(s, obstype, cfg):
         bands = [('', np.ones(s.n, dtype=bool))]
         if lat is not None:
             lon = s.meta.get('longitude')
+            mask_path = cfg.get('ocean_basin_mask')
+            if mask_path:
+                codes = basin_at(mask_path, lat, lon)
+                bands += [(name + '/', codes == code)
+                         for code, name in basin_regions(mask_path)]
             bands += [(r['name'] + '/', in_region(r, lat, lon))
                       for r in cfg.get('regions', [])]
         for prefix, bsel in bands:
@@ -167,6 +172,11 @@ def strata(s, obstype, cfg):
         yield 'SH', lat <= 0
     elif 'latitude' in s.meta:
         lat, lon = s.meta['latitude'], s.meta.get('longitude')
+        mask_path = cfg.get('ocean_basin_mask')
+        if mask_path:
+            codes = basin_at(mask_path, lat, lon)
+            for code, name in basin_regions(mask_path):
+                yield name, codes == code
         for r in cfg.get('regions', []):
             yield r['name'], in_region(r, lat, lon)
 

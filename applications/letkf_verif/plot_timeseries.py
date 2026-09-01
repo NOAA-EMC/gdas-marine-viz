@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import matplotlib.pyplot as plt  # noqa: E402
 import lv_plot as P  # noqa: E402
 import lv_verif as LV  # noqa: E402
-from lv_common import Grid, load_config  # noqa: E402
+from lv_common import Grid, load_config, region_list  # noqa: E402
 
 PANELS = [
     ('ombg_rms', 'RMS(O$-$B)', None),
@@ -51,14 +51,14 @@ def _times(cycles):
     return [dt.datetime.strptime(c, '%Y%m%d%H') for c in sorted(cycles)]
 
 
-def _series(cycles, obstype, name, key):
+def _series(cycles, obstype, name, key, sample='common'):
     return np.array([P.get(cycles[c].get('obs', {}).get(obstype, {}),
-                           'common', name, 'all', key)
+                           sample, name, 'all', key)
                      for c in sorted(cycles)], dtype='f8')
 
 
-def fig_timeseries(cycles, cfg, obstype):
-    names = P.exp_names(cycles[sorted(cycles)[-1]])
+def fig_timeseries(cycles, cfg, obstype, sample='common'):
+    names = P.all_exp_names(cfg, cycles)
     col = P.color_map(names)
     t = _times(cycles)
     single = len(t) == 1
@@ -67,7 +67,7 @@ def fig_timeseries(cycles, cfg, obstype):
     for i, (key, label, target) in enumerate(PANELS):
         ax = axes[i // 3][i % 3]
         for n in names:
-            v = _series(cycles, obstype, n, key)
+            v = _series(cycles, obstype, n, key, sample)
             if not np.any(np.isfinite(v)):
                 continue
             tt, vv = _finite(t, v)
@@ -97,32 +97,36 @@ def fig_timeseries(cycles, cfg, obstype):
 
 
 def fig_obs_counts(cycles, cfg):
-    """Assimilated observation counts against cycle, one panel per obs type.
+    """Assimilated observation counts against cycle, one figure per obs type.
 
-    Thinning and QC both move this number, and a count that steps or collapses
-    mid-run is usually the first sign that something upstream broke. The common
-    sample is drawn alongside so the size of the comparable subset is visible
-    at the same time.
+    One PNG per obs type rather than one big grid of tiny panels: with 20+
+    obs types configured that grid squeezed every type into a sliver too
+    narrow to read -- the same problem fig_obs_fit had. build_report.py
+    embeds all of them behind an obs-type dropdown; it derives the same
+    type list from the cache independently (every type present qualifies
+    here, so there is no presence filter to keep in sync -- just the list
+    itself).
+
+    Thinning and QC both move this number, and a count that steps or
+    collapses mid-run is usually the first sign that something upstream
+    broke. The common sample is drawn alongside so the size of the
+    comparable subset is visible at the same time.
     """
     order = sorted(cycles)
-    names = P.exp_names(cycles[order[-1]])
+    names = P.all_exp_names(cfg, cycles)
     col = P.color_map(names)
     types = sorted({t for d in cycles.values() for t in d.get('obs', {})})
     if not types:
-        return None
+        return []
     t = _times(cycles)
     single = len(t) == 1
     mk = 'o' if single else 'o-'
 
-    nc = min(3, len(types))
-    nr = int(np.ceil(len(types) / nc))
-    fig, axes = plt.subplots(nr, nc, figsize=(4.6 * nc, 3.3 * nr),
-                             squeeze=False)
-    for a in axes.ravel()[len(types):]:
-        a.set_visible(False)
-    for i, ot in enumerate(types):
-        ax = axes[i // nc][i % nc]
+    written = []
+    for ot in types:
+        fig, ax = plt.subplots(figsize=(6.0, 3.6))
         top = 0.0
+        drawn = False
         # The common sample goes down first: it often sits exactly on top of
         # the most-thinned experiment, and the experiment must stay visible.
         common = np.array([P.get(cycles[c], 'obs', ot, 'counts', names[0],
@@ -133,6 +137,7 @@ def fig_obs_counts(cycles, cfg):
                     ms=7 if single else 5, lw=1.2, mec=P.SURFACE, mew=0.8,
                     zorder=1)
             top = max(top, np.nanmax(common))
+            drawn = True
         for n in names:
             v = np.array([P.get(cycles[c], 'obs', ot, 'counts', n,
                                 'n_pass_own') for c in order], dtype='f8')
@@ -142,32 +147,27 @@ def fig_obs_counts(cycles, cfg):
             ax.plot(tt, vv, mk, color=col[n], label=n, ms=5 if single else 4,
                     mec=P.SURFACE, mew=1.0, zorder=3)
             top = max(top, np.nanmax(v))
-        ax.set_title(P.short(ot), fontsize=10)
+            drawn = True
+        if not drawn:
+            plt.close(fig)
+            continue
         ax.set_ylim(0, 1.1 * top if top > 0 else 1)
-        if i % nc == 0:
-            ax.set_ylabel('observations passing QC')
+        ax.set_ylabel('observations passing QC')
         P.tidy(ax)
         if single:
             ax.set_xticks(t)
             ax.set_xticklabels([t[0].strftime('%Y-%m-%d %HZ')], fontsize=8)
-    P.maybe_legend(axes[0][0], fontsize=8)
-    if not single:
-        _date_labels(fig, axes, t)
-    fig.suptitle('Observations assimilated per cycle%s'
-                 % ('  (single cycle - add cycles to see evolution)'
-                    if single else ''),
-                 y=1.01, fontsize=11.5, color=P.INK)
-    fig.tight_layout()
-    return P.save(fig, cfg, 'cycle_obs_counts.png')
-
-
-def _panel_grid(n, w=4.6, h=3.3, ncol=3):
-    nc = min(ncol, max(n, 1))
-    nr = int(np.ceil(n / nc))
-    fig, axes = plt.subplots(nr, nc, figsize=(w * nc, h * nr), squeeze=False)
-    for a in axes.ravel()[n:]:
-        a.set_visible(False)
-    return fig, axes, nc
+        else:
+            _date_labels(fig, np.array([[ax]]), t)
+        P.maybe_legend(ax, fontsize=8)
+        fig.suptitle('%s: observations assimilated per cycle%s'
+                     % (P.short(ot),
+                        '  (single cycle - add cycles to see evolution)'
+                        if single else ''),
+                     y=1.03, fontsize=11.5, color=P.INK)
+        fig.tight_layout()
+        written.append(P.save(fig, cfg, 'obscount_type_%s.png' % P.slug(ot)))
+    return written
 
 
 def _date_labels(fig, axes, t=None):
@@ -224,64 +224,79 @@ def _time_lines(ax, t, series, col, single):
 
 
 def fig_obs_fit(cycles, cfg):
-    """Background and analysis fit in observation space, against cycle.
+    """Background and analysis fit in observation space, one figure per type.
 
-    The bar chart in the report says where each system stands at the latest
-    date; this says whether it is holding. Solid is RMS(O-B), dashed
-    RMS(O-A), so the gap within a colour is what the analysis bought at that
-    cycle and the slope is whether it is being kept.
+    One PNG per obs type rather than one big grid of tiny panels: with 20+
+    obs types configured that grid squeezed every type into a sliver too
+    narrow to read -- the same problem fig_verif_series had with regions.
+    build_report.py embeds all of them behind an obs-type picker; it derives
+    the same type list from the cache independently (every type present
+    qualifies here, unlike the region list in fig_verif_series, so there is
+    no presence filter to keep in sync -- just the list itself).
     """
-    order = sorted(cycles)
-    names = P.exp_names(cycles[order[-1]])
+    names = P.all_exp_names(cfg, cycles)
     col = P.color_map(names)
     types = sorted({t for d in cycles.values() for t in d.get('obs', {})})
     if not types:
-        return None
+        return []
     t = _times(cycles)
     single = len(t) == 1
-    fig, axes, nc = _panel_grid(len(types))
-    for i, ot in enumerate(types):
-        ax = axes[i // nc][i % nc]
-        series = {n: (_series(cycles, ot, n, 'ombg_rms'),
-                      _series(cycles, ot, n, 'oman_rms')) for n in names}
+
+    written = []
+    for ot in types:
+        # each obs type samples whoever actually shares it, not the run-wide
+        # common/own choice -- one type missing an experiment shouldn't push
+        # every OTHER, fully-shared type onto its own (unjoined) sample too
+        sample = P.type_sample(cycles, ot)
+        series = {n: (_series(cycles, ot, n, 'ombg_rms', sample),
+                      _series(cycles, ot, n, 'oman_rms', sample)) for n in names}
+        fig, ax = plt.subplots(figsize=(6.4, 3.6))
         if not _time_lines(ax, t, series, col, single):
-            ax.set_visible(False)
+            plt.close(fig)
             continue
-        ax.set_title(P.short(ot), fontsize=10)
-        if i % nc == 0:
-            ax.set_ylabel('RMS departure (obs units)')
+        ax.set_ylabel('RMS departure (obs units)')
         P.tidy(ax)
         if single:
             ax.set_xticks(t)
             ax.set_xticklabels([t[0].strftime('%Y-%m-%d %HZ')], fontsize=8)
-    P.maybe_legend(axes[0][0], fontsize=7.5)
-    if not single:
-        _date_labels(fig, axes, t)
-    fig.suptitle('Fit to observations per cycle, solid O$-$B / dashed O$-$A%s'
-                 % ('  (single cycle - add cycles to see evolution)'
-                    if single else ''),
-                 y=1.01, fontsize=11.5, color=P.INK)
-    fig.tight_layout()
-    return P.save(fig, cfg, 'cycle_obs_fit.png')
+        else:
+            _date_labels(fig, np.array([[ax]]), t)
+        P.maybe_legend(ax, fontsize=7.5)
+        fig.suptitle('%s: fit to observations, solid O$-$B / dashed O$-$A%s'
+                     % (P.short(ot),
+                        '  (single cycle - add cycles to see evolution)'
+                        if single else ''),
+                     y=1.03, fontsize=11.5, color=P.INK)
+        fig.tight_layout()
+        written.append(P.save(fig, cfg, 'obsfit_type_%s.png' % P.slug(ot)))
+    return written
 
 
 def fig_verif_series(cycles, cfg):
-    """Fit to the gridded products against cycle, per product and region."""
+    """Fit to the gridded products against cycle, one figure per region.
+
+    One PNG per region rather than the old single wide grid (one row per
+    product, one column per region): with several basins configured, that
+    grid squeezed every region into a sliver too narrow to read. build_report
+    .py embeds all of them behind a region picker and shows one at a time --
+    it derives the same product/region lists from the cache independently,
+    so both sides must apply the identical presence filter below.
+    """
     order = sorted(cycles)
-    names = P.exp_names(cycles[order[-1]])
+    names = P.all_exp_names(cfg, cycles)
     col = P.color_map(names)
     prods = [p for p in LV.PRODUCTS
              if any(P.get(d, 'state', n, 'ocean', 'verif', p, default=None)
                     for d in cycles.values() for n in names)]
     if not prods:
-        return None
-    regions = ['global'] + [r['name'] for r in cfg.get('regions', [])]
+        return []
+    regions = ['global'] + region_list(cfg)
     regions = [r for r in regions
                if any(P.get(d, 'state', n, 'ocean', 'verif', p, 'bkg', r,
                             default=None)
                       for d in cycles.values() for n in names for p in prods)]
     if not regions:
-        return None
+        return []
     t = _times(cycles)
     single = len(t) == 1
 
@@ -289,43 +304,49 @@ def fig_verif_series(cycles, cfg):
         return np.array([P.get(cycles[c], 'state', n, 'ocean', 'verif', p, st,
                                reg, 'rms') for c in order], dtype='f8')
 
-    fig, axes = plt.subplots(len(prods), len(regions),
-                             figsize=(3.6 * len(regions), 3.1 * len(prods)),
-                             squeeze=False)
-    for r, p in enumerate(prods):
-        spec = LV.PRODUCTS[p]
-        for c, reg in enumerate(regions):
-            ax = axes[r][c]
+    written = []
+    for reg in regions:
+        fig, axes = plt.subplots(1, len(prods),
+                                 figsize=(4.2 * len(prods), 3.4),
+                                 squeeze=False)
+        drawn = False
+        for c, p in enumerate(prods):
+            spec = LV.PRODUCTS[p]
+            ax = axes[0][c]
             series = {n: (rms(n, p, 'bkg', reg), rms(n, p, 'ana', reg))
                       for n in names}
             if not _time_lines(ax, t, series, col, single):
                 ax.set_visible(False)
                 continue
-            if r == 0:
-                ax.set_title(reg.replace('_', ' '), fontsize=10, color=P.INK)
-            if c == 0:
-                ax.set_ylabel('%s\nRMS (%s)' % (spec['label'], spec['units']))
+            drawn = True
+            ax.set_title(spec['label'], fontsize=10, color=P.INK)
+            ax.set_ylabel('RMS (%s)' % spec['units'])
             P.tidy(ax)
             if single:
                 ax.set_xticks(t)
                 ax.set_xticklabels([t[0].strftime('%m-%d %HZ')], fontsize=7.5)
-    P.maybe_legend(axes[0][0], fontsize=7.5)
-    if not single:
-        _date_labels(fig, axes, t)
-    fig.suptitle('Fit to gridded analyses per cycle, solid background / '
-                 'dashed analysis%s'
-                 % ('  (single cycle - add cycles to see evolution)'
-                    if single else ''),
-                 y=1.01, fontsize=11.5, color=P.INK)
-    fig.tight_layout()
-    return P.save(fig, cfg, 'cycle_verif_scores.png')
+        if not drawn:
+            plt.close(fig)
+            continue
+        P.maybe_legend(axes[0][0], fontsize=7.5)
+        if not single:
+            _date_labels(fig, axes, t)
+        fig.suptitle('%s: fit to gridded analyses, solid background / '
+                     'dashed analysis%s'
+                     % (reg.replace('_', ' '),
+                        '  (single cycle - add cycles to see evolution)'
+                        if single else ''),
+                     y=1.03, fontsize=11.5, color=P.INK)
+        fig.tight_layout()
+        written.append(P.save(fig, cfg, 'verif_region_%s.png' % P.slug(reg)))
+    return written
 
 
 def fig_drift(cycles, cfg):
     """RMS(O-B) for every obs type, normalised, to expose slow divergence."""
     if len(cycles) < 3:
         return None
-    names = P.exp_names(cycles[sorted(cycles)[-1]])
+    names = P.all_exp_names(cfg, cycles)
     col = P.color_map(names)
     types = sorted({t for d in cycles.values() for t in d.get('obs', {})})
     t = _times(cycles)
@@ -333,7 +354,7 @@ def fig_drift(cycles, cfg):
     for n in names:
         stack = []
         for ot in types:
-            v = _series(cycles, ot, n, 'ombg_rms')
+            v = _series(cycles, ot, n, 'ombg_rms', P.type_sample(cycles, ot))
             if np.isfinite(v[0]) and v[0] > 0:
                 stack.append(v / v[0])
         if not stack:
@@ -380,7 +401,7 @@ def fig_background_drift(cycles, cfg, grid):
     away; this is the only view here that catches that.
     """
     order = sorted(cycles)
-    names = P.exp_names(cycles[order[-1]])
+    names = P.all_exp_names(cfg, cycles)
     col = P.color_map(names)
     t = _times(cycles)
     single = len(t) == 1
@@ -468,7 +489,7 @@ def fig_increment_hovmoller(cycles, cfg, grid):
     if len(cycles) < 2:
         return None
     order = sorted(cycles)
-    names = P.exp_names(cycles[order[-1]])
+    names = P.all_exp_names(cfg, cycles)
     t = _times(cycles)
     vars3d = [v for v in cfg.get('state_vars', {}).get('ocean', [])
               if any(len(P.get(cycles[c], 'state', n, 'ocean', 'incr_rms', v,
@@ -534,7 +555,7 @@ def fig_increment_2d(cycles, cfg):
     if len(cycles) < 2:
         return None
     order = sorted(cycles)
-    names = P.exp_names(cycles[order[-1]])
+    names = P.all_exp_names(cfg, cycles)
     col = P.color_map(names)
     t = _times(cycles)
     flat = ([('ocean', v) for v in cfg.get('state_vars', {}).get('ocean', [])]
@@ -598,9 +619,14 @@ def main(argv=None):
     cfg = load_config(a.config, a.root, a.outdir, a.cache)
     cycles = P.load_cycles(cfg)
     types = sorted({t for d in cycles.values() for t in d.get('obs', {})})
+    if any(P.type_sample(cycles, ot) != 'common' for ot in types):
+        print('  ! some obs types have no genuine cross-experiment common '
+              'sample -- falling back to each experiment\'s own sample for '
+              'those (run compute_cycle.py --rejoin to fix this where '
+              'possible)')
     print('cycling figures over %d cycle(s)' % len(cycles))
     for ot in types:
-        fig_timeseries(cycles, cfg, ot)
+        fig_timeseries(cycles, cfg, ot, P.type_sample(cycles, ot))
     fig_obs_counts(cycles, cfg)
     fig_obs_fit(cycles, cfg)
     fig_verif_series(cycles, cfg)

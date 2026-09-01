@@ -40,7 +40,7 @@ reference: 3dvar_ctl    # baseline column of the scorecard
 #   step:  6
 #
 cycles:                 # <- replace with your own cycle(s)
-  - 2026042206
+  - 2025122000
 
 # `root` is the experiment directory; `stem` is the path beneath it holding
 # one cycle's diag files. Both experiments may share a root.
@@ -133,6 +133,59 @@ map_levels: [0, 10, 30]
 # Every other grid point is kept for the cached maps (1440x1080 -> 720x540).
 map_stride: 2
 
+# Fixed color-scale bounds for the state maps (background maps, and the verif
+# figures for the matching model_var -- e.g. sst's model_var is Temp, so
+# Temp_k0 here also bounds the SST verif figure). Fixed rather than computed
+# from the cached data, so the same variable renders on the same scale across
+# every cycle and every experiment -- including two experiments whose cycle
+# windows never overlap, so there is no single figure a percentile could ever
+# be pooled from across both. Row not listed here -> falls back to a
+# percentile computed from that figure's own data, same as before this
+# section existed.
+#
+# A [lo, hi] pair applies globally; {nh: [...], sh: [...]} applies only per
+# hemisphere -- so far only sea ice thickness/snow depth need that split, since
+# Arctic and Antarctic ice sit on very different scales. Adjust every bound
+# below for your own fields; these are just the ones this suite happens to
+# plot today.
+#
+# map_limits:
+#   ocean:
+#     Temp_k0:      [-2, 30]     # surface, degC
+#     Temp_k10:     [-2, 22]
+#     Temp_k30:     [-2, 12]
+#     Salt_k0:      [30, 38]     # psu
+#     Salt_k10:     [33, 37]
+#     Salt_k30:     [33, 36]
+#     ave_ssh_k0:   [-1.8, 1.2]  # m
+#     MLD_k0:       [0, 200]     # m
+#     speed_k0:     [0, 1.5]     # m/s
+#     speed_k10:    [0, 1.0]
+#     speed_k30:    [0, 0.5]
+#   ice:
+#     aice_h_k0:          [0, 1]                        # fraction
+#     hi_div_aice_h_k0:   {nh: [0, 4],   sh: [0, 2]}     # m
+#     hs_div_aice_h_k0:   {nh: [0, 0.4], sh: [0, 0.6]}   # m
+#   increment:            # symmetric, +/- this value
+#     ocean:
+#       Temp_k0:    1.5
+#       Salt_k0:    0.5
+#       ave_ssh_k0: 0.2
+#     ice:
+#       aice_h_k0:  0.1
+
+# Real ocean-basin masks (Atlantic/Pacific/Indian/Arctic/Southern), from
+# RECCAP2's own open_ocean classification, as an alternative or addition to
+# the hand-drawn boxes in `regions:` below. Applies everywhere a region
+# applies to both state fields and observations (Grid.regions(),
+# lv_obsspace.strata()) -- a basin from this mask and a `regions:` box can
+# coexist under different names (e.g. the real "Atlantic" alongside a
+# smaller "N_Atlantic" box used only for corr_regions, which needs an actual
+# box extent a mask cannot give it). Names and codes come from the file's
+# own `open_ocean.region_names` attribute, not hardcoded.
+#
+# ocean_basin_mask: /path/to/RECCAP2_region_masks_all.nc
+#
 # Regions. ONE list, used everywhere: state-space profiles, the fit to the
 # gridded products, and the stratification of profile and surface observations.
 # `global` is always included and never needs listing.

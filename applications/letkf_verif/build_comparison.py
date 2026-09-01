@@ -61,6 +61,11 @@ def main(argv=None):
                     help='do not rebuild the cross-experiment observation '
                          'join; scores fall back to each experiment\'s own '
                          'sample and are confounded by thinning and QC')
+    ap.add_argument('--jobs', type=int, default=1,
+                    help='cycles to rejoin in parallel (passed through to '
+                         'compute_cycle.py --rejoin, which already supports '
+                         'this for a full compute; the figure/scorecard/'
+                         'report stages after it have no --jobs option)')
     ap.add_argument('--skip', action='append', default=None,
                     choices=['rejoin', 'obsspace', 'statespace', 'timeseries',
                              'scorecard', 'report'],
@@ -88,11 +93,22 @@ def main(argv=None):
 
     stages = [
         ('rejoin', 'rejoining observations across experiments',
-         lambda: compute_cycle.main(common + ['--rejoin'])),
+         lambda: compute_cycle.main(
+             common + ['--rejoin', '--jobs', str(a.jobs)])),
         ('obsspace', 'observation-space figures',
          lambda: plot_obsspace.main(common)),
+        # --latest: build_report.py only ever embeds the LATEST cycle's
+        # state-space figures (every fig_path()/hemi_imgs() call in it passes
+        # `last`) -- rendering every cached cycle's maps and profiles here
+        # was pure waste on a multi-cycle run, and state-space (cartopy maps)
+        # is the most expensive of the three figure stages. The across-date
+        # sequence figures (seq_*, hovmoller, 2-D increment) are unaffected:
+        # that block reads the cache directly for every cycle regardless of
+        # --latest, which only restricts the per-cycle render loop above it.
+        # Run plot_statespace.py directly (without --latest) to still get
+        # every cycle's own maps outside the report.
         ('statespace', 'state-space figures',
-         lambda: plot_statespace.main(common)),
+         lambda: plot_statespace.main(common + ['--latest'])),
         ('timeseries', 'cycling figures',
          lambda: plot_timeseries.main(common)),
         ('scorecard', 'scorecard', lambda: scorecard.main(common)),

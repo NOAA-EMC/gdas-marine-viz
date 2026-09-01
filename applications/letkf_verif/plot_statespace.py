@@ -17,7 +17,8 @@ import matplotlib.path as mpath  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 import lv_plot as P  # noqa: E402
 import lv_verif as LV  # noqa: E402
-from lv_common import Grid, load_config  # noqa: E402
+from lv_common import (Grid, basin_at, basin_regions,  # noqa: E402
+                       load_config, region_box, region_list)
 
 LAND = '#cfcdc6'
 COAST = '#8d8b84'
@@ -47,6 +48,67 @@ VERIF_MAP_DPI = 78
 # deliberately not here: it goes below zero in polar water, but it is still a
 # state whose absolute value is what you read, not a departure from zero.
 SIGNED_FIELDS = {'u', 'v'}
+
+# Sequential colormap by variable family, keyed on the row-key base name
+# (before "_kN"). Falls back to the generic blue SEQUENTIAL for anything not
+# listed -- currently ssh, MLD and speed.
+FIELD_CMAP = {
+    'Temp': P.SEQ_WARM,
+    'Salt': P.SEQ_TEAL,
+    'aice_h': P.SEQ_ICE,
+    'hi_div_aice_h': P.SEQ_ICE,
+    'hs_div_aice_h': P.SEQ_ICE,
+}
+
+# Row keys with no real vertical structure. CICE/MOM6 2-D diagnostics still
+# come out of background_maps() as "<var>_k0" (the level-keyed cache format
+# forces a k0 suffix on every field), but level_label()'s depth lookup reads
+# the *ocean* h-based depth axis -- meaningless for these, and actively wrong
+# for the ice fields (a "~1 m" tacked onto an ice concentration). Their row
+# label is just the bare variable name.
+NO_LEVEL_LABEL = {'ave_ssh', 'MLD', 'aice_h', 'hi_div_aice_h', 'hs_div_aice_h'}
+
+
+def _field_cmap(key):
+    return FIELD_CMAP.get(key.rsplit('_k', 1)[0], P.SEQUENTIAL)
+
+
+def _fixed_limits(cfg, realm, key, hemi=None):
+    """(vmin, vmax, cmap) from cfg['map_limits'], or None if not declared.
+
+    Fixed rather than computed from data, so the same variable renders on the
+    same scale in every figure, every cycle and every experiment -- including
+    experiments that never share a cycle (cp06.torchbalance.dual's Jan window
+    never overlaps cp06.torchbalance/3dvar-rt's Dec one, so there is no single
+    figure to pool a percentile from across all three).
+
+    A dict value is a per-hemisphere override, e.g. {'nh': [0, 4], 'sh':
+    [0, 2]} -- only sea ice thickness/snow depth need this: Arctic and
+    Antarctic ice sit on very different scales.
+    """
+    entry = ((cfg.get('map_limits') or {}).get(realm) or {}).get(key)
+    if entry is None:
+        return None
+    if isinstance(entry, dict):
+        entry = entry.get(hemi)
+        if entry is None:
+            return None
+    lo, hi = entry
+    return float(lo), float(hi), _field_cmap(key)
+
+
+def _fixed_incr_limits(cfg, realm, key, hemi=None):
+    """Symmetric (-lim, lim, DIVERGING) from cfg['map_limits']['increment']."""
+    entry = (((cfg.get('map_limits') or {}).get('increment') or {})
+             .get(realm) or {}).get(key)
+    if entry is None:
+        return None
+    if isinstance(entry, dict):
+        entry = entry.get(hemi)
+        if entry is None:
+            return None
+    lim = float(entry)
+    return -lim, lim, P.DIVERGING
 
 
 def _save(fig, cfg, base, dpi=None):
@@ -136,10 +198,16 @@ def level_label(data, k, sep=' '):
 
 
 def _map_row_label(data, key):
-    """'Temp_k30' -> 'Temp / level 30 (~102 m)'. Keys without _k pass through."""
+    """'Temp_k30' -> 'Temp / level 30 (~102 m)'. Keys without _k pass through.
+
+    NO_LEVEL_LABEL fields (ssh, MLD, every ice field) have no real vertical
+    axis, so they get the bare variable name with no fabricated depth.
+    """
     base, _, lvl = key.rpartition('_k')
     if not base or not lvl.isdigit():
         return key
+    if base in NO_LEVEL_LABEL:
+        return base
     return '%s\n%s' % (base, level_label(data, int(lvl), sep='\n'))
 
 
@@ -188,7 +256,7 @@ def region_names(data, cfg, block):
     have = set()
     for n in P.exp_names(data):
         have |= set(P.get(data['state'], n, 'ocean', block, default={}))
-    order = ['global'] + [r['name'] for r in cfg.get('regions', [])]
+    order = ['global'] + region_list(cfg)
     return [r for r in order if r in have]
 
 
@@ -243,7 +311,14 @@ def _vars3d(data, cfg, names, block, varlist=None, key='mean'):
 def fig_regional_profiles(data, cfg, grid, block='incr_region',
                           label='RMS increment', fname='state_increment_regions.png',
                           band=True, floor=None, varlist=None):
-    """Profiles by region: rows are variables, columns are regions.
+    """Profiles by region, one PNG per region: rows are variables.
+
+    One file per region rather than one big grid with a column per region --
+    with several basins configured that grid squeezed every region into a
+    sliver too narrow to read, the same problem fig_verif_series (in
+    plot_timeseries.py) had. build_report.py embeds all of them behind a
+    region picker; it derives the same region list independently by
+    checking which <base>_region_*.png files this wrote.
 
     The shaded band is the area-weighted spread across columns inside the
     region -- narrow means the region is being updated uniformly, wide means
@@ -253,34 +328,38 @@ def fig_regional_profiles(data, cfg, grid, block='incr_region',
     col = P.color_map(names)
     regions = region_names(data, cfg, block)
     if not regions:
-        return None
+        return []
     ref = data.get('reference')
     vars3d = _vars3d(data, cfg, names, block, varlist)
     if not vars3d:
-        return None
+        return []
 
-    fig, axes = plt.subplots(len(vars3d), len(regions),
-                             figsize=(3.3 * len(regions), 4.2 * len(vars3d)),
-                             squeeze=False)
-    for r, v in enumerate(vars3d):
-        for c, reg in enumerate(regions):
-            ax = axes[r][c]
+    base = fname[:-4] if fname.endswith('.png') else fname
+    written = []
+    for reg in regions:
+        fig, axes = plt.subplots(len(vars3d), 1,
+                                 figsize=(4.6, 3.6 * len(vars3d)), squeeze=False)
+        drawn_any = False
+        for r, v in enumerate(vars3d):
+            ax = axes[r][0]
             if not profile_panel(ax, data, grid, names, col, block, v, reg,
                                  band=band, ref=ref, floor=floor, cfg=cfg):
                 ax.set_visible(False)
                 continue
-            if r == 0:
-                ax.set_title(reg.replace('_', ' '), fontsize=10, color=P.INK)
-            if c == 0:
-                ax.set_ylabel('%s\ndepth (m)' % v)
-            if r == len(vars3d) - 1:
-                ax.set_xlabel('%s (%s)' % (label, v))
-    P.maybe_legend(axes[0][0], fontsize=8)
-    fig.suptitle('%s by region, shaded band = spatial spread within region '
-                 '- %s' % (label, data['cycle']), y=1.01, fontsize=11.5,
-                 color=P.INK)
-    fig.tight_layout()
-    return _save(fig, cfg, fname)
+            drawn_any = True
+            ax.set_ylabel('%s\ndepth (m)' % v)
+            ax.set_xlabel('%s (%s)' % (label, v))
+        if not drawn_any:
+            plt.close(fig)
+            continue
+        P.maybe_legend(axes[0][0], fontsize=8)
+        fig.suptitle('%s: %s by region, shaded band = spatial spread within '
+                     'region - %s' % (reg.replace('_', ' '), label,
+                                      data['cycle']),
+                     y=1.01, fontsize=11.5, color=P.INK)
+        fig.tight_layout()
+        written.append(_save(fig, cfg, '%s_region_%s.png' % (base, P.slug(reg))))
+    return written
 
 
 def fig_spread_regions(data, cfg, grid):
@@ -658,25 +737,34 @@ def fig_background_maps(data, cfg, grid, maps, realm='ocean'):
     rows = _rows_for(maps, names, '/%s/bkg/' % realm)
     if not rows:
         return None
-    # States, not anomalies: one sequential scale per field, shared across
-    # experiments so the columns are comparable. The signed fields are the
-    # exception -- a sequential ramp over a velocity component puts zero at an
-    # arbitrary mid-colour and hides the direction, which is the only reason
-    # to plot the components apart from the speed.
-    limits = {}
-    for key, fields in rows:
-        good = [f for f in fields if f is not None and np.any(np.isfinite(f))]
-        if not good:
-            continue
-        allv = np.concatenate([f[np.isfinite(f)].ravel() for f in good])
-        if key.rsplit('_k', 1)[0] in SIGNED_FIELDS:
-            lim = float(np.percentile(np.abs(allv), 99)) or 1.0
-            limits[key] = (-lim, lim, P.DIVERGING)
-        else:
-            limits[key] = (float(np.percentile(allv, 1)),
-                           float(np.percentile(allv, 99)), P.SEQUENTIAL)
+    # States, not anomalies: one scale per field, shared across experiments so
+    # the columns are comparable. cfg['map_limits'] is checked first so the
+    # scale is also fixed across cycles and across experiments that never
+    # share a figure to pool a percentile from (see _fixed_limits); anything
+    # not declared there falls back to a percentile computed here, pooled
+    # across every experiment. The signed fields are the exception -- a
+    # sequential ramp over a velocity component puts zero at an arbitrary
+    # mid-colour and hides the direction, which is the only reason to plot
+    # the components apart from the speed.
     out = None
     for view in views_for(realm):
+        hemi = view[0] or None
+        limits = {}
+        for key, fields in rows:
+            fixed = _fixed_limits(cfg, realm, key, hemi)
+            if fixed is not None:
+                limits[key] = fixed
+                continue
+            good = [f for f in fields if f is not None and np.any(np.isfinite(f))]
+            if not good:
+                continue
+            allv = np.concatenate([f[np.isfinite(f)].ravel() for f in good])
+            if key.rsplit('_k', 1)[0] in SIGNED_FIELDS:
+                lim = float(np.percentile(np.abs(allv), 99)) or 1.0
+                limits[key] = (-lim, lim, P.DIVERGING)
+            else:
+                limits[key] = (float(np.percentile(allv, 1)),
+                               float(np.percentile(allv, 99)), _field_cmap(key))
         out = map_grid(cfg, grid, rows, names,
                        'Background state - %s %s' % (realm, data['cycle']),
                        'bkg_maps_%s.png' % realm, view, limits=limits,
@@ -743,9 +831,21 @@ def fig_maps(data, cfg, grid, maps, kind='incr', realm='ocean'):
                 'infl': 'inflation'}[kind])
     out = None
     for view in views_for(realm):
+        row_limits = limits
+        if kind == 'incr':
+            # cfg['map_limits']['increment'] first, same reasoning as the
+            # background maps: a fixed scale holds across cycles and across
+            # experiments that never share a figure. A row without a fixed
+            # entry keeps the per-row percentile map_grid computes itself,
+            # already pooled across experiments and sliced to this hemisphere.
+            row_limits = {}
+            for key, _fields in rows:
+                fixed = _fixed_incr_limits(cfg, realm, key, view[0] or None)
+                if fixed is not None:
+                    row_limits[key] = fixed
         out = map_grid(cfg, grid, rows, names,
                        '%s - %s %s' % (title, realm, data['cycle']),
-                       fname, view, limits=limits, cb_label=cb_label,
+                       fname, view, limits=row_limits, cb_label=cb_label,
                        note=_zero_note if kind == 'incr' else None,
                        row_label=lambda k: _map_row_label(data, k)) or out
     return out
@@ -787,15 +887,23 @@ def fig_verif_maps(data, cfg, grid, maps, prod):
     # One scale across every panel: these are states, so the point is whether
     # the model looks like the product, which a per-panel scale would hide.
     # ADT has had its mean removed, making it an anomaly about zero, so it
-    # wants a symmetric diverging scale; the others are absolute states.
+    # wants a symmetric diverging scale; the others are absolute states, and
+    # use the same cfg['map_limits'] entry as the background-state map of
+    # their model_var (e.g. sst -> Temp_k0) so this figure and that one read
+    # on an identical scale.
     vals = [f for _k, fs in rows for f in fs if f is not None]
     if spec.get('remove_mean'):
         lim = _robust(vals, 99.0)
         lo, hi, cm = -lim, lim, P.DIVERGING
     else:
-        allv = np.concatenate([f[np.isfinite(f)].ravel() for f in vals])
-        lo, hi, cm = (float(np.percentile(allv, 1)),
-                      float(np.percentile(allv, 99)), P.SEQUENTIAL)
+        fixed = _fixed_limits(cfg, 'ocean', '%s_k0' % spec['model_var'])
+        if fixed is not None:
+            lo, hi, cm = fixed
+        else:
+            allv = np.concatenate([f[np.isfinite(f)].ravel() for f in vals])
+            lo, hi, cm = (float(np.percentile(allv, 1)),
+                          float(np.percentile(allv, 99)),
+                          _field_cmap('%s_k0' % spec['model_var']))
     limits = {k: (lo, hi, cm) for k, _ in rows}
     note = ('  (mean removed)' if spec.get('remove_mean') else '')
     out = None
@@ -839,6 +947,68 @@ def fig_verif_diffs(data, cfg, grid, maps, prod):
                        cb_label='model $-$ product (%s)' % spec['units'],
                        dpi=VERIF_MAP_DPI) or out
     return out
+
+
+def fig_ocean_regions(cfg, grid):
+    """Map of the configured ocean-basin mask, plus any `regions:` boxes.
+
+    Static reference figure -- not tied to a cycle or experiment, so this is
+    called once, not from render_cycle(). Answers "what does 'Atlantic'/
+    'Pacific'/etc actually cover" for every other figure and table that
+    breaks a score down by region.
+    """
+    mask_path = cfg.get('ocean_basin_mask')
+    if not mask_path:
+        return None
+    from matplotlib.colors import BoundaryNorm, ListedColormap
+
+    basins = basin_regions(mask_path)          # [(code, name), ...]
+    codes = basin_at(mask_path, grid.lat, grid.lon180)
+    stride = int(cfg.get('map_stride', 2))
+    lon, lat = grid.lon[::stride, ::stride], grid.lat[::stride, ::stride]
+    field = np.where(codes > 0, codes, np.nan).astype('f8')[::stride, ::stride]
+
+    colors = [P.SERIES[i % len(P.SERIES)] for i in range(len(basins))]
+    cmap = ListedColormap(colors)
+    edges = [c - 0.5 for c, _ in basins] + [basins[-1][0] + 0.5]
+    norm = BoundaryNorm(edges, cmap.N)
+
+    fig, ax = plt.subplots(figsize=(9.5, 4.8),
+                           subplot_kw=dict(projection=global_proj()))
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', UserWarning)
+        ax.pcolormesh(lon, lat, np.ma.masked_invalid(field), cmap=cmap,
+                     norm=norm, shading='nearest', rasterized=True,
+                     transform=ccrs.PlateCarree(), zorder=1)
+    _decorate(ax)
+    ax.set_global()
+
+    handles = [plt.Rectangle((0, 0), 1, 1, fc=c) for c in colors]
+    ax.legend(handles, [name for _c, name in basins], loc='upper center',
+             bbox_to_anchor=(0.5, -0.05), ncol=len(basins), fontsize=8.5,
+             frameon=False)
+
+    # `regions:` boxes (corr_regions and any other named box) drawn as
+    # outlines on top, so the figure documents both region mechanisms at
+    # once -- a box may straddle the dateline, which is drawn as two pieces.
+    for r in cfg.get('regions', []):
+        lat0, lat1, lon0, lon1 = region_box(r)
+        if lon0 is None:
+            continue
+        spans = ([(lon0, lon1)] if lon0 <= lon1
+                 else [(lon0, 180.0), (-180.0, lon1)])
+        for lo, hi in spans:
+            ax.plot([lo, hi, hi, lo, lo], [lat0, lat0, lat1, lat1, lat0],
+                   transform=ccrs.PlateCarree(), color=P.INK,
+                   linewidth=1.1, zorder=5)
+        lo0, _hi0 = spans[0]
+        ax.text(lo0, lat1, r['name'], transform=ccrs.PlateCarree(),
+               fontsize=7.5, ha='left', va='bottom', color=P.INK, zorder=6)
+
+    ax.set_title('Ocean basins (RECCAP2 open_ocean) and named sub-boxes',
+                 fontsize=11.5, color=P.INK)
+    fig.tight_layout()
+    return _save(fig, cfg, 'ocean_regions.png')
 
 
 def fig_corr_lengths(data, cfg, grid):
@@ -983,11 +1153,15 @@ def render_cycle(cycle, cycles, cfg, grid, index=None, total=None):
     for label, fn in steps:
         t = time.time()
         print('    %-28s' % label, end='', flush=True)
-        path = fn()
-        if path:
-            written += 1
-            print(' %-46s %5.1fs' % (os.path.basename(path), time.time() - t),
-                  flush=True)
+        result = fn()
+        # fig_regional_profiles (one PNG per region) returns a list; every
+        # other step here still returns a single path or None.
+        paths = result if isinstance(result, list) else ([result] if result else [])
+        if paths:
+            written += len(paths)
+            tail = (os.path.basename(paths[0]) if len(paths) == 1 else
+                   '%d files (%s...)' % (len(paths), os.path.basename(paths[0])))
+            print(' %-46s %5.1fs' % (tail, time.time() - t), flush=True)
         else:
             print(' %-46s %5.1fs' % ('(nothing to plot)', time.time() - t),
                   flush=True)
@@ -1024,6 +1198,10 @@ def main(argv=None):
     print('loading grid %s' % os.path.basename(cfg['grid']), flush=True)
     grid = Grid(cfg['grid'])
     print('figures -> %s' % cfg['figs'], flush=True)
+
+    # Static reference figure -- not tied to a cycle, so drawn once here
+    # rather than from render_cycle().
+    fig_ocean_regions(cfg, grid)
 
     todo = sorted(cycles)
     if a.latest:
