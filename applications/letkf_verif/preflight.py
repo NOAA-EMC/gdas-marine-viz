@@ -97,6 +97,46 @@ def check_config(args):
             else 'no background found; profiles will use the level index')
     except Exception as e:
         say(BAD, 'grid loads', '%s: %s' % (type(e).__name__, e))
+
+    import lv_woa
+    woa = lv_woa.configured(cfg)
+    if woa is None:
+        say(OK, 'WOA23 climatology', 'no `woa:` in the config; skipped')
+    else:
+        wvars = [v for v in (cfg.get('background_vars') or {}).get('ocean', [])
+                 if v in lv_woa.VARS]
+        missing = lv_woa.missing_files(woa, wvars) if wvars else []
+        if not wvars:
+            say(WARN, 'WOA23 climatology',
+                'configured, but background_vars.ocean names neither %s'
+                % ' nor '.join(lv_woa.VARS))
+        elif missing:
+            say(BAD, 'WOA23 climatology',
+                '%d of %d expected file(s) absent under %s, first %s'
+                % (len(missing), 13 * len(wvars), woa['path'],
+                   os.path.basename(missing[0])))
+        else:
+            say(OK, 'WOA23 climatology',
+                '%d files for %s under %s'
+                % (13 * len(wvars), '+'.join(wvars), woa['path']))
+
+    sec = cfg.get('sections') or {}
+    if sec.get('zonal') or sec.get('meridional'):
+        from lv_statespace import section_warnings
+        bad = section_warnings(cfg)
+        say(WARN if bad else OK, 'vertical sections',
+            '%d zonal, %d meridional%s'
+            % (len(sec.get('zonal') or []), len(sec.get('meridional') or []),
+               '; %d north of the tripolar seam' % len(bad) if bad else ''))
+        for w in bad:
+            print('         %s' % w)
+    else:
+        # Said out loud rather than passed over: an absent `sections:` is a
+        # legitimate choice, but it is indistinguishable in the finished
+        # report from a broken one -- every section figure is simply never
+        # written, with no error anywhere.
+        say(OK, 'vertical sections',
+            'no `sections:` in the config; section figures will be skipped')
     return cfg
 
 
@@ -128,6 +168,50 @@ def check_data(cfg):
                    ', ensvar %s' % ens if ens else ''))
 
 
+def check_increment_vars(cfg):
+    """Does each experiment's increment file actually hold its state_vars?
+
+    A pattern that resolves to the WRONG file still 'finds an increment' --
+    it just contains none of the configured variables, so every panel built
+    from it comes out empty with no error raised anywhere. That is invisible
+    until someone reads the finished report, which is an expensive way to
+    find out. One header read per experiment/realm catches it here instead.
+
+    Checked on the first cycle that resolves, not every cycle: the filename
+    pattern is the same for all of them, so one is representative.
+    """
+    if cfg is None:
+        return
+    from netCDF4 import Dataset
+    print('increment contents')
+    svars = cfg.get('state_vars', {})
+    for e in cfg['experiments']:
+        for realm in ('ocean', 'ice'):
+            want = svars.get(realm) or []
+            if not want:
+                continue
+            label = '%s / %s increment' % (e.name, realm)
+            path = next((p for p in (e.increment(c, realm)
+                                     for c in cfg['cycles']) if p), None)
+            if path is None:
+                say(WARN, label, 'no file matched in any configured cycle')
+                continue
+            try:
+                with Dataset(path) as d:
+                    have = [v for v in want if v in d.variables]
+            except Exception as ex:
+                say(BAD, label, '%s: %s' % (type(ex).__name__, str(ex)[:60]))
+                continue
+            if have:
+                say(OK, label, '%s -- has %s'
+                    % (os.path.basename(path), '+'.join(have)))
+            else:
+                say(BAD, label,
+                    '%s holds NONE of %s -- check `increment_pattern`; every '
+                    'panel built from it will be silently empty'
+                    % (os.path.basename(path), ', '.join(want)))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument('config', nargs='?', default=None,
@@ -153,6 +237,7 @@ def main(argv=None):
     check_coastlines()
     cfg = check_config(a)
     check_data(cfg)
+    check_increment_vars(cfg)
 
     print()
     if _status['fail']:

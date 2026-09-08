@@ -71,7 +71,7 @@ Everything lands under `--outdir`.
 | `letkf_verification.html` | The report — every figure embedded, stands alone |
 | `scorecard.md` | Every experiment against the reference, with a paired Wilcoxon test over cycles |
 | `figs/obs_*.png` | Departures, consistency, rank histograms, spread&ndash;skill, profiles by region |
-| `figs/state_*.png` | Increment and spread profiles, increment / spread-reduction / inflation maps |
+| `figs/state_*.png` | Increment and spread profiles, increment / spread-reduction / inflation maps, vertical sections of the increment |
 | `figs/verif_maps_<product>.png` | Product beside each experiment's background and analysis |
 | `figs/verif_diff_<product>.png` | Model minus product |
 | `figs/cycle_*.png` | Everything against cycle: obs fit, obs counts, gridded-analysis scores, background drift |
@@ -89,6 +89,7 @@ Everything lands under `--outdir`.
 | `regions:` | Named lat/lon boxes for the regional profiles; `global` is always included |
 | `verification:` | One directory per gridded product — they come from unrelated archives, so each names its own |
 | `depth_max:` | Cut every depth panel at N metres; a view setting, so it needs no recompute |
+| `sections:` | `zonal` latitudes and `meridional` longitudes to cut vertical sections of the increment and background along. A zonal line is one grid row, a true latitude circle only to ~64&deg;N; anything above 65&deg;N is drawn but flagged by `preflight.py`, by `plot_statespace.py` and on the panel |
 | `map_limits:` | Fixed (vmin, vmax) per state variable/level, so a map figure's color scale holds across cycles and experiments instead of being recomputed per figure; optional, per-hemisphere override for ice thickness/snow depth |
 
 ## Relationship to `statestats_ostia`

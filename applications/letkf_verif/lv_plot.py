@@ -51,6 +51,14 @@ SEQ_TEAL = plt.get_cmap('viridis')      # salinity
 # both tools.
 SEQ_ICE = plt.get_cmap('gist_ncar')
 
+# The ramp every BACKGROUND/state field is drawn on (background maps and
+# sections, and the verif figures that must match them). jet is deliberately
+# not one of the perceptually-uniform maps above -- it has false luminance
+# banding and is not colorblind-safe -- but it is the convention these fields
+# are read against in ocean work, and it is what was asked for. Ratio fields
+# keep SEQUENTIAL and the increment keeps DIVERGING; neither is a state.
+SEQ_BKG = plt.get_cmap('jet')
+
 plt.rcParams.update({
     'figure.facecolor': SURFACE,
     'axes.facecolor': SURFACE,

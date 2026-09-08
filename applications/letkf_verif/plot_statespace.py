@@ -15,10 +15,13 @@ import cartopy.crs as ccrs  # noqa: E402
 import cartopy.feature as cfeature  # noqa: E402
 import matplotlib.path as mpath  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.ticker import FuncFormatter  # noqa: E402
 import lv_plot as P  # noqa: E402
 import lv_verif as LV  # noqa: E402
 from lv_common import (Grid, basin_at, basin_regions,  # noqa: E402
                        load_config, region_box, region_list)
+import lv_woa  # noqa: E402
+from lv_statespace import TRIPOLAR_LAT, section_warnings  # noqa: E402
 
 LAND = '#cfcdc6'
 COAST = '#8d8b84'
@@ -50,14 +53,16 @@ VERIF_MAP_DPI = 78
 SIGNED_FIELDS = {'u', 'v'}
 
 # Sequential colormap by variable family, keyed on the row-key base name
-# (before "_kN"). Falls back to the generic blue SEQUENTIAL for anything not
-# listed -- currently ssh, MLD and speed.
+# (before "_kN"). Every family is on jet (P.SEQ_BKG) for now, as is the
+# fallback for anything not listed -- ssh, MLD and speed. The per-family
+# structure is kept so a single field can be moved back to one of the
+# perceptually-uniform ramps (P.SEQ_WARM/SEQ_TEAL/SEQ_ICE) on its own.
 FIELD_CMAP = {
-    'Temp': P.SEQ_WARM,
-    'Salt': P.SEQ_TEAL,
-    'aice_h': P.SEQ_ICE,
-    'hi_div_aice_h': P.SEQ_ICE,
-    'hs_div_aice_h': P.SEQ_ICE,
+    'Temp': P.SEQ_BKG,
+    'Salt': P.SEQ_BKG,
+    'aice_h': P.SEQ_BKG,
+    'hi_div_aice_h': P.SEQ_BKG,
+    'hs_div_aice_h': P.SEQ_BKG,
 }
 
 # Row keys with no real vertical structure. CICE/MOM6 2-D diagnostics still
@@ -69,8 +74,25 @@ FIELD_CMAP = {
 NO_LEVEL_LABEL = {'ave_ssh', 'MLD', 'aice_h', 'hi_div_aice_h', 'hs_div_aice_h'}
 
 
+# The climatology column / line. Not an experiment: a fixed neutral colour
+# from OUTSIDE P.color_map()'s cycle and a distinct dash, so it can never be
+# misread as one of the runs being compared.
+WOA_NAME = 'WOA23'
+WOA_STYLE = dict(color=P.INK2, ls=(0, (1, 1.6)), lw=2.0, zorder=5)
+
+
+def _first(fields):
+    """The first present field in a per-experiment list, or None.
+
+    Every experiment caches the same climatology (rebuilt per experiment onto
+    its own depth axis, which differ by centimetres), so whichever has it is
+    authoritative -- the rule fig_verif_maps already uses for its product.
+    """
+    return next((f for f in (fields or ()) if f is not None), None)
+
+
 def _field_cmap(key):
-    return FIELD_CMAP.get(key.rsplit('_k', 1)[0], P.SEQUENTIAL)
+    return FIELD_CMAP.get(key.rsplit('_k', 1)[0], P.SEQ_BKG)
 
 
 def _fixed_limits(cfg, realm, key, hemi=None):
@@ -97,9 +119,15 @@ def _fixed_limits(cfg, realm, key, hemi=None):
     return float(lo), float(hi), _field_cmap(key)
 
 
-def _fixed_incr_limits(cfg, realm, key, hemi=None):
-    """Symmetric (-lim, lim, DIVERGING) from cfg['map_limits']['increment']."""
-    entry = (((cfg.get('map_limits') or {}).get('increment') or {})
+def _fixed_incr_limits(cfg, realm, key, hemi=None, block='increment'):
+    """Symmetric (-lim, lim, DIVERGING) from a signed cfg['map_limits'] block.
+
+    ``block`` selects which one: 'increment' for the analysis step,
+    'woa_bias' for the departure from the climatology. They are kept apart
+    because they sit on very different sizes -- one analysis increment against
+    a whole model-minus-ocean departure.
+    """
+    entry = (((cfg.get('map_limits') or {}).get(block) or {})
              .get(realm) or {}).get(key)
     if entry is None:
         return None
@@ -262,11 +290,16 @@ def region_names(data, cfg, block):
 
 def profile_panel(ax, data, grid, names, col, block, var, region,
                   key='mean', sd_key='sd', band=True, ref=None, floor=None,
-                  ls=None, label='%s', cfg=None):
+                  ls=None, label='%s', cfg=None, extra=None):
     """One depth profile per experiment, with the in-region spatial spread.
 
     Shared by the increment, spread and background profile figures: they differ
     only in which cached block and which series inside it they read.
+
+    ``extra`` is [(label, values, style)] drawn after the experiments -- for
+    the WOA23 climatology, which is ONE curve for the whole panel rather than
+    one per experiment. Routing it through ``names`` would draw N identical
+    lines, since every experiment caches the same field.
     """
     drawn = 0
     for n in names:
@@ -288,6 +321,13 @@ def profile_panel(ax, data, grid, names, col, block, var, region,
                 lo = np.maximum(lo, floor)
             ax.fill_betweenx(y, lo, m + sd, color=col[n], alpha=0.16,
                              linewidth=0)
+        drawn += 1
+    for lab, vals, style in (extra or ()):
+        if not _is3d(vals):
+            continue
+        v = np.asarray(vals, dtype='f8')
+        y, _ = depth_axis(data, grid, len(v))
+        ax.plot(v, y, label=lab, **style)
         drawn += 1
     # Idempotent: the spread panels call this twice on one axis (prior, then
     # posterior), and a second invert_yaxis() would put the surface at the
@@ -549,6 +589,121 @@ def fig_spread_profiles(data, cfg, grid):
     return _save(fig, cfg, 'state_spread_profiles.png')
 
 
+def woa_curve(data, block, region, var, key='mean'):
+    """The WOA profile from whichever experiment cached it, or None."""
+    for n in P.exp_names(data):
+        rec = P.get(data['state'], n, 'ocean', block, region, var, default=None)
+        if rec and _is3d(rec.get(key)):
+            return rec[key]
+    return None
+
+
+def woa_extra(data, block, region, var):
+    """`extra=` for profile_panel: the climatology curve, or nothing."""
+    w = woa_curve(data, block, region, var)
+    return [(WOA_NAME, w, WOA_STYLE)] if w is not None else []
+
+
+def fig_woa_bias_profiles(data, cfg, grid):
+    """Background against WOA23, and their difference, over depth.
+
+    The most quantitative of the climatology views: left the two states
+    overlaid, right what separates them. WOA is a 1955-2022 decadal mean, so
+    the difference carries the ocean's real interannual anomaly as well as any
+    model error -- it is read for structure, not as a score.
+    """
+    names = P.exp_names(data)
+    have = [n for n in names
+            if P.get(data['state'], n, 'ocean', 'woa_bias_mean', default=None)]
+    if not have:
+        return None
+    col = P.color_map(names)
+    vars3d = [v for v in cfg.get('background_vars', {}).get('ocean', [])
+              if any(_is3d(P.get(data['state'], n, 'ocean', 'woa_bias_mean', v,
+                                 default=None)) for n in have)]
+    if not vars3d:
+        return None
+    fig, axes = plt.subplots(1, 2 * len(vars3d),
+                             figsize=(3.5 * 2 * len(vars3d), 4.8),
+                             squeeze=False)
+    axes = axes[0]
+    for i, v in enumerate(vars3d):
+        axL, axR = axes[2 * i], axes[2 * i + 1]
+        for n in have:
+            p = P.get(data['state'], n, 'ocean', 'bkg_mean', v, default=None)
+            if _is3d(p):
+                p = np.asarray(p, dtype='f8')
+                axL.plot(p, depth_axis(data, grid, len(p))[0], color=col[n],
+                         label=n)
+            b = P.get(data['state'], n, 'ocean', 'woa_bias_mean', v,
+                      default=None)
+            if _is3d(b):
+                b = np.asarray(b, dtype='f8')
+                axR.plot(b, depth_axis(data, grid, len(b))[0], color=col[n],
+                         label=n)
+        w = woa_curve(data, 'woa_region', 'global', v)
+        if w is not None:
+            w = np.asarray(w, dtype='f8')
+            axL.plot(w, depth_axis(data, grid, len(w))[0], label=WOA_NAME,
+                     **WOA_STYLE)
+        axR.axvline(0, color=P.MUTED, lw=1.2, ls=(0, (4, 3)))
+        for ax in (axL, axR):
+            ax.invert_yaxis()
+            P.depth_limit(ax, cfg)
+            P.tidy(ax, xgrid=True)
+        axL.set_xlabel('mean %s' % v)
+        axL.set_title('%s, background and climatology' % v)
+        axR.set_xlabel('background $-$ WOA23 (%s)' % v)
+        axR.set_title('%s departure from WOA23' % v)
+        if i == 0:
+            axL.set_ylabel('depth (m)')
+        P.maybe_legend(axL, fontsize=8)
+        P.maybe_legend(axR, fontsize=8)
+    fig.suptitle('Background against the WOA23 climatology - %s   '
+                 '(a climatology, not an analysis: the difference carries the '
+                 'real anomaly too)' % data['cycle'],
+                 y=1.02, fontsize=11.5, color=P.INK)
+    fig.tight_layout()
+    return _save(fig, cfg, 'woa_bias_profiles.png')
+
+
+def fig_woa_bias_maps(data, cfg, grid, maps):
+    """Background minus WOA23 at each mapped level.
+
+    Rows are field and level, columns experiments -- the shape fig_maps uses
+    for the increment, and for the same reason: a signed difference wants a
+    symmetric diverging scale, and at global scale this is the only place a
+    few tenths of a degree is legible against a 0-30 degC state.
+    """
+    if maps is None:
+        return None
+    names = P.exp_names(data)
+    rows = _rows_for(maps, names, '/ocean/woa_bias/')
+    keep = [i for i, _n in enumerate(names)
+            if any(f[i] is not None for _k, f in rows)]
+    names = [names[i] for i in keep]
+    rows = [(k, [f[i] for i in keep]) for k, f in rows]
+    if not rows or not names:
+        return None
+    limits = {}
+    for key, fields in rows:
+        fixed = _fixed_incr_limits(cfg, 'ocean', key, block='woa_bias')
+        if fixed is None:
+            lim = _robust(fields, 99.0)
+            fixed = (-lim, lim, P.DIVERGING)
+        limits[key] = fixed
+    out = None
+    for view in views_for('ocean'):
+        out = map_grid(cfg, grid, rows, names,
+                       'Background $-$ WOA23 climatology - ocean %s'
+                       % data['cycle'],
+                       'woa_bias_maps_ocean.png', view, limits=limits,
+                       cb_label='background $-$ WOA23',
+                       row_label=lambda k: _map_row_label(data, k),
+                       dpi=VERIF_MAP_DPI) or out
+    return out
+
+
 def fig_background_profiles(data, cfg, grid):
     """Mean background T and S against depth, and the difference between runs.
 
@@ -589,6 +744,14 @@ def fig_background_profiles(data, cfg, grid):
             if n != ref and base.size == p.size:
                 axR.plot(p - base, y, color=col[n],
                          label='%s - %s' % (n, ref))
+        # Left panel only: axR already means "difference from the reference
+        # experiment", and it cannot also mean "difference from WOA". That
+        # comparison has its own figure.
+        w = woa_curve(data, 'woa_region', 'global', v)
+        if w is not None:
+            w = np.asarray(w, dtype='f8')
+            axL.plot(w, depth_axis(data, grid, len(w))[0], label=WOA_NAME,
+                     **WOA_STYLE)
         axR.axvline(0, color=P.MUTED, lw=1.2, ls=(0, (4, 3)))
         for ax in (axL, axR):
             ax.invert_yaxis()
@@ -737,6 +900,16 @@ def fig_background_maps(data, cfg, grid, maps, realm='ocean'):
     rows = _rows_for(maps, names, '/%s/bkg/' % realm)
     if not rows:
         return None
+    if realm == 'ocean':
+        # The climatology leads, so a row reads "what the ocean is on average,
+        # then what each system produced" -- the order fig_verif_maps uses for
+        # its product. WOA has no analogue for ave_ssh, MLD or speed; those
+        # rows get None and map_grid hides just that panel, keeping the row
+        # label on the first column that does have one.
+        woa = dict(_rows_for(maps, names, '/ocean/woa/'))
+        if woa:
+            names = [WOA_NAME] + names
+            rows = [(k, [_first(woa.get(k))] + list(f)) for k, f in rows]
     # States, not anomalies: one scale per field, shared across experiments so
     # the columns are comparable. cfg['map_limits'] is checked first so the
     # scale is also fixed across cycles and across experiments that never
@@ -849,6 +1022,308 @@ def fig_maps(data, cfg, grid, maps, kind='incr', realm='ocean'):
                        note=_zero_note if kind == 'incr' else None,
                        row_label=lambda k: _map_row_label(data, k)) or out
     return out
+
+
+# --------------------------------------------------------------------------
+# vertical sections
+# --------------------------------------------------------------------------
+
+def _line_label(key):
+    """'lat+030' -> '30N'; 'lon-140' -> '140W'; 'lat+000' -> 'equator'."""
+    axis, val = key[:3], int(key[3:])
+    if axis == 'lat':
+        return 'equator' if val == 0 else '%d%s' % (abs(val),
+                                                    'N' if val > 0 else 'S')
+    if val == 0:
+        return 'prime meridian'
+    return '%d%s' % (abs(val), 'E' if val > 0 else 'W')
+
+
+def _lon_fmt(v, _pos):
+    """Tick label for the raw gridspec longitude, wrapped into -180..180.
+
+    The gridspec longitude runs -300..60, which is monotonic along i and so
+    makes a continuous x-axis with no seam -- but '-260' is not a longitude
+    anyone reads. Positions stay raw; only the labels are wrapped.
+    """
+    w = ((v + 180.0) % 360.0) - 180.0
+    if abs(w) < 0.5 or abs(abs(w) - 180.0) < 0.5:
+        return '%.0f' % abs(w)
+    return '%.0f%s' % (abs(w), 'E' if w > 0 else 'W')
+
+
+def _lat_fmt(v, _pos):
+    return '0' if abs(v) < 0.5 else '%.0f%s' % (abs(v), 'N' if v > 0 else 'S')
+
+
+def _tripolar_note(ax, key, _f):
+    """Mark a panel whose transect is north of the tripolar seam."""
+    if key[:3] != 'lat' or int(key[3:]) <= TRIPOLAR_LAT:
+        return
+    ax.text(0.5, 0.04,
+            'not a latitude circle: grid rows bend north of %d°N'
+            % TRIPOLAR_LAT,
+            transform=ax.transAxes, ha='center', va='bottom', fontsize=7.5,
+            color=P.ALERT, zorder=6,
+            bbox=dict(boxstyle='round,pad=0.3', fc=P.SURFACE, ec=P.ALERT,
+                      lw=0.8))
+
+
+def section_depth_views(cfg):
+    """One (cut, filename suffix, label) per section figure set to render.
+
+    A section is the one figure where the global `depth_max:` is the wrong
+    instrument: cutting at 1000 m shows the thermocline and the bulk of the
+    update, but a LETKF increment genuinely reaches the sea floor in places,
+    and cropping would hide precisely the thing worth seeing. So the depth
+    axis is a per-figure setting here -- `sections: depth_views:` lists the
+    views to emit, and each variable gets one figure per view.
+
+    `full` (or no entry at all) is the uncut column. Defaults to full only,
+    so a config predating this key renders exactly what it did before.
+    """
+    views = (cfg.get('sections') or {}).get('depth_views') or ['full']
+    out = []
+    for v in views:
+        if v is None or (isinstance(v, str)
+                         and v.strip().lower() in ('full', 'all', 'bottom')):
+            out.append((None, '', 'full column'))
+        else:
+            d = float(v)
+            out.append((d, '_0-%gm' % d, 'top %g m' % d))
+    return out
+
+
+def _section_axes(maps, names):
+    """{line key: (x, depth)} from whichever experiment cached them."""
+    out = {}
+    for n in names:
+        pre = '%s/ocean/sec/' % n
+        for k in maps.files:
+            if not k.startswith(pre):
+                continue
+            what, _, tag = k[len(pre):].partition('_')
+            x, d = out.get(tag, (None, None))
+            if what == 'x' and x is None:
+                out[tag] = (maps[k], d)
+            elif what == 'depth' and d is None:
+                out[tag] = (x, maps[k])
+    return out
+
+
+def _section_rows(maps, names, prefix):
+    """{var: [(line key, [plane per experiment])]} for cached section keys.
+
+    Lines run zonal south-to-north, then meridional west-to-east.
+    """
+    tags = {}
+    for k in maps.files:
+        if prefix not in k:
+            continue
+        var, _, tag = k.split(prefix, 1)[1].rpartition('_')
+        if var and tag[:3] in ('lat', 'lon'):
+            tags.setdefault(var, set()).add(tag)
+    return {var: [(t, [maps['%s%s%s_%s' % (n, prefix, var, t)]
+                       if '%s%s%s_%s' % (n, prefix, var, t) in maps.files
+                       else None for n in names])
+                  for t in sorted(ts, key=lambda s: (s[:3] == 'lon',
+                                                     int(s[3:])))]
+            for var, ts in tags.items()}
+
+
+def _section_limits(cfg, kind, var, rows):
+    """(vmin, vmax, cmap): ONE scale across every transect of a variable.
+
+    Deliberately not per-row the way map_grid's limits are. A section figure
+    is a single field cut in several places, and the whole point is to compare
+    those places -- rescaling each line to its own range would make a quiet
+    transect look as active as a busy one.
+
+    cfg['map_limits']['sections'] first, for the same reason the maps take a
+    fixed scale: it holds across cycles and across experiments that never
+    share a figure. Otherwise a percentile pooled over every line and every
+    experiment in this figure.
+    """
+    sec = (cfg.get('map_limits') or {}).get('sections') or {}
+    vals = [f for _k, fs in rows for f in fs
+            if f is not None and np.any(np.isfinite(f))]
+    if kind != 'bkg':
+        # A signed field -- an increment, or the departure from the
+        # climatology -- takes a symmetric diverging scale about zero. They
+        # get separate config blocks because they sit on different sizes: an
+        # increment is one analysis step, a climatology bias is a whole
+        # model-minus-ocean departure and is typically several times larger.
+        block = {'incr': 'increment', 'woa_bias': 'woa_bias'}[kind]
+        entry = ((sec.get(block) or {}).get('ocean') or {}).get(var)
+        lim = float(entry) if entry is not None else _robust(vals, 99.0)
+        return -lim, lim, P.DIVERGING
+    entry = (sec.get('ocean') or {}).get(var)
+    if entry is not None:
+        lo, hi = float(entry[0]), float(entry[1])
+    elif vals:
+        allv = np.concatenate([f[np.isfinite(f)].ravel() for f in vals])
+        lo = float(np.percentile(allv, 1))
+        hi = float(np.percentile(allv, 99))
+    else:
+        lo, hi = 0.0, 1.0
+    return lo, hi, _field_cmap(var)
+
+
+def _section_panel(ax, X, Y, f, cmap, vmin, vmax):
+    fm = np.ma.masked_invalid(f)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', UserWarning)
+        h = ax.pcolormesh(X, Y, fm, cmap=cmap, vmin=vmin, vmax=vmax,
+                          shading='nearest', rasterized=True, zorder=1)
+    if not ax.yaxis_inverted():
+        ax.invert_yaxis()
+    P.tidy(ax, xgrid=True)
+    return h
+
+
+def section_grid(cfg, rows, names, axes, title, fname, limits,
+                 cb_label=None, dpi=None, note=None, depth_cut=None):
+    """One grid of vertical sections: rows are transects, columns experiments.
+
+    ``axes`` maps a line key to (x, depth), the shared coordinates written by
+    lv_statespace.section_geometry. A line with no cached depth (no
+    background, so no honest layer thickness) falls back to the model level
+    index rather than a nominal depth in metres -- the same choice
+    depth_axis() makes.
+
+    ``limits`` is a single (vmin, vmax, cmap) for the whole figure, so there
+    is one colourbar rather than a row of identical ones. See
+    _section_limits() for why the scale is shared.
+    """
+    rows = [(k, f) for k, f in rows if any(x is not None for x in f)]
+    if not rows or not names:
+        return None
+    vmin, vmax, cm = limits
+    fig, axs = plt.subplots(len(rows), len(names),
+                            figsize=(5.4 * len(names), 2.6 * len(rows)),
+                            squeeze=False)
+    titled, handle = set(), None
+    for r, (key, fields) in enumerate(rows):
+        good = [f for f in fields if f is not None and np.any(np.isfinite(f))]
+        if not good:
+            for ax in axs[r]:
+                ax.set_visible(False)
+            continue
+
+        nk, nx = good[0].shape
+        x, depth = axes.get(key, (None, None))
+        # pcolormesh refuses a non-finite coordinate outright, so an axis that
+        # is the wrong shape or carries a NaN falls back to the plain index
+        # rather than taking the whole figure down. section_geometry() keeps
+        # depth finite below the sea floor precisely so this stays unused.
+        if x is None or np.size(x) != nx or not np.all(np.isfinite(x)):
+            x = np.arange(nx, dtype='f8')
+        X = np.broadcast_to(np.asarray(x, dtype='f8'), (nk, nx))
+        deep = (depth is not None and np.shape(depth) == (nk, nx)
+                and bool(np.all(np.isfinite(depth))))
+        Y = (np.asarray(depth, dtype='f8') if deep else
+             np.broadcast_to(np.arange(nk, dtype='f8')[:, None], (nk, nx)))
+
+        first_vis = next(c for c, f in enumerate(fields) if f is not None)
+        for c, n in enumerate(names):
+            ax = axs[r][c]
+            if fields[c] is None:
+                ax.set_visible(False)
+                continue
+            handle = _section_panel(ax, X, Y, fields[c], cm, vmin, vmax)
+            if deep:
+                # The per-figure cut wins over the global `depth_max:`; both
+                # are set on every column from one row-level value, so the
+                # experiments stay directly comparable either way.
+                if depth_cut:
+                    ax.set_ylim(float(depth_cut), 0.0)
+                else:
+                    P.depth_limit(ax, cfg)
+            ax.xaxis.set_major_formatter(
+                FuncFormatter(_lon_fmt if key[:3] == 'lat' else _lat_fmt))
+            if r == len(rows) - 1:
+                ax.set_xlabel('longitude' if key[:3] == 'lat' else 'latitude')
+            if note:
+                note(ax, key, fields[c])
+            if n not in titled:
+                ax.set_title(n, fontsize=10, color=P.INK)
+                titled.add(n)
+            if c == first_vis:
+                ax.set_ylabel('%s\n%s' % (_line_label(key),
+                                          'depth (m)' if deep
+                                          else 'model level'))
+            else:
+                ax.set_yticklabels([])
+    if handle is not None:
+        cb = fig.colorbar(handle, ax=axs.ravel().tolist(),
+                          fraction=0.018, pad=0.015, aspect=45)
+        cb.outline.set_visible(False)
+        cb.ax.tick_params(labelsize=7.5)
+        if cb_label:
+            cb.set_label(cb_label, fontsize=8.5)
+    fig.suptitle(title, y=1.0 - 0.004 * len(rows), fontsize=11.5, color=P.INK)
+    return _save(fig, cfg, fname, dpi=dpi or MAP_DPI)
+
+
+def fig_sections(data, cfg, grid, maps, kind='incr'):
+    """Vertical sections of the increment or the background, one PNG per field.
+
+    A horizontal map at a handful of levels cannot show how deep an update
+    reaches, or whether it follows the thermocline; a transect can. One file
+    per variable rather than one grid carrying every variable and every
+    transect -- with a few lines configured that grid squeezes each panel into
+    an unreadable sliver, the same reason fig_regional_profiles writes one
+    file per region. build_report.py picks them up behind a field picker.
+    """
+    if maps is None:
+        return []
+    names = P.exp_names(data)
+    prefix = '/ocean/%s_sec/' % kind
+    by_var = _section_rows(maps, names, prefix)
+    if not by_var:
+        return []
+    axes = _section_axes(maps, names)
+    order = (cfg['state_vars']['ocean'] if kind == 'incr'
+             else cfg.get('background_vars', {}).get('ocean', []))
+    order = ([v for v in order if v in by_var]
+             + [v for v in sorted(by_var) if v not in order])
+    what = {'incr': 'Analysis increment', 'bkg': 'Background state',
+            'woa_bias': 'Background $-$ WOA23'}[kind]
+    woa = _section_rows(maps, names, '/ocean/woa_sec/') if kind == 'bkg' else {}
+    views = section_depth_views(cfg)
+    written = []
+    for var in order:
+        rows = by_var[var]
+        # Drop experiments with nothing on any line, so the figure carries no
+        # empty column (only the LETKF writes u/v increments).
+        keep = [i for i, _n in enumerate(names)
+                if any(f[i] is not None for _k, f in rows)]
+        if not keep:
+            continue
+        kept = [(k, [f[i] for i in keep]) for k, f in rows]
+        cols = [names[i] for i in keep]
+        # One scale across every view as well as every line: the shallow cut
+        # is a zoom on the same field, so recolouring it would break the
+        # comparison with the full-column figure beside it.
+        pool = rows
+        wsec = woa.get(var)
+        if wsec:
+            by_line = {t: _first(f) for t, f in wsec}
+            kept = [(t, [by_line.get(t)] + f) for t, f in kept]
+            cols = [WOA_NAME] + cols
+            pool = rows + wsec      # or the climatology would be recoloured
+        limits = _section_limits(cfg, kind, var, pool)
+        for cut, suffix, label in views:
+            p = section_grid(
+                cfg, kept, cols, axes,
+                '%s along vertical sections - %s (%s) - %s'
+                % (what, var, label, data['cycle']),
+                'state_sections_%s_%s%s.png' % (kind, var, suffix),
+                limits=limits, cb_label=var, note=_tripolar_note,
+                depth_cut=cut)
+            if p:
+                written.append(p)
+    return written
 
 
 def _verif_products(data, names):
@@ -1124,6 +1599,8 @@ def render_cycle(cycle, cycles, cfg, grid, index=None, total=None):
                       lambda r=realm: fig_maps(data, cfg, grid, maps, 'sprred', r)))
         steps.append(('%s inflation maps' % realm,
                       lambda r=realm: fig_maps(data, cfg, grid, maps, 'infl', r)))
+    steps.append(('increment sections',
+                  lambda: fig_sections(data, cfg, grid, maps, 'incr')))
     steps.append(('background profiles',
                   lambda: fig_background_profiles(data, cfg, grid)))
     steps.append(('increment profiles by region',
@@ -1141,6 +1618,19 @@ def render_cycle(cycle, cycles, cfg, grid, index=None, total=None):
         steps.append(('%s background maps' % realm,
                       lambda r=realm: fig_background_maps(data, cfg, grid,
                                                           maps, r)))
+    steps.append(('background sections',
+                  lambda: fig_sections(data, cfg, grid, maps, 'bkg')))
+    steps.append(('WOA bias profiles',
+                  lambda: fig_woa_bias_profiles(data, cfg, grid)))
+    steps.append(('WOA bias profiles by region',
+                  lambda: fig_regional_profiles(
+                      data, cfg, grid, 'woa_bias_region',
+                      'background $-$ WOA23', 'woa_bias_regions.png',
+                      varlist=list(lv_woa.VARS))))
+    steps.append(('WOA bias maps',
+                  lambda: fig_woa_bias_maps(data, cfg, grid, maps)))
+    steps.append(('WOA bias sections',
+                  lambda: fig_sections(data, cfg, grid, maps, 'woa_bias')))
     for prod in _verif_products(data, P.exp_names(data)):
         steps.append(('%s verification maps' % prod,
                       lambda p=prod: fig_verif_maps(data, cfg, grid, maps, p)))
@@ -1198,6 +1688,10 @@ def main(argv=None):
     print('loading grid %s' % os.path.basename(cfg['grid']), flush=True)
     grid = Grid(cfg['grid'])
     print('figures -> %s' % cfg['figs'], flush=True)
+    # Printed here rather than from render_cycle(), which writes one
+    # partial line per figure and would be garbled by an interleaved warning.
+    for w in section_warnings(cfg):
+        print('  ! %s' % w, flush=True)
 
     # Static reference figure -- not tied to a cycle, so drawn once here
     # rather than from render_cycle().

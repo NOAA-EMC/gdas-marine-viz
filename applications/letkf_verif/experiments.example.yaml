@@ -127,11 +127,74 @@ verification:
     sss: /scratch/me/copernicus_sss
     sst: /scratch/me/ostia
 
+# WOA23 climatology, compared against the ocean background: an extra column on
+# the background maps and sections, an extra line on the profiles, and a set of
+# background-minus-WOA departure figures. Point it at the directory holding the
+# 26 standard files -- woa23_decav_{t,s}00_04.nc (annual, 102 levels to 5500 m)
+# and woa23_decav_{t,s}01..12_04.nc (monthly, 57 levels to 1500 m). Omit the
+# block to switch it all off. Relative paths resolve against THIS file.
+#
+# Deliberately NOT under `verification:` above: those are same-day L4 analyses
+# and every consumer of that block assumes one. This is the 1955-2022 decadal
+# mean, interpolated to the cycle's day of year between the two mid-month
+# fields bracketing it, spliced onto the annual field at 1500 m where the
+# monthly files stop. So "model minus WOA" carries the ocean's real
+# interannual anomaly as well as any model error -- read it for structure, not
+# as a score.
+#
+# WOA distributes IN-SITU temperature while MOM6 writes POTENTIAL temperature;
+# the two differ by 0.06 degC at 1000 m and 0.35 at 4000 m, which would
+# otherwise dominate the deep bias. The climatology is therefore converted
+# (EOS-80) before differencing. Salinity is practical in both and is not
+# touched. Set potential_temperature: false only if your model writes in-situ.
+#
+# Costs roughly 90 s per experiment per cycle, and needs an ocean background
+# (no background -> no depth axis -> no WOA). `sections: false` drops the
+# vertical-section half and about 40% of that.
+#
+# woa:
+#   path: /scratch/me/woa23
+#   # pattern: 'woa23_decav_{v}{mm}_{res}.nc'   # defaults, shown for reference
+#   # res: '04'                                  # 0.25 deg
+#   # splice_depth: 1500
+#   # potential_temperature: true
+#   # sections: true
+
 # Levels used for increment / spread maps and correlation-length fits.
 map_levels: [0, 10, 30]
 
 # Every other grid point is kept for the cached maps (1440x1080 -> 720x540).
 map_stride: 2
+
+# Vertical sections (transects) of the analysis increment and of the background
+# state. `zonal` latitudes give depth-vs-longitude planes; `meridional`
+# longitudes give depth-vs-latitude planes, both in conventional -180..180.
+# One figure per field, with a row per transect and a column per experiment.
+#
+# These answer what a map at a few levels cannot: how deep an update actually
+# reaches, and whether it follows the thermocline or cuts across it. Ocean 3-D
+# fields only -- ave_ssh, MLD and every ice field have no vertical section and
+# are skipped. Cost is one extra pass over each field's full column per
+# experiment per cycle; every configured line is cut from the same level read,
+# so ten lines cost the same as one. Omit the block to switch the figures off.
+#
+# NOTE a zonal section is a single grid ROW. On this tripolar grid the rows are
+# exactly constant latitude from 78.6S to 64.4N, then bend sharply: 0.6 deg of
+# latitude spread across the row at 64.5N, 6.5 deg by 68.8N, 13 deg by 73.5N.
+# A zonal section north of 65N is therefore NOT a latitude circle. It is still
+# drawn, but plot_statespace.py and preflight.py both warn, and the panel
+# itself is marked. Meridional sections are unaffected in the same way, though
+# their northern tail crosses the same bent rows.
+sections:
+  zonal:      [-45, -20, 0, 20, 45]
+  meridional: [-150, -60, -25, 60, 150]
+  # Depth views: one figure per entry, per field. The global `depth_max:` is
+  # the wrong instrument for a section -- a shallow cut resolves the
+  # thermocline and the bulk of the update, but an increment can reach the
+  # sea floor and cropping would hide exactly that. Listing both keeps each.
+  # Views share one colour scale, so a cut view is a zoom, not a recolour.
+  # `full` (or omitting the key entirely) is the uncut column.
+  depth_views: [1000, full]
 
 # Fixed color-scale bounds for the state maps (background maps, and the verif
 # figures for the matching model_var -- e.g. sst's model_var is Temp, so
@@ -173,6 +236,14 @@ map_stride: 2
 #       ave_ssh_k0: 0.2
 #     ice:
 #       aice_h_k0:  0.1
+#   sections:             # vertical sections: keyed on the bare variable, since
+#     ocean:              # a section spans the whole column, not one level
+#       Temp:     [-2, 30]
+#       Salt:     [30, 38]
+#     increment:          # symmetric, +/- this value
+#       ocean:
+#         Temp:   1.5
+#         Salt:   0.5
 
 # Real ocean-basin masks (Atlantic/Pacific/Indian/Arctic/Southern), from
 # RECCAP2's own open_ocean classification, as an alternative or addition to

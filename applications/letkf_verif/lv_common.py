@@ -320,6 +320,16 @@ def load_config(path=None, root_override=None, outdir_override=None,
             prods[name] = entry
         v['products'] = prods
         cfg['verification'] = v
+    # WOA23 climatology directory. Same rule as `verification:` above, and
+    # deliberately NOT nested inside it -- every consumer of that block assumes
+    # a same-day L4 product with an lv_verif.PRODUCTS spec, which a climatology
+    # is not.
+    if cfg.get('woa'):
+        w = cfg['woa']
+        w = {'path': w} if isinstance(w, str) else dict(w or {})
+        if w.get('path'):
+            w['path'] = _abs(w['path'])
+        cfg['woa'] = w
     names = [e.name for e in cfg['experiments']]
     if len(set(names)) != len(names):
         raise ValueError('duplicate experiment names: %s' % names)

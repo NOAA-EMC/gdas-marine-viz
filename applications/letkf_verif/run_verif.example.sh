@@ -102,7 +102,10 @@ APP=/scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfs-dev/gdas-marine-viz/applic
 OUT=/scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfs-dev/gdas-marine-viz/applications/letkf_verif/compare-exps
 CFG=$OUT/experiments.yaml
 EXPS="cp06.torchbalance 3dvar-rt letkf3"
-JOBS=30  # match the number of cycles in $CFG; see the parallelism note above
+JOBS=34  # match the number of cycles in $CFG; see the parallelism note above
+# Workers per experiment, sized to the cycles each actually resolves rather
+# than a blanket $JOBS for all three. Unlisted -> $JOBS.
+declare -A JOBS_FOR=( [cp06.torchbalance]=34 [3dvar-rt]=16 [letkf3]=4 )
 # Full soca_gridspec.nc (~190 MB) to slim down to $OUT/lv_grid.nc. Any
 # cycle's works -- lon/lat/area/mask2d are the static model grid, not a
 # per-cycle field. Point this at your own experiment's bmatrix output.
@@ -123,14 +126,15 @@ echo "== stage 1: precompute, every experiment concurrently, $JOBS-way"
 echo "   cycle parallelism within each (--jobs $JOBS) =="
 declare -A PIDS
 for exp in $EXPS; do
+    jobs_exp=${JOBS_FOR[$exp]:-$JOBS}
     python3 precompute_experiment.py "$CFG" \
         --experiment "$exp" \
         --outdir "$OUT/precompute-$exp" \
         --skip-preflight \
-        --jobs $JOBS \
+        --jobs "$jobs_exp" \
         > "$OUT/precompute-$exp.log" 2>&1 &
     PIDS[$exp]=$!
-    echo "-- launched $exp (pid ${PIDS[$exp]}, log: $OUT/precompute-$exp.log)"
+    echo "-- launched $exp (pid ${PIDS[$exp]}, ${jobs_exp}-way, log: $OUT/precompute-$exp.log)"
 done
 
 fail=0

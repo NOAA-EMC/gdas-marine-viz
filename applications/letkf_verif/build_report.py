@@ -144,9 +144,15 @@ def picker_widget(group, items, label_fn, panel_fn, style_fn=None,
         chooser = (
             '<select class="picker-select" aria-label="%s" '
             'onchange="lvPickerShow(this)">%s</select>'
+            # ":scope >" so this only ever touches its OWN panels. A plain
+            # ".picker-panel" search also matches the panels of any picker
+            # NESTED inside one of them, and inline display:none beats the
+            # nested picker's own stylesheet rule -- which silently blanked
+            # an inner region picker the first time the outer menu changed.
             '<script>function lvPickerShow(s){'
             'var w=s.closest(".picker-widget");'
-            'var p=w.querySelectorAll(".picker-panel");'
+            'var p=w.querySelectorAll('
+            '":scope > .picker-panels > .picker-panel");'
             'for(var i=0;i<p.length;i++){p[i].style.display="none"}'
             'var t=document.getElementById(s.value);'
             'if(t){t.style.display="block"}}</script>'
@@ -310,6 +316,66 @@ def regional_widget(group, cfg, figs, last, base, label):
             fig_path(figs, '%s_region_%s' % (base, P.slug(r)), last),
             '%s: %s by region' % (r.replace('_', ' '), label), optional=True),
         style_fn=lambda r: _basin_chip_style(basin_color, r))
+
+
+def figure_menu(group, label, entries):
+    """A <select> over several finished figure blocks; one visible at a time.
+
+    The state and background sections carry a dozen tall map grids between
+    them, which as a flat stack is minutes of scrolling to reach the last
+    one. ``entries`` is [(menu label, html)]; empty blocks drop out, and a
+    lone survivor is returned bare rather than behind a one-item menu.
+
+    Entries may themselves contain a picker (the region and field pickers
+    are passed straight in) -- see the ":scope >" note in picker_widget for
+    what makes that nesting safe.
+    """
+    entries = [(t, h) for t, h in entries if h]
+    if not entries:
+        return ''
+    if len(entries) == 1:
+        return entries[0][1]
+    by_label = dict(entries)
+    return picker_widget(group, [t for t, _h in entries],
+                         label_fn=lambda t: t,
+                         panel_fn=lambda t: by_label[t],
+                         dropdown=label)
+
+
+def sections_widget(group, cfg, figs, last, kind):
+    """Field picker + one panel per field for fig_sections().
+
+    plot_statespace.py writes one 'state_sections_<kind>_<var>[_<cycle>].png'
+    per field rather than one grid carrying every field and every transect.
+    The field list is derived the way regional_widget derives its regions --
+    by checking which files were actually written, so a field with no vertical
+    structure (ave_ssh, MLD) simply never appears.
+    """
+    order = {'incr': cfg.get('state_vars', {}).get('ocean', []),
+             'bkg': cfg.get('background_vars', {}).get('ocean', []),
+             'woa_bias': list(PS.lv_woa.VARS)}[kind]
+    base = 'state_sections_%s' % kind
+    what = {'incr': 'analysis increment', 'bkg': 'background state',
+            'woa_bias': 'background minus the WOA23 climatology'}[kind]
+    # field x depth view, flat rather than nested: a shallow cut and a full
+    # column are two views of one field, and a second picker level to reach
+    # them costs more than the flat list of labels does.
+    paths = {}
+    for v in order:
+        for _cut, suffix, label in PS.section_depth_views(cfg):
+            p = fig_path(figs, '%s_%s%s' % (base, v, suffix), last)
+            if os.path.exists(p):
+                paths['%s, %s' % (v, label)] = (v, p)
+    if not paths:
+        return ''
+    return picker_widget(
+        group, list(paths),
+        label_fn=lambda t: t,
+        panel_fn=lambda t: img(
+            paths[t][1],
+            '%s: %s along each configured vertical section (%s)'
+            % (paths[t][0], what, t.split(', ', 1)[1]),
+            optional=True))
 
 
 def table(headers, rows, cls=''):
@@ -657,7 +723,84 @@ def build(cfg, cycles, out):
         seq_figs=seq_figs, hov=hov, inc2d=inc2d,
         f_bkgprof=f_bkgprof, f_bkgocn=f_bkgocn, f_bkgice=f_bkgice,
         f_increg=f_increg, f_bkgreg=f_bkgreg, f_cons=f_cons,
+        f_incrsec=sections_widget('incrsec', cfg, figs, last, 'incr'),
+        f_bkgsec=sections_widget('bkgsec', cfg, figs, last, 'bkg'),
+        f_woasec=sections_widget('woasec', cfg, figs, last, 'woa_bias'),
+        f_woaprof=img(fig_path(figs, 'woa_bias_profiles', last),
+                      'Background and the WOA23 climatology against depth, '
+                      'and their difference', optional=True),
+        f_woabias=img(fig_path(figs, 'woa_bias_maps_ocean', last),
+                      'Background minus the WOA23 climatology', optional=True),
+        f_woareg=regional_widget('woareg', cfg, figs, last,
+                                 'woa_bias_regions',
+                                 'background $-$ WOA23'),
         drift=drift)
+
+    # Group the tall blocks behind dropdowns. Stacked flat, sections 03 and
+    # 04 are a dozen full-width map grids between them -- minutes of
+    # scrolling to reach the last one, and no way to put two of them
+    # side by side in the eye. One menu per family, one panel at a time.
+    def note(html_note, block):
+        """Prefix a panel's own explanation, but only if the panel exists."""
+        return (html_note + block) if block else ''
+
+    incr_sec_note = (
+        '<p class="lede"><b>Vertical sections</b> cut the increment along the '
+        'transects named by <code>sections:</code> &mdash; one row per line, '
+        'one column per experiment, with depth taken from the background '
+        'layer thickness so the sea floor is the model\'s own. A map at a few '
+        'levels cannot say how deep an update reaches, or whether it follows '
+        'the thermocline rather than cutting across it; a transect can. Note '
+        'that a zonal section is a single grid <i>row</i>, a true latitude '
+        'circle only as far as about 64&deg;N &mdash; north of that the rows '
+        'bend around the two northern poles, and any such panel is '
+        'marked.</p>')
+    bkg_sec_note = (
+        '<p class="lede">The same transects as section 03, against the '
+        'background state itself rather than the update &mdash; the '
+        'stratification the increments are working on, and where a drifting '
+        'thermocline or a collapsing halocline shows as structure rather than '
+        'as a shifted global mean.</p>')
+
+    subs['m_state_prof'] = figure_menu('stateprof', 'Profile view', [
+        ('Increment, global', subs['f_incr']),
+        ('Increment by region', subs['f_increg']),
+        ('Ensemble spread, global', subs['f_sprprof']),
+        ('Ensemble spread by region', subs['f_sprreg'])])
+    subs['m_state_maps'] = figure_menu('statemaps', 'Map view', [
+        ('Ocean increment', subs['f_map_ocn']),
+        ('Ocean increment sections', note(incr_sec_note, subs['f_incrsec'])),
+        ('Ocean spread reduction', subs['f_map_spr']),
+        ('Ocean applied inflation', subs['f_map_inf']),
+        ('Sea-ice increment', subs['f_map_ice']),
+        ('Sea-ice spread reduction', subs['f_ice']),
+        ('Sea-ice applied inflation', subs['f_ice_inf'])])
+    woa_note = (
+        '<p class="lede"><b>WOA23 is a climatology, not an analysis.</b> It is '
+        'the 1955&ndash;2022 decadal mean for this cycle&rsquo;s day of year, '
+        'interpolated between the two mid-month fields bracketing it, monthly '
+        'above 1500&nbsp;m and annual below. The difference therefore carries '
+        'the ocean&rsquo;s real interannual and eddy anomaly as well as any '
+        'model error, and a non-zero value is not by itself a fault. Read it '
+        'for <i>structure</i> &mdash; a thermocline at the wrong depth, a '
+        'collapsing halocline, a basin-wide offset &mdash; not as a score. '
+        'WOA distributes in-situ temperature and the model writes potential '
+        'temperature, so the climatology is converted (EOS-80) before '
+        'differencing; without that the deep bias would be dominated by the '
+        '0.35&nbsp;&deg;C adiabatic offset at 4000&nbsp;m rather than by the '
+        'ocean.</p>')
+    subs['m_woa'] = figure_menu('woaview', 'WOA23 view', [
+        ('Departure against depth', note(woa_note, subs['f_woaprof'])),
+        ('Departure by region', subs['f_woareg']),
+        ('Departure maps', subs['f_woabias']),
+        ('Departure vertical sections', subs['f_woasec'])])
+    subs['m_bkg'] = figure_menu('bkgview', 'Background view', [
+        ('Mean state against depth', subs['f_bkgprof']),
+        ('Mean state by region', subs['f_bkgreg']),
+        ('Ocean maps', subs['f_bkgocn']),
+        ('Ocean sections', note(bkg_sec_note, subs['f_bkgsec'])),
+        ('Sea-ice maps', subs['f_bkgice']),
+        ('Global-mean drift across cycles', subs['drift'])])
 
     names_out = page_names(out)
     tail = Template(TAIL).substitute(subs)
@@ -942,16 +1085,8 @@ SEC_STATE = r"""
   observational reach. It is drawn on a log&#8322; scale because the factor
   spans 1 to roughly 40 with a median near 1.5.</p>
   ${t4}
-  ${f_incr}
-  ${f_increg}
-  ${f_sprprof}
-  ${f_sprreg}
-  ${f_map_ocn}
-  ${f_map_spr}
-  ${f_map_inf}
-  ${f_map_ice}
-  ${f_ice}
-  ${f_ice_inf}
+  ${m_state_prof}
+  ${m_state_maps}
 </section>
 """
 
@@ -965,11 +1100,12 @@ SEC_BACKGROUND = r"""
   here that catches that, and they need several cycles to be worth reading.
   Depth comes from the background layer thickness, so it is the model's own
   geometry rather than a nominal axis.</p>
-  ${drift}
-  ${f_bkgprof}
-  ${f_bkgreg}
-  ${f_bkgocn}
-  ${f_bkgice}
+  <p class="lede">Where a <b>WOA23</b> column leads the maps and sections, or a
+  dotted <b>WOA23</b> line sits on a profile, that is the 1955&ndash;2022
+  climatology for this day of year on the same scale &mdash; a reference for
+  the shape of the state, not another experiment. Section 06 carries the
+  departure from it, and the caveats that go with a climatology.</p>
+  ${m_bkg}
 </section>
 """
 
@@ -1014,6 +1150,11 @@ SEC_VERIF = r"""
   0&ndash;30&nbsp;&deg;C ramp, so the two are read together.</p>
   ${f_verif}
   ${f_verif_maps}
+  <p class="lede">The three products above are surface-only and same-day. The
+  <b>WOA23</b> views below are the complement: a full-depth reference, so the
+  interior can be judged too &mdash; but a climatological one, which is a
+  weaker claim. The two are read differently, and the note inside says how.</p>
+  ${m_woa}
 </section>
 """
 
