@@ -169,6 +169,12 @@ class Experiment:
         # ocn.incr.nc / ice.incr.nc rather than jedi_increment*.nc); override
         # per experiment rather than hardcoding every convention ever used.
         self.incr_pattern = d.get('increment_pattern')
+        # The verification suite normally reconstructs an analysis as the
+        # background plus its increment.  A few diagnostics, including the
+        # frontal-current maps, need the written analysis state itself.  Keep
+        # its archive-specific name in the registry rather than duplicating
+        # path conventions in those diagnostics.
+        self.analysis_pattern = d.get('analysis_pattern')
 
     def dir_for(self, cycle, stem=None, realm=''):
         """cycle is a 10-character YYYYMMDDHH string."""
@@ -231,6 +237,18 @@ class Experiment:
                    else '*jedi_increment*.nc')
         pat = '%s/%s' % (realm, self.incr_pattern or default)
         return self._glob1(cycle, pat, required=False)
+
+    def analysis(self, cycle, realm='ocean'):
+        """Written analysis state for an optional archive-specific pattern.
+
+        The pattern is relative to the realm directory.  Returning ``None``
+        when it is not configured lets an optional diagnostic report a clear
+        unavailable-cycle reason without affecting the standard suite.
+        """
+        if not self.analysis_pattern:
+            return None
+        return self._glob1(cycle, '%s/%s' % (realm, self.analysis_pattern),
+                           required=False)
 
     def ensvar(self, cycle, realm, when):
         """Path to the 'prior' / 'post' / 'an' ensemble variance, or None."""

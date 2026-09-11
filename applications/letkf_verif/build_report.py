@@ -6,7 +6,7 @@ comes from cache/<cycle>.json -- the report never re-reads the model output.
 
 The report is 8 pages, one per section, so no single page carries every
 figure in the suite (state maps, verif maps and cycling figures across every
-field/level/realm/product add up fast -- see MAX_SIZE_MB below). Every page
+field/level/realm/product add up fast -- see WARN_SIZE_MB below). Every page
 repeats the masthead, experiment legend and a nav strip to the other 7
 sections, so any page works as an entry point, not just the first.
 """
@@ -27,6 +27,14 @@ import lv_plot as P  # noqa: E402
 import lv_verif as LV  # noqa: E402
 import plot_statespace as PS  # noqa: E402
 from lv_common import basin_regions, load_config, region_list  # noqa: E402
+
+# Page size at which we say something in the log. ADVISORY ONLY: nothing is
+# dropped, downscaled or refused above it, and the exit code is unaffected --
+# the report is written in full either way. It exists because publishing a
+# page as an artifact caps around here, which is a property of that one
+# downstream use, not of the report. Local viewing and the tarball do not
+# care, so this must never become a gate.
+WARN_SIZE_MB = 16.0
 
 # ---------------------------------------------------------------------------
 # html helpers
@@ -225,6 +233,40 @@ def verif_widget(cycles, cfg, names, figs):
         style_fn=lambda r: _basin_chip_style(basin_color, r))
 
 
+def frontal_widget(cfg, figs):
+    """Configured strong-current maps plus the narrow-jet profile diagnostic."""
+    frontal = cfg.get('frontal_analysis') or {}
+    if not frontal.get('enabled'):
+        return ''
+    entries = frontal.get('regions') or []
+    entries = (entries.values() if isinstance(entries, dict) else entries)
+    regions = {entry['name']: dict(entry or {}) for entry in entries
+           if entry and entry.get('name') and os.path.exists(
+             os.path.join(figs, 'front_strong_%s.png'
+                  % P.slug(entry['name'])))}
+    if not regions:
+        return ''
+    picker = picker_widget(
+      'fronts', list(regions),
+      label_fn=lambda name: name,
+      panel_fn=lambda name: img(
+        os.path.join(figs, 'front_strong_%s.png' % P.slug(name)),
+            '%s: geostrophic current speed and strong-current footprint'
+        % name, optional=True),
+        collapsible='choose current')
+    profile = img(os.path.join(figs, 'front_profiles.png'),
+                  'Cross-front structure for selected coherent jets', optional=True)
+    return (
+        '<section class="subsection"><h3>Frontal-current placement</h3>'
+        '<p class="lede">Broad and branching currents are shown as the area '
+        'where geostrophic speed reaches a fixed <b>absolute threshold</b>, '
+        'rather than being forced into one artificial axis. Each panel is one '
+        'analysis cycle; its configured threshold is identical for Copernicus '
+        'L4 ADT and every experiment in that current&rsquo;s box. Copernicus L4 '
+        'is a higher-resolution mapped analysis of much of the same altimeter '
+        'information, not independent truth.</p>%s%s</section>' % (picker, profile))
+
+
 def obstype_dropdown_widget(cycles, figs, base, label):
     """Obs-type dropdown + one panel per type.
 
@@ -254,7 +296,8 @@ def obstype_dropdown_widget(cycles, figs, base, label):
 def obsfit_widget(cycles, cfg, figs):
     """Obs-type picker + one panel per type for 'fit to observations'."""
     return obstype_dropdown_widget(cycles, figs, 'obsfit',
-                                   'fit to observations')
+                                   'RMS and bias of the fit to observations '
+                                   'across cycles')
 
 
 def counts_widget(cycles, cfg, figs):
@@ -376,6 +419,42 @@ def sections_widget(group, cfg, figs, last, kind):
             '%s: %s along each configured vertical section (%s)'
             % (paths[t][0], what, t.split(', ', 1)[1]),
             optional=True))
+
+
+def sequence_widget(group, cfg, figs, data):
+    """Field picker over the across-date increment sequences.
+
+    plot_statespace.py writes one 'seq_<realm>_incr_<field>_k<lev>.png' per
+    configured field, split per hemisphere for ice. The menu is ordered from
+    `state_vars` -- the same list that decides which sequences get drawn --
+    so it reads in config order rather than the alphabetical order a plain
+    directory glob produced, and the level labels carry their approximate
+    depth the way the figures' own row labels do. Any seq_ file the config
+    no longer names is still appended rather than silently dropped, so a
+    stale figure is visible instead of invisible.
+    """
+    levels = cfg.get('map_levels', [0])
+    svars = cfg.get('state_vars', {})
+    want = []
+    for v in svars.get('ocean', []):
+        flat = v in PS.NO_LEVEL_LABEL
+        for k in ([0] if flat else levels):
+            want.append(('seq_ocean_incr_%s_k%d.png' % (v, k),
+                         v if flat else '%s, %s' % (v, PS.level_label(data, k))))
+    for v in svars.get('ice', []):
+        for h in ('nh', 'sh'):
+            want.append(('seq_ice_incr_%s_k0_%s.png' % (v, h),
+                         '%s, %s' % (v, PS.HEMIS[h][0])))
+    named = {f for f, _label in want}
+    want += [(f, f[4:-4]) for f in sorted(os.listdir(figs))
+             if f.startswith('seq_') and f not in named]
+    # optional=True throughout: a configured field legitimately has no
+    # sequence when only one cycle is cached, or when no experiment writes
+    # it. figure_menu drops those empty entries and unwraps a lone survivor.
+    return figure_menu(group, 'increment sequence', [
+        (label, img(os.path.join(figs, f),
+                    'Increment across dates: %s' % label, optional=True))
+        for f, label in want])
 
 
 def table(headers, rows, cls=''):
@@ -638,9 +717,7 @@ def build(cfg, cycles, out):
         'thinning and QC. Run <code>compute_cycle.py --rejoin</code> to '
         'rebuild a true common sample where possible.')
 
-    seq_figs = ''.join(
-        img(os.path.join(figs, f), 'Increment across dates: %s' % f[4:-4])
-        for f in sorted(os.listdir(figs)) if f.startswith('seq_'))
+    seq_figs = sequence_widget('seq', cfg, figs, data)
     hov = img(os.path.join(figs, 'cycle_increment_hovmoller.png'),
               'RMS increment against depth and cycle', optional=True)
     inc2d = img(os.path.join(figs, 'cycle_increment_2d.png'),
@@ -718,6 +795,7 @@ def build(cfg, cycles, out):
             + img(fig_path(figs, 'verif_diff_%s' % p, last),
                   'Model minus %s' % p.upper(), optional=True)
             for p in ('adt', 'sss', 'sst')),
+              f_fronts=frontal_widget(cfg, figs),
         sample_note=sample_note, overlap_warning=overlap_warning,
         cycle_figs=cycle_figs, cyc_note=cyc_note,
         seq_figs=seq_figs, hov=hov, inc2d=inc2d,
@@ -1117,7 +1195,8 @@ SEC_DATES = r"""
   behaving puts its increments in similar places each cycle; a pattern that
   wanders, or grows, is the signature the single-date maps in section 03 cannot
   show. The depth&ndash;cycle panels cover every cycle; the map sequences are
-  subsampled evenly when there are many.</p>
+  subsampled evenly when there are many. Every field in <code>state_vars:</code>
+  gets a sequence &mdash; pick one from the menu below.</p>
   ${hov}
   ${inc2d}
   ${seq_figs}
@@ -1150,6 +1229,7 @@ SEC_VERIF = r"""
   0&ndash;30&nbsp;&deg;C ramp, so the two are read together.</p>
   ${f_verif}
   ${f_verif_maps}
+  ${f_fronts}
   <p class="lede">The three products above are surface-only and same-day. The
   <b>WOA23</b> views below are the complement: a full-depth reference, so the
   interior can be judged too &mdash; but a climatological one, which is a
@@ -1256,8 +1336,8 @@ def main(argv=None):
             f.write(content)
         size = os.path.getsize(path) / 1e6
         print('wrote %s (%.1f MB)' % (path, size))
-        if size > 16.0:
-            over.append(path)
+        if size > WARN_SIZE_MB:
+            over.append((path, size))
 
     # One tarball of every report page, for handing the whole thing off in
     # one file -- the report is 8 separate HTML pages so nav between
@@ -1272,16 +1352,19 @@ def main(argv=None):
     print('wrote %s (%d files)' % (tar_path, len(html_files)))
 
     if over:
-        # Publishing a page as an artifact caps at 16 MB, and every figure is
-        # embedded as base64, so a page grows with the number of FIELDS and
-        # REGIONS on it rather than with the number of cycles. Say so here
-        # rather than let it be discovered at publish time.
-        print('  ! %d page(s) over the 16 MB limit for publishing as an '
-              'artifact:\n      %s\n'
-              '    In order of least loss: lower VERIF_MAP_DPI, then MAP_DPI, '
-              'in\n    plot_statespace.py; shorten `regions:`; or drop fields '
-              'from\n    `background_vars:` / `state_vars:`.'
-              % (len(over), '\n      '.join(os.path.basename(p) for p in over)))
+        # Every figure is embedded as base64, so a page grows with the number
+        # of FIELDS and REGIONS on it rather than with the number of cycles.
+        # Noted here rather than discovered at publish time -- but the pages
+        # below were written in full, and nothing about them was reduced.
+        print('  i %d page(s) over %.0f MB. Written in full and fine to view '
+              'locally; only\n    publishing as an artifact is likely to '
+              'refuse them:' % (len(over), WARN_SIZE_MB))
+        for p, size in over:
+            print('      %-52s %5.1f MB' % (os.path.basename(p), size))
+        print('    If you need one smaller, in order of least loss: lower '
+              'VERIF_MAP_DPI,\n    then MAP_DPI, in plot_statespace.py; '
+              'shorten `regions:`; or drop fields\n    from '
+              '`background_vars:` / `state_vars:`.')
     if _MISSING:
         # A figure the report expects but cannot find used to vanish in
         # silence, which is how renamed figures dropped out unnoticed.

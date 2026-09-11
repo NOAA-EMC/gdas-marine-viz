@@ -1525,6 +1525,20 @@ def fig_corr_lengths(data, cfg, grid):
     return _save(fig, cfg, 'state_correlation_lengths.png')
 
 
+def cycle_row_label(cycle):
+    """A YYYYMMDDHH cycle as 'YYYY-MM-DD HH' for a row label.
+
+    map_grid's default label splits on '_k', which a bare cycle string has
+    nothing of, so it used to draw '2025121306' -- ten undelimited digits,
+    rotated 90 degrees, which is exactly the form a date is hardest to read
+    in. Anything unexpected is returned unchanged rather than sliced blindly.
+    """
+    c = str(cycle)
+    if len(c) < 10 or not c[:10].isdigit():
+        return c
+    return '%s-%s-%s %s' % (c[:4], c[4:6], c[6:8], c[8:10])
+
+
 def fig_map_sequence(cycles, cfg, grid, field, realm='ocean', kind='incr',
                      max_rows=8):
     """One field across dates: rows are cycles, columns are experiments.
@@ -1572,7 +1586,7 @@ def fig_map_sequence(cycles, cfg, grid, field, realm='ocean', kind='incr',
     for view in views_for(realm):
         out = map_grid(cfg, grid, rows, names, title,
                        'seq_%s_%s_%s.png' % (realm, kind, field), view,
-                       limits=limits) or out
+                       limits=limits, row_label=cycle_row_label) or out
     return out
 
 
@@ -1712,10 +1726,18 @@ def main(argv=None):
         TAG = ''
         print('across-date sequences (%d cycles)' % len(cycles), flush=True)
         levels = cfg.get('map_levels', [0])
+        # `state_vars` IS the increment variable list -- fig_sections and
+        # fig_increment_profiles both read it for kind='incr'. This used to
+        # take the ocean fields from an undocumented `sequence_fields` key
+        # (defaulting to Temp/ave_ssh, so a configured Salt silently never
+        # appeared) and hardcode the single ice field, which is why adding a
+        # field to the config did nothing here. NO_LEVEL_LABEL already knows
+        # which fields are 2-D and so have no level to sweep.
+        svars = cfg.get('state_vars', {})
         seq = [('ocean', '%s_k%d' % (v, k))
-               for v in cfg.get('sequence_fields', ['Temp', 'ave_ssh'])
-               for k in ([0] if v == 'ave_ssh' else levels)]
-        seq.append(('ice', 'aice_h_k0'))
+               for v in svars.get('ocean', [])
+               for k in ([0] if v in NO_LEVEL_LABEL else levels)]
+        seq += [('ice', '%s_k0' % v) for v in svars.get('ice', [])]
         for realm, field in seq:
             t = time.time()
             print('    %-28s' % ('%s %s' % (realm, field)), end='', flush=True)

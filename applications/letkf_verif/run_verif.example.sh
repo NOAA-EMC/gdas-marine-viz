@@ -4,8 +4,8 @@
 #SBATCH --qos=debug
 ##SBATCH --partition=hera
 #SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=60
+#SBATCH --ntasks=96
+##SBATCH --cpus-per-task=60
 #SBATCH --mem=300GB
 #SBATCH --time=00:30:00
 #SBATCH --output=letkf_verif_2exp.%j.log
@@ -101,11 +101,11 @@ export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_TH
 APP=/scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfs-dev/gdas-marine-viz/applications/letkf_verif
 OUT=/scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfs-dev/gdas-marine-viz/applications/letkf_verif/compare-exps
 CFG=$OUT/experiments.yaml
-EXPS="cp06.torchbalance 3dvar-rt letkf3"
-JOBS=34  # match the number of cycles in $CFG; see the parallelism note above
+EXPS="cp06.torchbalance cp06.torchbalance.1 cp06.torchbalance.2 cp06.torchbalance.3 3dvar-rt"
+JOBS=22  # match the number of cycles in $CFG; see the parallelism note above
 # Workers per experiment, sized to the cycles each actually resolves rather
 # than a blanket $JOBS for all three. Unlisted -> $JOBS.
-declare -A JOBS_FOR=( [cp06.torchbalance]=34 [3dvar-rt]=16 [letkf3]=4 )
+declare -A JOBS_FOR=( [cp06.torchbalance]=26 [cp06.torchbalance.1]=26 [cp06.torchbalance.2]=26 [cp06.torchbalance.3]=26 [3dvar-rt]=16 )
 # Full soca_gridspec.nc (~190 MB) to slim down to $OUT/lv_grid.nc. Any
 # cycle's works -- lon/lat/area/mask2d are the static model grid, not a
 # per-cycle field. Point this at your own experiment's bmatrix output.
@@ -156,7 +156,9 @@ echo "== stage 2: build comparison (rejoin + figures + scorecard + report) =="
 python3 build_comparison.py "$CFG" \
     --cache "$OUT/precompute-cp06.torchbalance/cache" \
     --cache "$OUT/precompute-3dvar-rt/cache" \
-    --cache "$OUT/precompute-letkf3/cache" \
+    --cache "$OUT/precompute-cp06.torchbalance.1/cache" \
+    --cache "$OUT/precompute-cp06.torchbalance.2/cache" \
+    --cache "$OUT/precompute-cp06.torchbalance.3/cache" \
     --outdir "$OUT/page" \
     --jobs $JOBS
 echo "build_comparison exit code: $? (non-zero here just means a figure was"

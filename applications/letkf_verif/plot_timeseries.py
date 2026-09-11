@@ -20,14 +20,24 @@ import lv_plot as P  # noqa: E402
 import lv_verif as LV  # noqa: E402
 from lv_common import Grid, load_config, region_list  # noqa: E402
 
+# (cache key, panel title, reference line or None). Each mean sits next to
+# the RMS it belongs with: the pair separates a run that is merely scattered
+# from one that is systematically offset, and only the second is a bias the
+# system can be asked to correct.
 PANELS = [
     ('ombg_rms', 'RMS(O$-$B)', None),
+    ('ombg_mean', 'mean(O$-$B), bias', 0.0),
     ('oman_rms', 'RMS(O$-$A)', None),
+    ('oman_mean', 'mean(O$-$A), bias', 0.0),
     ('spread_b', 'prior ensemble spread', None),
     ('consistency_ratio', 'consistency ratio', 1.0),
     ('spread_skill', 'spread / skill', 1.0),
     ('desroziers_R_ratio', 'Desroziers $R$ / assigned $R$', 1.0),
 ]
+
+# Columns in the fig_timeseries grid. The row count follows from len(PANELS),
+# so adding a metric above does not also mean editing the subplot call.
+PANEL_NCOL = 4
 
 
 def _finite(t, v):
@@ -62,10 +72,15 @@ def fig_timeseries(cycles, cfg, obstype, sample='common'):
     col = P.color_map(names)
     t = _times(cycles)
     single = len(t) == 1
-    fig, axes = plt.subplots(2, 3, figsize=(13.5, 6.4), squeeze=False)
+    nc = PANEL_NCOL
+    nr = int(np.ceil(len(PANELS) / nc))
+    fig, axes = plt.subplots(nr, nc, figsize=(4.5 * nc, 3.2 * nr),
+                             squeeze=False)
+    for a in axes.ravel()[len(PANELS):]:
+        a.set_visible(False)
     drawn = False
     for i, (key, label, target) in enumerate(PANELS):
-        ax = axes[i // 3][i % 3]
+        ax = axes[i // nc][i % nc]
         for n in names:
             v = _series(cycles, obstype, n, key, sample)
             if not np.any(np.isfinite(v)):
@@ -226,6 +241,10 @@ def _time_lines(ax, t, series, col, single):
 def fig_obs_fit(cycles, cfg):
     """Background and analysis fit in observation space, one figure per type.
 
+    Two panels: RMS departure, and the signed mean beside it. Both are drawn
+    from the same per-type sample (see P.type_sample), which the title names
+    because it is not always the common one.
+
     One PNG per obs type rather than one big grid of tiny panels: with 20+
     obs types configured that grid squeezed every type into a sliver too
     narrow to read -- the same problem fig_verif_series had with regions.
@@ -248,22 +267,48 @@ def fig_obs_fit(cycles, cfg):
         # common/own choice -- one type missing an experiment shouldn't push
         # every OTHER, fully-shared type onto its own (unjoined) sample too
         sample = P.type_sample(cycles, ot)
-        series = {n: (_series(cycles, ot, n, 'ombg_rms', sample),
-                      _series(cycles, ot, n, 'oman_rms', sample)) for n in names}
-        fig, ax = plt.subplots(figsize=(6.4, 3.6))
-        if not _time_lines(ax, t, series, col, single):
+        rms = {n: (_series(cycles, ot, n, 'ombg_rms', sample),
+                   _series(cycles, ot, n, 'oman_rms', sample)) for n in names}
+        # RMS cannot distinguish a run that is scattered from one that is
+        # systematically offset, and only the second is a bias the system can
+        # be asked to correct -- so the signed mean goes beside it, from the
+        # same sample and the same cycles.
+        bias = {n: (_series(cycles, ot, n, 'ombg_mean', sample),
+                    _series(cycles, ot, n, 'oman_mean', sample)) for n in names}
+        fig, axes = plt.subplots(1, 2, figsize=(11.4, 3.6), squeeze=False)
+        ax_r, ax_b = axes[0]
+        if not _time_lines(ax_r, t, rms, col, single):
             plt.close(fig)
             continue
-        ax.set_ylabel('RMS departure (obs units)')
-        P.tidy(ax)
-        if single:
-            ax.set_xticks(t)
-            ax.set_xticklabels([t[0].strftime('%Y-%m-%d %HZ')], fontsize=8)
-        else:
-            _date_labels(fig, np.array([[ax]]), t)
-        P.maybe_legend(ax, fontsize=7.5)
-        fig.suptitle('%s: fit to observations, solid O$-$B / dashed O$-$A%s'
+        # A departure mean is signed, so zero is the whole reference: an
+        # experiment straddling this line is unbiased at this scale.
+        ax_b.axhline(0, color=P.MUTED, lw=1.2, ls=(0, (4, 3)), zorder=1)
+        if not _time_lines(ax_b, t, bias, col, single):
+            ax_b.set_visible(False)
+        ax_r.set_ylabel('RMS departure (obs units)')
+        ax_b.set_ylabel('mean departure (obs units)')
+        ax_r.set_title('RMS departure', fontsize=10)
+        ax_b.set_title('bias (mean departure)', fontsize=10)
+        for ax in axes[0]:
+            if not ax.get_visible():
+                continue
+            P.tidy(ax)
+            if single:
+                ax.set_xticks(t)
+                ax.set_xticklabels([t[0].strftime('%Y-%m-%d %HZ')], fontsize=8)
+        if not single:
+            _date_labels(fig, axes, t)
+        P.maybe_legend(ax_r, fontsize=7.5)
+        # Name the sample on the figure itself. It is picked per obs type and
+        # silently falls back to 'own' where no genuine cross-experiment join
+        # exists, which changes what a comparison between runs MEANS -- the
+        # section note says this can happen, but only the figure can say
+        # whether it happened to this type.
+        fig.suptitle('%s: fit to observations, solid O$-$B / dashed O$-$A'
+                     '  [%s]%s'
                      % (P.short(ot),
+                        'common sample' if sample == 'common'
+                        else "each experiment's own sample",
                         '  (single cycle - add cycles to see evolution)'
                         if single else ''),
                      y=1.03, fontsize=11.5, color=P.INK)

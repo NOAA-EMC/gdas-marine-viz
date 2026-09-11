@@ -50,12 +50,15 @@ experiments:
     kind:  var
     root:  /scratch/me/expts
     stem:  "gdas.{Ymd}/{HH}/analysis"
+    # Required only by the optional frontal-current diagnostic below.
+    # analysis_pattern: "*ocn.ana.nc"
 
   - name:  letkf_v1
     label: LETKF v1
     kind:  letkf
     root:  /scratch/me/expts
     stem:  "enkfgdas.{Ymd}/{HH}/ensstat/analysis"
+    # analysis_pattern: "*jedi_analysis*.nc"
     # Ensemble variance at the three stages of the analysis. These are the
     # defaults; override only the ones your run names differently. Omitting
     # `an` (or having no such file) simply drops the inflation diagnostics.
@@ -126,6 +129,28 @@ verification:
     adt: /scratch/me/copernicus_adt
     sss: /scratch/me/copernicus_sss
     sst: /scratch/me/ostia
+
+  # Optional single-cycle frontal-current diagnostic. It draws one figure per
+  # region in the report's "Fit to gridded analyses" section. The outlined area
+  # is where geostrophic speed reaches `strong_speed_mps`; use one absolute
+  # threshold for Copernicus ADT and every experiment in the same box. This
+  # identifies broad or branching flows without forcing them onto one axis.
+  # The `analysis_pattern` for every experiment must resolve to an ocean file
+  # holding `ave_ssh` at the selected cycle.
+  #
+  # frontal_analysis:
+  #   enabled: true
+  #   adt_product: adt
+  #   cycle: 2025122000
+  #   regions:
+  #     - name: Gulf Stream
+  #       lon: [-80, -50]
+  #       lat: [30, 45]
+  #       strong_speed_mps: 0.40
+  #       # Keep optional centroid/profile diagnostics only for a coherent jet.
+  #       axis_diagnostic: true
+  #       kind: zonal
+  #       sign: 1
 
 # WOA23 climatology, compared against the ocean background: an extra column on
 # the background maps and sections, an extra line on the profiles, and a set of

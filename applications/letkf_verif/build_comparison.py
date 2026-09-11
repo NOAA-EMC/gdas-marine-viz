@@ -37,6 +37,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import build_report  # noqa: E402
 import compute_cycle  # noqa: E402
+import plot_fronts  # noqa: E402
 import plot_obsspace  # noqa: E402
 import plot_statespace  # noqa: E402
 import plot_timeseries  # noqa: E402
@@ -68,7 +69,7 @@ def main(argv=None):
                          'report stages after it have no --jobs option)')
     ap.add_argument('--skip', action='append', default=None,
                     choices=['rejoin', 'obsspace', 'statespace', 'timeseries',
-                             'scorecard', 'report'],
+                             'fronts', 'scorecard', 'report'],
                     help='skip a stage (repeatable)')
     a = ap.parse_args(argv)
     cfg_path = a.config or a.config_opt
@@ -111,6 +112,8 @@ def main(argv=None):
          lambda: plot_statespace.main(common + ['--latest'])),
         ('timeseries', 'cycling figures',
          lambda: plot_timeseries.main(common)),
+        ('fronts', 'single-cycle frontal-current figures',
+         lambda: plot_fronts.main(common)),
         ('scorecard', 'scorecard', lambda: scorecard.main(common)),
         ('report', 'HTML report', lambda: build_report.main(common)),
     ]

@@ -13,6 +13,10 @@ self-contained HTML report. Three kinds of evidence go into it:
   post-inflation).
 - **Gridded analyses** — the surface state against three daily L4 products
   produced outside the system: CMEMS ADT, CMEMS SSS and OSTIA SST.
+- **Frontal-current placement** — optional, single-cycle regional maps of
+  geostrophic speed against Copernicus ADT. A common absolute speed threshold
+  within each box shows broad and branching-current footprints without forcing
+  them into one artificial axis.
 
 ## Two stages
 
@@ -74,6 +78,7 @@ Everything lands under `--outdir`.
 | `figs/state_*.png` | Increment and spread profiles, increment / spread-reduction / inflation maps, vertical sections of the increment |
 | `figs/verif_maps_<product>.png` | Product beside each experiment's background and analysis |
 | `figs/verif_diff_<product>.png` | Model minus product |
+| `figs/front_strong_<region>.png` | Optional single-cycle geostrophic-speed footprint for one configured current box |
 | `figs/cycle_*.png` | Everything against cycle: obs fit, obs counts, gridded-analysis scores, background drift |
 | `cache/` | The per-cycle reductions; the report never re-reads model output |
 
@@ -88,6 +93,7 @@ Everything lands under `--outdir`.
 | `grid:` | soca gridspec, or a ~7 MB slim copy made by `make_gridfile.py` |
 | `regions:` | Named lat/lon boxes for the regional profiles; `global` is always included |
 | `verification:` | One directory per gridded product — they come from unrelated archives, so each names its own |
+| `frontal_analysis:` | Optional single-cycle ADT-gradient diagnostic; configures its cycle, current boxes and shared absolute speed thresholds. Each experiment also needs `analysis_pattern:` for its written ocean analysis state. |
 | `depth_max:` | Cut every depth panel at N metres; a view setting, so it needs no recompute |
 | `sections:` | `zonal` latitudes and `meridional` longitudes to cut vertical sections of the increment and background along. A zonal line is one grid row, a true latitude circle only to ~64&deg;N; anything above 65&deg;N is drawn but flagged by `preflight.py`, by `plot_statespace.py` and on the panel |
 | `map_limits:` | Fixed (vmin, vmax) per state variable/level, so a map figure's color scale holds across cycles and experiments instead of being recomputed per figure; optional, per-hemisphere override for ice thickness/snow depth |
