@@ -157,7 +157,7 @@ def strata(s, obstype, cfg):
             if mask_path:
                 codes = basin_at(mask_path, lat, lon)
                 bands += [(name + '/', codes == code)
-                         for code, name in basin_regions(mask_path)]
+                          for code, name in basin_regions(mask_path)]
             bands += [(r['name'] + '/', in_region(r, lat, lon))
                       for r in cfg.get('regions', [])]
         for prefix, bsel in bands:

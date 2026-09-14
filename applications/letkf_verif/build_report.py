@@ -220,7 +220,7 @@ def basin_colors(cfg):
     if not mask_path:
         return {}
     return {name: P.SERIES[i % len(P.SERIES)]
-           for i, (_code, name) in enumerate(basin_regions(mask_path))}
+            for i, (_code, name) in enumerate(basin_regions(mask_path))}
 
 
 def _basin_chip_style(basin_color, r):
@@ -462,6 +462,7 @@ def obstype_dropdown_widget(cycles, figs, base, label):
     one that opened onto a blank panel.
     """
     types = sorted({t for d in cycles.values() for t in d.get('obs', {})})
+
     def path(t):
         # 'obsfit_type_<slug>.png' / 'obscount_type_<slug>.png', but the
         # per-type cycling figures are plain 'cycle_<type>.png'
@@ -495,8 +496,8 @@ def binned_widget(cycles, cfg, figs):
         entries = []
         if os.path.exists(pooled):
             entries.append(('all', img(pooled, '%s: %s, every cached cycle '
-                                        'pooled' % (P.short(t), view),
-                                        optional=True)))
+                                       'pooled' % (P.short(t), view),
+                                       optional=True)))
         entries += [(c, img(fig_path(figs, base, c),
                             '%s: %s, %s' % (P.short(t), view,
                                             PS.cycle_row_label(c)),
@@ -947,7 +948,7 @@ def build(cfg, cycles, out):
         # when another experiment had real stats for it.
         own_vals = {n: (_mean(_series(cycles, t, n, 'ombg_rms', sample)),
                         _mean(_series(cycles, t, n, 'oman_rms', sample)))
-                   for n in others}
+                    for n in others}
         if not any(np.isfinite(v) for v in (r, ra) + tuple(
                 x for pair in own_vals.values() for x in pair)):
             continue
@@ -1070,7 +1071,6 @@ def build(cfg, cycles, out):
         % PS.cycle_row_label(c), optional=not has_ens))
     drift = img(os.path.join(figs, 'cycle_background_drift.png'),
                 'Background global means across cycles')
-
 
     any_own = any(P.type_sample(cycles, t) == 'own' for t in types)
     sample_note = (

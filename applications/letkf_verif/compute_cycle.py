@@ -76,7 +76,7 @@ def observation_block(cfg, cycle, work, verbose=True):
     lv_plot.type_sample, which reads it).
     """
     present = [e for e in cfg['experiments']
-              if e.name not in cycle_is_present(cfg, cycle)]
+               if e.name not in cycle_is_present(cfg, cycle)]
     per_type = {}
     for e in present:
         try:
@@ -108,7 +108,7 @@ def observation_block(cfg, cycle, work, verbose=True):
             missing = {e.name for e in present} - set(paths)
             note = ('  (missing from %s)' % sorted(missing)) if missing else ''
             print(' matched %8d  common-pass %8d%s'
-                 % (n, common_pass.sum(), note))
+                  % (n, common_pass.sum(), note))
         del own, aligned
     return out, skipped, bins
 

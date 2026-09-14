@@ -91,6 +91,7 @@ PRODUCTS = {
 def product_realm(name):
     return PRODUCTS.get(name, {}).get('realm', 'ocean')
 
+
 STATES = ('bkg', 'ana')
 
 

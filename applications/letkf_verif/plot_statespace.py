@@ -1486,15 +1486,15 @@ def fig_ocean_regions(cfg, grid):
     with warnings.catch_warnings():
         warnings.simplefilter('ignore', UserWarning)
         ax.pcolormesh(lon, lat, np.ma.masked_invalid(field), cmap=cmap,
-                     norm=norm, shading='nearest', rasterized=True,
-                     transform=ccrs.PlateCarree(), zorder=1)
+                      norm=norm, shading='nearest', rasterized=True,
+                      transform=ccrs.PlateCarree(), zorder=1)
     _decorate(ax)
     ax.set_global()
 
     handles = [plt.Rectangle((0, 0), 1, 1, fc=c) for c in colors]
     ax.legend(handles, [name for _c, name in basins], loc='upper center',
-             bbox_to_anchor=(0.5, -0.05), ncol=len(basins), fontsize=8.5,
-             frameon=False)
+              bbox_to_anchor=(0.5, -0.05), ncol=len(basins), fontsize=8.5,
+              frameon=False)
 
     # `regions:` boxes (corr_regions and any other named box) drawn as
     # outlines on top, so the figure documents both region mechanisms at
@@ -1507,11 +1507,11 @@ def fig_ocean_regions(cfg, grid):
                  else [(lon0, 180.0), (-180.0, lon1)])
         for lo, hi in spans:
             ax.plot([lo, hi, hi, lo, lo], [lat0, lat0, lat1, lat1, lat0],
-                   transform=ccrs.PlateCarree(), color=P.INK,
-                   linewidth=1.1, zorder=5)
+                    transform=ccrs.PlateCarree(), color=P.INK,
+                    linewidth=1.1, zorder=5)
         lo0, _hi0 = spans[0]
         ax.text(lo0, lat1, r['name'], transform=ccrs.PlateCarree(),
-               fontsize=7.5, ha='left', va='bottom', color=P.INK, zorder=6)
+                fontsize=7.5, ha='left', va='bottom', color=P.INK, zorder=6)
 
     ax.set_title('Ocean basins (RECCAP2 open_ocean) and named sub-boxes',
                  fontsize=11.5, color=P.INK)
@@ -1890,7 +1890,7 @@ def render_cycle(cycle, cycles, cfg, grid, index=None, total=None,
         if paths:
             written += paths
             tail = (os.path.basename(paths[0]) if len(paths) == 1 else
-                   '%d files (%s...)' % (len(paths), os.path.basename(paths[0])))
+                    '%d files (%s...)' % (len(paths), os.path.basename(paths[0])))
             print(' %-46s %5.1fs' % (tail, time.time() - t), flush=True)
         else:
             print(' %-46s %5.1fs' % ('(nothing to plot)', time.time() - t),

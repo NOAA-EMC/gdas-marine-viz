@@ -151,6 +151,7 @@ def footprint_density(result, key, block_deg=DENSITY_BLOCK_DEG):
     by, bx = ny // n, nx // n
     if by == 0 or bx == 0:
         return None
+
     def blocks(field):
         return field[:by * n, :bx * n].reshape(by, n, bx, n).sum(axis=(1, 3))
     wet = blocks(finite.astype(float))
@@ -228,14 +229,14 @@ def density_map(name, result, figs, cycle, labels, tag=''):
                       'pattern r = %.2f, mean %+.1f pts'
                       % (corr, 100 * np.nanmean(d)))
     _colorbar(figure, top, [.14, .075, .30, .014],
-              'fraction of each %g$^\circ$ box at or above %.2f m s$^{-1}$'
+              'fraction of each %g$^\\circ$ box at or above %.2f m s$^{-1}$'
               % (DENSITY_BLOCK_DEG, threshold))
     if diff is not None:
         _colorbar(figure, diff, [.56, .075, .30, .014],
                   'experiment $-$ Copernicus (fraction)')
     _headline(figure, '%s: where strong current is dense' % name,
               'Cycle %s. Shared threshold %.2f m s$^{-1}$; shading: share of '
-              'each %g$^\circ$ box at or above it (an outline is unreadable '
+              'each %g$^\\circ$ box at or above it (an outline is unreadable '
               'at this scale).' % (cycle, threshold, DENSITY_BLOCK_DEG))
     figure.subplots_adjust(left=.05, right=.985, bottom=.13, top=.88,
                            wspace=.12, hspace=.22)
@@ -290,9 +291,9 @@ def sst_map(name, result, figs, cycle, labels, tag=''):
               'sea surface temperature  ($^\\circ$C)')
     _headline(figure, '%s: sea surface temperature' % name,
               'Cycle %s. OSTIA foundation SST (daily) beside each analysis at '
-              'the surface level%s.' % (cycle, '; outline: geostrophic speed at '
-                                          'or above the shared threshold'
-                                          if outline else ''))
+              'the surface level%s.'
+              % (cycle, '; outline: geostrophic speed at or above the shared '
+                        'threshold' if outline else ''))
     figure.subplots_adjust(left=.05, right=.985, bottom=.16, top=.80,
                            wspace=.12, hspace=.20)
     path = os.path.join(figs, 'front_sst_%s%s.png' % (slug(name), tag))
@@ -502,8 +503,8 @@ def main(argv=None):
         inputs = [LV.product_path(cfg, 'adt', c), LV.product_path(cfg, 'sst', c),
                   cfg['grid']] + [
             e.analysis(c) for e in cfg['experiments'] if e.name in present[c]]
-        if fresh.ok('cycle:%s' % c, inputs, {'regions': sorted(regions),
-                                              'tag': tag}):
+        params = {'regions': sorted(regions), 'tag': tag}
+        if fresh.ok('cycle:%s' % c, inputs, params):
             print('  %s: up to date, skipped' % c, flush=True)
             # its metric rows are kept from the recorded csv, see below
             continue
@@ -519,11 +520,9 @@ def main(argv=None):
         new.append(profiles(results, figs, c, labels, tag=tag))
         new = [p for p in new if p]
         written += new
-        print('  %s: %d figure(s) in %.1fs' % (c, len(new),
-                                                 time.time() - t_cycle),
-              flush=True)
-        fresh.record('cycle:%s' % c, inputs, {'regions': sorted(regions),
-                                              'tag': tag}, new)
+        print('  %s: %d figure(s) in %.1fs'
+              % (c, len(new), time.time() - t_cycle), flush=True)
+        fresh.record('cycle:%s' % c, inputs, params, new)
     # The metrics csv is rewritten whole: rows for skipped cycles are carried
     # over from the previous file so a partial redraw does not lose them.
     csv_path = os.path.join(cfg['outdir'], 'front_metrics.csv')

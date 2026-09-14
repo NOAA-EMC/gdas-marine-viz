@@ -1004,7 +1004,7 @@ def compute(grid, exp, cycle, cfg):
                     grid, ice_bkg, fb_vars, regions,
                     ICE_OCEAN_FALLBACK_VARMAP, wet_mask=False)
                 r['bkg_mean'] = {v: d['mean'] for v, d in
-                                r['bkg_region'].get('global', {}).items()}
+                                 r['bkg_region'].get('global', {}).items()}
                 r['bkg_file'] = os.path.basename(ice_bkg)
                 r['bkg_cycle'] = exp.background_cycle(cycle)
                 r['bkg_fallback'] = 'ice_history_sst_sss'

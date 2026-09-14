@@ -485,8 +485,8 @@ def main(argv=None):
     else:
         written = draw('all', split, names, cycles, cfg, lims, deg)
         fresh.record('all', inputs, params, written)
-        print('  pooled: %d figure(s) in %.1fs' % (len(written),
-                                                    time.time() - t), flush=True)
+        print('  pooled: %d figure(s) in %.1fs'
+              % (len(written), time.time() - t), flush=True)
     del total, split
     pending = []
     for c in todo:

@@ -467,7 +467,7 @@ def fig_profiles(data, cfg):
                      y=1.0, fontsize=11.5, color=P.INK)
         fig.tight_layout()
         written.append(_save(fig, cfg,
-                              'obs_profiles_region_%s.png' % P.slug(reg)))
+                             'obs_profiles_region_%s.png' % P.slug(reg)))
     return written
 
 

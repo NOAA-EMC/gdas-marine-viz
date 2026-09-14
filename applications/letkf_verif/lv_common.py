@@ -563,7 +563,7 @@ def _load_basin_mask(path):
             lon = np.asarray(ds['lon'][:], dtype='f8')
             codes = np.asarray(ds['open_ocean'][:], dtype='i4')
             names = dict(kv.strip().split('.', 1)
-                        for kv in ds['open_ocean'].region_names.split(','))
+                         for kv in ds['open_ocean'].region_names.split(','))
             names = {int(k): v for k, v in names.items()}
         _BASIN_MASK_CACHE[path] = (lat, lon, codes, names)
     return _BASIN_MASK_CACHE[path]
@@ -586,9 +586,9 @@ def basin_at(path, lat, lon):
     dla = (mlat[-1] - mlat[0]) / (mlat.size - 1)
     dlo = (mlon[-1] - mlon[0]) / (mlon.size - 1)
     j = np.clip(np.rint((np.asarray(lat) - mlat[0]) / dla).astype(int),
-               0, mlat.size - 1)
+                0, mlat.size - 1)
     i = np.mod(np.rint((np.mod(lon, 360.0) - mlon[0]) / dlo).astype(int),
-              mlon.size)
+               mlon.size)
     return codes[j, i]
 
 

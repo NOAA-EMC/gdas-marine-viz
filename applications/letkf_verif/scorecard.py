@@ -128,7 +128,7 @@ def build(cfg, cycles):
             # dropped every such type even though section 3 (usage) shows it
             # was actually assimilated.
             if not (np.any(np.isfinite(r))
-                   or any(np.any(np.isfinite(s)) for s in others_s.values())):
+                    or any(np.any(np.isfinite(s)) for s in others_s.values())):
                 continue
             cells = [P.short(t), _fmt(np.nanmean(r), 4)]
             for n in others:

@@ -204,8 +204,6 @@ def trend(y, hours_per_step=6.0):
     return float(pct), float(tstat)
 
 
-
-
 def analyse(cfg, exp, cycles, grid, regions, field='ave_ssh', big=0.3,
             verbose=True):
     """Every metric for every cycle and region; rows of dicts."""
@@ -310,6 +308,7 @@ def figure(rows, regions, cycles, exp_name, cfg, fname):
     for ax in axes[len(METRICS):]:
         ax.axis('off')
     axes[0].legend(fontsize=8, frameon=False)
+
     def when(c):
         return '%s-%s-%s %sZ' % (c[:4], c[4:6], c[6:8], c[8:10])
     fig.suptitle('%s: SSH cycling stability, %s to %s (dotted: fitted trend)'
