@@ -807,8 +807,12 @@ def correlation_lengths(grid, path, variables, levels, boxes):
     return out
 
 
-def surface_state(bkg, incr):
+def surface_state(bkg, incr, ice_bkg=None):
     """Reader for one surface field of the background and of the analysis.
+
+    ``ice_bkg`` is the sea-ice history to fall back to for Temp/Salt (as
+    sst_h/sss_h) when there is no ocean background at all -- see
+    ICE_OCEAN_FALLBACK_VARMAP; never consulted when ``bkg`` has the field.
 
     Returns a callable (variable, 'bkg'|'ana') -> 2-D field or None. The
     analysis is reconstructed as background + increment: the DA writes an
@@ -834,6 +838,8 @@ def surface_state(bkg, incr):
 
     def get(var, state):
         b = read(bkg, var)
+        if b is None and ice_bkg is not None and var in ICE_OCEAN_FALLBACK_VARMAP:
+            b = read(ice_bkg, ICE_OCEAN_FALLBACK_VARMAP[var][0])
         if b is None or state == 'bkg':
             return b
         i = read(incr, var)
@@ -938,6 +944,7 @@ def compute(grid, exp, cycle, cfg):
     lines = section_lines(grid, cfg, stride)
 
     res, maps = {'map_stride': stride}, {}
+    verif_scores = {}
     for realm in ('ocean', 'ice'):
         variables = svars.get(realm, [])
         if not variables:
@@ -1065,11 +1072,20 @@ def compute(grid, exp, cycle, cfg):
             maps['%s/infl/%s' % (realm, k)] = v
 
         # -- against independent gridded analyses --------------------------
-        if realm == 'ocean' and (cfg.get('verification') or {}).get('products'):
+        # Every product's scores land under the OCEAN block's 'verif', the
+        # ice-realm product (OSTIA ice concentration) included: the time
+        # series, scorecard and report read one place. Only the maps are
+        # keyed by realm, because that is what decides the projection.
+        if (cfg.get('verification') or {}).get('products'):
+            ice_bkg = (exp.background(cycle, 'ice')
+                       if realm == 'ocean' and bkg is None else None)
             scores, vmaps = lv_verif.verify(
-                grid, exp, cycle, cfg, regions, surface_state(bkg, incr))
+                grid, exp, cycle, cfg, regions,
+                surface_state(bkg, incr, ice_bkg), realm=realm)
             if scores:
-                r['verif'] = scores
+                verif_scores.update(scores)
             for k, v in vmaps.items():
                 maps['%s/verif/%s' % (realm, k)] = v[::stride, ::stride].astype('f4')
+    if verif_scores:
+        res.setdefault('ocean', {})['verif'] = verif_scores
     return res, maps

@@ -1,94 +1,56 @@
 #!/bin/bash
 #SBATCH --job-name=letkf_verif_2exp
 #SBATCH --account=da-cpu
-#SBATCH --qos=debug
+#SBATCH --qos=batch
 ##SBATCH --partition=hera
 #SBATCH --nodes=1
 #SBATCH --ntasks=96
 ##SBATCH --cpus-per-task=60
 #SBATCH --mem=300GB
-#SBATCH --time=00:30:00
+#SBATCH --time=01:30:00
 #SBATCH --output=letkf_verif_2exp.%j.log
 
 # Example sbatch script: precompute + build the LETKF-verif comparison
-# report for three experiments, cp06.torchbalance, 3dvar-rt and letkf3.
+# report for every experiment in experiments.yaml.
 #
 # Copy this (and experiments.example.yaml -> your own experiments.yaml)
-# somewhere of your own and edit CFG/OUT/EXPS/GRIDSPEC below for your
-# experiments -- nothing here is specific to the suite beyond that. See
-# README.md for the two-stage pipeline this drives.
+# somewhere of your own and edit CFG/OUT/GRIDSPEC below. Everything else --
+# the experiment list, the cycle count, the per-experiment worker counts and
+# the --cache list for stage 2 -- is read from the yaml at run time, so
+# adding an experiment or a cycle there is the whole edit.
 #
 # `grid:` in experiments.yaml is expected to already exist next to it
 # (lv_grid.nc, resolved relative to the config file) -- this script slims
-# GRIDSPEC down to it with make_gridfile.py if it is not there yet, so a
-# fresh OUT directory (no lv_grid.nc committed) works without a separate
-# manual step. Only ever reads GRIDSPEC; never regenerates an lv_grid.nc
-# that already exists, so editing it after the fact is never silently
-# undone by a rerun.
+# GRIDSPEC down to it with make_gridfile.py if it is not there yet. Only ever
+# reads GRIDSPEC; never regenerates an lv_grid.nc that already exists.
 #
-# Parallelism, two layers, both using existing CLI options -- no code
-# changes:
-#   - the experiments are precomputed CONCURRENTLY (independent roots,
-#     independent cache dirs, nothing shared) instead of one after another
-#   - each experiment's own cycles are computed with --jobs 30 (compute_cycle.py
-#     already supports this: ProcessPoolExecutor over cycles, which are
-#     independent and I/O-bound)
-# --jobs is set to the number of cycles in experiments.yaml (30 here, up from
-# 7), not an arbitrary smaller number: profiling a real 7-cycle run showed
-# precompute at --jobs 4 taking 220s of a 328s total job (67%) purely because
-# 7 cycles over 4 workers is 2 sequential waves (ceil(7/4)) -- each cycle
-# costs 90-140s on its own, so that second wave was pure waste. --jobs ==
-# cycle count runs every cycle in one wave, bounded by the single slowest
-# cycle rather than by however many waves ceil(cycles/jobs) works out to.
-# (3dvar-rt and letkf3 both typically resolve far fewer of their cycles than
-# $JOBS here -- 3dvar-rt fails most of preflight's directory checks, and
-# letkf3's window only actually has 4 cycles with ocean/ice DA out of the 34
-# in `cycles:` -- so most of their own workers exit almost immediately;
-# harmless, just reserved-but-idle capacity for them.)
+# Parallelism, all through existing CLI options:
+#   stage 1  every experiment precomputed CONCURRENTLY (independent roots and
+#            cache dirs), each with --jobs = the number of cycles it actually
+#            resolves on disk (one wave, bounded by the slowest cycle), capped
+#            so the sum stays within the cores this job was given.
+#   stage 2  rejoin first (it rewrites the page cache the rest read, --jobs
+#            over cycles), then the figure stages -- obs-space, state-space,
+#            binned departures, time series, fronts -- and the scorecard
+#            CONCURRENTLY (they only
+#            share the read-only cache and write different files), then the
+#            report once all of them are in. State-space draws its cycles
+#            --jobs-way in parallel too.
+#   caching  every stage skips work whose inputs have not changed: the
+#            rejoin when the page-cache file is newer than its sources, and
+#            each plot stage per cycle (figs/.fresh-<stage>.json records
+#            what was drawn from which cache files). A rerun that added one
+#            cycle redraws that cycle and the across-date sequences only.
+#            BUILD_OPTS="--force" redoes everything.
 #
-# --cpus-per-task/--mem below were sized for 2 experiments (2 x 30 = 60
-# worker processes worst case) and have NOT been re-checked now that EXPS has
-# 3 -- nominal worst case is 3 x 30 = 90, which would oversubscribe the 60
-# reserved cores if all three actually hit 30-way at once. In practice
-# letkf3 (4 real cycles) and 3dvar-rt (a handful) are unlikely to peak
-# alongside cp06.torchbalance's real 30-way, so this probably still runs, just
-# not with the same "one process per core" headroom the original 60/300GB
-# figures assumed -- worth bumping (and re-checking against `sinfo`'s node
-# limits, and getting a fresh `sacct` MaxRSS reading) if this turns out to be
-# a real bottleneck rather than a theoretical one.
+# Sizing: worst case is sum(cycles per experiment) precompute workers at
+# once; --ntasks=96 covers two experiments x ~30 cycles with margin, and
+# the cap below shrinks the per-experiment --jobs if the yaml grows past
+# that. A measured worker peaks around 3 GB RSS (sacct on a real run), so
+# --mem=300GB is ~5 GB x 60 workers. OMP/BLAS threads are pinned to 1 so
+# worker processes do not also fan out into threads.
 #
-# Worst case *for a single experiment* is still 30 worker processes, hence
-# --cpus-per-task=60 (2x that, not yet 3x -- see above) -- checked against
-# this cluster's default partition (`sinfo`: u1-compute, 192 CPUs / 385 GB
-# per node), so 60 fits on one node with headroom. --mem=300GB is NOT the
-# naive "8GB/worker" continued from the 14-worker version, though -- that
-# would ask for 480GB, over that node's 385 GB ceiling, and the job would
-# simply never schedule. `sacct` on the actual 8-worker run showed real peak
-# RSS was only ~24GB (~3GB/worker) -- the original 8GB/worker figure was
-# never tight, just untested. 300GB (~5GB of 60 workers, ~67% margin over the
-# measured figure) is sized from that real number instead of guessing an
-# unworkable one forward. OMP/BLAS threads are pinned to 1 below so those
-# worker processes don't each also fan out into threads and oversubscribe
-# the node. Re-tune --jobs (and cpus/mem, checking them against your own
-# partition's per-node limits) to match your own experiments.yaml's cycle
-# count if you change EXPS or the cycle list -- more workers than cycles
-# just means some exit immediately, so it is safe to round up, not down.
-# Untested at this end: whether 30-way concurrency per experiment still
-# scales as cleanly as 4-way did, or starts hitting filesystem I/O
-# contention that the 4-way profiling run never reached.
-#
-# build_comparison.py (stage 2) also takes --jobs now, applied to its
-# rejoin sub-stage (compute_cycle.py --rejoin over the same independent,
-# I/O-bound cycles) -- the only sub-stage expensive enough per cycle to be
-# worth it, and it reuses the same worker count for the same reason (one
-# wave instead of two). The state-space figures right after it are the more
-# expensive sub-stage overall, but build_comparison.py already renders only
-# the latest cycle's state maps and profiles unconditionally (--latest; that
-# is all the report ever embeds), so O(cycles) work there is gone rather
-# than something --jobs still needs to chase. Stage 2 still runs after
-# stage 1 fully finishes, reusing the same cores.
-#
-# NOT `set -e`: build_comparison.py's report-build stage returns a non-zero,
+# NOT `set -e`: build_comparison.py's report stage returns a non-zero,
 # advisory exit code when it can't find a figure it expected (e.g. ensemble
 # spread panels for a var-kind experiment) -- it still writes the report and
 # scorecard either way. A hard exit here would throw away a finished report
@@ -101,17 +63,50 @@ export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_TH
 APP=/scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfs-dev/gdas-marine-viz/applications/letkf_verif
 OUT=/scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfs-dev/gdas-marine-viz/applications/letkf_verif/compare-exps
 CFG=$OUT/experiments.yaml
-EXPS="cp06.torchbalance cp06.torchbalance.1 cp06.torchbalance.2 cp06.torchbalance.3 3dvar-rt"
-JOBS=22  # match the number of cycles in $CFG; see the parallelism note above
-# Workers per experiment, sized to the cycles each actually resolves rather
-# than a blanket $JOBS for all three. Unlisted -> $JOBS.
-declare -A JOBS_FOR=( [cp06.torchbalance]=26 [cp06.torchbalance.1]=26 [cp06.torchbalance.2]=26 [cp06.torchbalance.3]=26 [3dvar-rt]=16 )
+# UTC hours of the cycles to draw per-date state / background / gridded-
+# product / frontal figures for (the report puts a date menu over them); the
+# latest cycle is always included. "all" for every cycle.
+HOURS=00
+# Extra build_comparison.py options, e.g. "--force" (redo everything).
+BUILD_OPTS=""
+# Extra precompute_experiment.py options: "--force" recomputes every cached
+# cycle (needed once after a change to what the cache holds -- e.g. a new
+# verification product or observation bins; otherwise old cycles keep the
+# old content and only new cycles get the new fields).
+PRECOMPUTE_OPTS="--force"
 # Full soca_gridspec.nc (~190 MB) to slim down to $OUT/lv_grid.nc. Any
 # cycle's works -- lon/lat/area/mask2d are the static model grid, not a
 # per-cycle field. Point this at your own experiment's bmatrix output.
 GRIDSPEC=/scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfs-dev/cp06.torchbalance/COMROOT/cp06.torchbalance/gdas.20251219/06/bmatrix/ocean/soca_gridspec.nc
 
 cd "$APP"
+
+# ---------------------------------------------------------------------------
+# Read the yaml: experiment names, cycle count, and how many of the cycles
+# each experiment has a directory for (the number of precompute workers it
+# can actually keep busy). Uses the same loader the python stages use, so
+# relative paths and stems resolve identically.
+# ---------------------------------------------------------------------------
+eval "$(python3 - "$CFG" <<'PY'
+import os, sys
+sys.path.insert(0, os.getcwd())
+from lv_common import load_config
+cfg = load_config(sys.argv[1], None, None, None)
+cycles = [str(c) for c in cfg['cycles']]
+print('NCYC=%d' % len(cycles))
+print('EXPS="%s"' % ' '.join(e.name for e in cfg['experiments']))
+print('declare -A CYCLES_FOR')
+for e in cfg['experiments']:
+    n = sum(os.path.isdir(e.dir_for(c)) for c in cycles)
+    print('CYCLES_FOR[%s]=%d' % (e.name, n))
+PY
+)" || { echo "!! could not parse $CFG"; exit 1; }
+
+NPROC=${SLURM_CPUS_ON_NODE:-$(nproc)}
+NEXP=$(wc -w <<<"$EXPS")
+echo "== config: $CFG"
+echo "   $NCYC cycle(s), $NEXP experiment(s): $EXPS"
+echo "   $NPROC core(s) available to this job"
 
 if [ ! -f "$OUT/lv_grid.nc" ]; then
     echo "== grid: slimming $GRIDSPEC -> $OUT/lv_grid.nc =="
@@ -121,20 +116,31 @@ fi
 echo "== preflight =="
 python3 preflight.py "$CFG" || true
 
+# ---------------------------------------------------------------------------
+# stage 1: precompute, every experiment concurrently
+# ---------------------------------------------------------------------------
 echo
-echo "== stage 1: precompute, every experiment concurrently, $JOBS-way"
-echo "   cycle parallelism within each (--jobs $JOBS) =="
+echo "== stage 1: precompute, every experiment concurrently =="
 declare -A PIDS
+CACHES=()
+per_exp_cap=$(( NPROC / (NEXP > 0 ? NEXP : 1) ))
+[ "$per_exp_cap" -lt 1 ] && per_exp_cap=1
 for exp in $EXPS; do
-    jobs_exp=${JOBS_FOR[$exp]:-$JOBS}
+    CACHES+=(--cache "$OUT/precompute-$exp/cache")
+    n=${CYCLES_FOR[$exp]}
+    if [ "$n" -eq 0 ]; then
+        echo "-- $exp: none of the $NCYC cycles resolve on disk -- skipping precompute"
+        continue
+    fi
+    jobs_exp=$(( n < per_exp_cap ? n : per_exp_cap ))
     python3 precompute_experiment.py "$CFG" \
         --experiment "$exp" \
         --outdir "$OUT/precompute-$exp" \
         --skip-preflight \
-        --jobs "$jobs_exp" \
+        --jobs "$jobs_exp" $PRECOMPUTE_OPTS \
         > "$OUT/precompute-$exp.log" 2>&1 &
     PIDS[$exp]=$!
-    echo "-- launched $exp (pid ${PIDS[$exp]}, ${jobs_exp}-way, log: $OUT/precompute-$exp.log)"
+    echo "-- launched $exp (pid ${PIDS[$exp]}, $n of $NCYC cycles on disk, ${jobs_exp}-way, log: $OUT/precompute-$exp.log)"
 done
 
 fail=0
@@ -151,20 +157,56 @@ if [ $fail -ne 0 ]; then
     exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# stage 2: build the comparison. build_comparison.py runs its sub-stages in
+# sequence; --skip lets one invocation run exactly one of them, which is how
+# the independent ones are run side by side here. (Each of those invocations
+# ends its log with build_comparison.py's "the observation join was skipped"
+# note -- that is about the invocation, not the run: the rejoin happened in
+# 2a, and the scorecard and report read the joined sample from the cache.)
+# ---------------------------------------------------------------------------
+ALL_STAGES="rejoin obsspace obsbins statespace timeseries fronts stability scorecard report"
+stage() {
+    # stage <name>: run only that sub-stage of build_comparison.py
+    local only=$1 skips=()
+    for s in $ALL_STAGES; do
+        [ "$s" != "$only" ] && skips+=(--skip "$s")
+    done
+    # shellcheck disable=SC2086  # BUILD_OPTS is a word list on purpose
+    python3 build_comparison.py "$CFG" "${CACHES[@]}" \
+        --outdir "$OUT/page" --jobs "$(( NCYC < NPROC ? NCYC : NPROC ))" \
+        --hours "$HOURS" $BUILD_OPTS "${skips[@]}"
+}
+
 echo
-echo "== stage 2: build comparison (rejoin + figures + scorecard + report) =="
-python3 build_comparison.py "$CFG" \
-    --cache "$OUT/precompute-cp06.torchbalance/cache" \
-    --cache "$OUT/precompute-3dvar-rt/cache" \
-    --cache "$OUT/precompute-cp06.torchbalance.1/cache" \
-    --cache "$OUT/precompute-cp06.torchbalance.2/cache" \
-    --cache "$OUT/precompute-cp06.torchbalance.3/cache" \
-    --outdir "$OUT/page" \
-    --jobs $JOBS
-echo "build_comparison exit code: $? (non-zero here just means a figure was"
-echo "flagged missing -- see build_report.py's summary above; the report and"
-echo "scorecard are written regardless)"
+echo "== stage 2a: rejoin observations across experiments =="
+stage rejoin
+echo "rejoin exit code: $?"
+
+echo
+echo "== stage 2b: figures + scorecard, concurrently =="
+declare -A SPIDS
+for s in obsspace obsbins statespace timeseries fronts stability scorecard; do
+    stage "$s" > "$OUT/page/stage-$s.log" 2>&1 &
+    SPIDS[$s]=$!
+    echo "-- launched $s (pid ${SPIDS[$s]}, log: $OUT/page/stage-$s.log)"
+done
+for s in "${!SPIDS[@]}"; do
+    if wait "${SPIDS[$s]}"; then
+        echo "-- $s ok"
+    else
+        echo "!! $s exited non-zero -- see $OUT/page/stage-$s.log (report is still built)"
+    fi
+done
+
+echo
+echo "== stage 2c: report =="
+stage report
+echo "report exit code: $? (non-zero here just means a figure was flagged"
+echo "missing -- see build_report.py's summary above; the report and tarball"
+echo "are written regardless)"
 
 echo
 echo "done -- report at $OUT/page/letkf_verification.html"
+echo "        tarball at $OUT/page/letkf_verification.tar (pages + linked figures)"
 echo "        scorecard at $OUT/page/scorecard.md"

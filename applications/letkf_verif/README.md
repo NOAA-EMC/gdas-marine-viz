@@ -72,15 +72,21 @@ Everything lands under `--outdir`.
 
 | File | Description |
 |---|---|
-| `letkf_verification.html` | The report — every figure embedded, stands alone |
+| `letkf_verification.html` | The report, eight linked pages (`_02_usage` … `_08_calibration`); figures are linked from `figs/`, not embedded (`build_report.py --embed` inlines them) |
+| `letkf_verification.tar` | The pages plus every figure they link, laid out so the links hold once unpacked; written on every run |
 | `scorecard.md` | Every experiment against the reference, with a paired Wilcoxon test over cycles |
 | `figs/obs_*.png` | Departures, consistency, rank histograms, spread&ndash;skill, profiles by region |
+| `figs/atmos_maps_<cycle>.png`, `figs/atmos_region_<region>.png` | Atmospheric forcing over the ocean (10 m wind, stress, net heat flux, precipitation, 2 m temperature) from the coupled atmosphere history: per-cycle maps and regional means against cycle (section 10) |
+| `figs/obsbins_{map,reg,sec}_<type>_<cycle\|all>.png` | Binned O&minus;B / O&minus;A / count / obs-error maps, observation-vs-model regressions, depth&times;latitude sections; per `--hours` cycle and pooled over every cycle |
 | `figs/state_*.png` | Increment and spread profiles, increment / spread-reduction / inflation maps, vertical sections of the increment |
-| `figs/verif_maps_<product>.png` | Product beside each experiment's background and analysis |
+| `figs/verif_maps_<product>_<cycle>.png` | Product beside each experiment's background and analysis, one per rendered cycle (`--hours`, 00z plus the latest by default; the background-state and WOA figures are tagged the same way and the report puts a date menu over them) |
 | `figs/verif_diff_<product>.png` | Model minus product |
-| `figs/front_strong_<region>.png` | Optional single-cycle geostrophic-speed footprint for one configured current box |
+| `figs/front_strong_<region>_<cycle>.png` | Optional geostrophic-speed footprint for one configured current box, one per rendered cycle (`--hours`) |
+| `figs/seq_<realm>_incr_<field>_<cycle>.png` | One increment map per field and cached cycle, all dates of a field on one colour scale |
 | `figs/cycle_*.png` | Everything against cycle: obs fit, obs counts, gridded-analysis scores, background drift |
-| `cache/` | The per-cycle reductions; the report never re-reads model output |
+| `figs/cycle_ssh_stability_<exp>.png`, `ssh_stability_<exp>.{csv,json}` | SSH cycling-stability metrics per cycle and region (increment size, persistence, rejection, small/grid-scale variance, shock, on-track index) with fitted trends and a flagged verdict (section 07) |
+| `cache/` | The per-cycle reductions (`<cycle>.json`, `_maps.npz`, `_obsbins.npz`); the report never re-reads model output |
+| `figs/.fresh-<stage>.json` | What each plot stage drew from which inputs; a rerun skips units whose inputs have not changed (`--force` redraws) |
 
 ## Configuration
 
@@ -92,8 +98,9 @@ Everything lands under `--outdir`.
 | `cycles:` | An explicit list, or `{start, stop, step}` with an inclusive stop |
 | `grid:` | soca gridspec, or a ~7 MB slim copy made by `make_gridfile.py` |
 | `regions:` | Named lat/lon boxes for the regional profiles; `global` is always included |
-| `verification:` | One directory per gridded product — they come from unrelated archives, so each names its own |
-| `frontal_analysis:` | Optional single-cycle ADT-gradient diagnostic; configures its cycle, current boxes and shared absolute speed thresholds. Each experiment also needs `analysis_pattern:` for its written ocean analysis state. |
+| `verification:` | One directory per gridded product — they come from unrelated archives, so each names its own. `adt`, `sss`, `sst` and `icec` (OSTIA sea-ice fraction against `aice_h`); an experiment with no ocean history is scored for SST/SSS from the `sst_h`/`sss_h` in its sea-ice history |
+| `obs_bins:` | `{deg: 1}` — bin spacing of the binned departures (section 09) |
+| `frontal_analysis:` | Optional ADT-gradient diagnostic for the `--hours` cycles; configures current boxes and shared absolute speed thresholds. Each experiment also needs `analysis_pattern:` for its written ocean analysis state. |
 | `depth_max:` | Cut every depth panel at N metres; a view setting, so it needs no recompute |
 | `sections:` | `zonal` latitudes and `meridional` longitudes to cut vertical sections of the increment and background along. A zonal line is one grid row, a true latitude circle only to ~64&deg;N; anything above 65&deg;N is drawn but flagged by `preflight.py`, by `plot_statespace.py` and on the panel |
 | `map_limits:` | Fixed (vmin, vmax) per state variable/level, so a map figure's color scale holds across cycles and experiments instead of being recomputed per figure; optional, per-hemisphere override for ice thickness/snow depth |

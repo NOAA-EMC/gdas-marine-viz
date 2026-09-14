@@ -129,19 +129,24 @@ verification:
     adt: /scratch/me/copernicus_adt
     sss: /scratch/me/copernicus_sss
     sst: /scratch/me/ostia
+    icec: /scratch/me/ostia      # same OSTIA files: sea_ice_fraction against aice_h
 
-  # Optional single-cycle frontal-current diagnostic. It draws one figure per
-  # region in the report's "Fit to gridded analyses" section. The outlined area
+  # Optional frontal-current diagnostic. It draws one figure per region and
+  # cycle in the report's "Fit to gridded analyses" section, behind a date
+  # menu; build_comparison.py --hours picks the cycles (00z plus the latest
+  # by default) and `cycle:` below only applies to a by-hand plot_fronts.py
+  # run without --hours/--cycle. The outlined area
   # is where geostrophic speed reaches `strong_speed_mps`; use one absolute
   # threshold for Copernicus ADT and every experiment in the same box. This
   # identifies broad or branching flows without forcing them onto one axis.
   # The `analysis_pattern` for every experiment must resolve to an ocean file
-  # holding `ave_ssh` at the selected cycle.
+  # holding `ave_ssh` at each drawn cycle; a list of patterns is tried in
+  # order, for an archive whose file naming changed mid-run.
   #
   # frontal_analysis:
   #   enabled: true
   #   adt_product: adt
-  #   cycle: 2025122000
+  #   cycle: 2025122000        # optional, see above
   #   regions:
   #     - name: Gulf Stream
   #       lon: [-80, -50]
@@ -306,3 +311,9 @@ corr_regions: [N_Atlantic, E_Pacific, S_Ocean, Kuroshio]
 
 # Depth bins (m) for stratifying profile-observation statistics.
 depth_bins: [0, 10, 50, 100, 300, 700, 2000, 6000]
+
+# Binned observation departures (report section 09): bin edge spacing in
+# degrees for the count / O-B / O-A / obs-error maps. Written into the cache
+# by compute_cycle.py, so changing it needs a recompute (--force).
+# obs_bins:
+#   deg: 1

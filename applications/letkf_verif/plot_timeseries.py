@@ -17,8 +17,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import matplotlib.pyplot as plt  # noqa: E402
 import lv_plot as P  # noqa: E402
+import lv_atmos as LA  # noqa: E402
 import lv_verif as LV  # noqa: E402
-from lv_common import Grid, load_config, region_list  # noqa: E402
+from lv_common import Fresh, Grid, load_config, region_list  # noqa: E402
 
 # (cache key, panel title, reference line or None). Each mean sits next to
 # the RMS it belongs with: the pair separates a run that is merely scattered
@@ -387,6 +388,58 @@ def fig_verif_series(cycles, cfg):
     return written
 
 
+def fig_atmos_series(cycles, cfg):
+    """Area-mean atmospheric forcing over the ocean against cycle, one
+    figure per region -- the same regions the gridded-analysis scores use,
+    and the same picker in the report. One panel per lv_atmos field."""
+    order = sorted(cycles)
+    names = P.all_exp_names(cfg, cycles)
+    col = P.color_map(names)
+    fields = [f for f in LA.FIELDS if any(
+        P.get(d, 'state', n, 'atmos', 'region', 'global', f, default=None)
+        is not None for d in cycles.values() for n in names)]
+    if not fields:
+        return []
+    regions = ['global'] + region_list(cfg)
+    regions = [r for r in regions if any(
+        P.get(d, 'state', n, 'atmos', 'region', r, default=None)
+        for d in cycles.values() for n in names)]
+    t = _times(cycles)
+    single = len(t) == 1
+    written = []
+    for reg in regions:
+        fig, axes = plt.subplots(1, len(fields), figsize=(3.6 * len(fields), 3.4),
+                                 squeeze=False)
+        drawn = False
+        for c, f in enumerate(fields):
+            ax = axes[0][c]
+            label, units, _lim, _div = LA.FIELDS[f]
+            for n in names:
+                v = np.array([P.get(cycles[cy], 'state', n, 'atmos', 'region',
+                                    reg, f) for cy in order], dtype='f8')
+                if not np.any(np.isfinite(v)):
+                    continue
+                tt, vv = _finite(t, v)
+                ax.plot(tt, vv, 'o' if single else 'o-', color=col[n], label=n,
+                        ms=5 if single else 3.5, mec=P.SURFACE, mew=0.8, lw=1.6)
+                drawn = True
+            ax.set_title(label, fontsize=10, color=P.INK)
+            ax.set_ylabel(units.replace('$', ''), fontsize=8.5)
+            P.tidy(ax)
+        if not drawn:
+            plt.close(fig)
+            continue
+        P.maybe_legend(axes[0][0], fontsize=7.5)
+        if not single:
+            _date_labels(fig, axes, t)
+        fig.suptitle('%s: atmospheric forcing over the ocean, area means of '
+                     'the f006 forcing valid at each analysis time'
+                     % reg.replace('_', ' '), y=1.03, fontsize=11.5, color=P.INK)
+        fig.tight_layout()
+        written.append(P.save(fig, cfg, 'atmos_region_%s.png' % P.slug(reg)))
+    return written
+
+
 def fig_drift(cycles, cfg):
     """RMS(O-B) for every obs type, normalised, to expose slow divergence."""
     if len(cycles) < 3:
@@ -659,10 +712,20 @@ def main(argv=None):
     ap.add_argument('--cache', action='append', default=None,
                     help='extra cache directory to read and merge (repeatable); '
                          'the first is where new results are written')
+    ap.add_argument('--force', action='store_true',
+                    help='redraw even when no cached cycle has changed')
     a = ap.parse_args(argv)
     a.config = a.config or a.config_opt
     cfg = load_config(a.config, a.root, a.outdir, a.cache)
     cycles = P.load_cycles(cfg)
+    # Every figure here spans every cycle, so the whole stage is one unit of
+    # work: any changed or added cycle redraws it all (under a minute).
+    fresh = Fresh(cfg, 'timeseries', force=a.force, script=__file__)
+    inputs = [os.path.join(root, '%s.json' % c) for c in cycles
+              for root in cfg['caches']]
+    if fresh.ok('all', inputs):
+        print('cycling figures: up to date, skipped')
+        return 0
     types = sorted({t for d in cycles.values() for t in d.get('obs', {})})
     if any(P.type_sample(cycles, ot) != 'common' for ot in types):
         print('  ! some obs types have no genuine cross-experiment common '
@@ -675,11 +738,17 @@ def main(argv=None):
     fig_obs_counts(cycles, cfg)
     fig_obs_fit(cycles, cfg)
     fig_verif_series(cycles, cfg)
+    fig_atmos_series(cycles, cfg)
     fig_drift(cycles, cfg)
     grid = Grid(cfg['grid'])
     fig_background_drift(cycles, cfg, grid)
     fig_increment_hovmoller(cycles, cfg, grid)
     fig_increment_2d(cycles, cfg)
+    written = [os.path.join(cfg['figs'], f) for f in os.listdir(cfg['figs'])
+               if f.startswith(('cycle_', 'obsfit_', 'obscount_', 'verif_region_',
+                                'atmos_region_'))]
+    fresh.record('all', inputs, None, written)
+    fresh.save()
     return 0
 
 

@@ -21,6 +21,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import lv_atmos  # noqa: E402
+import lv_obsbins  # noqa: E402
 import lv_obsspace  # noqa: E402
 import lv_plot  # noqa: E402
 import lv_statespace  # noqa: E402
@@ -85,7 +87,7 @@ def observation_block(cfg, cycle, work, verbose=True):
         for t, p in files.items():
             per_type.setdefault(t, {})[e.name] = p
 
-    out, skipped = {}, []
+    out, skipped, bins = {}, [], {}
     for obstype in sorted(per_type):
         paths = per_type[obstype]
         if verbose:
@@ -94,6 +96,13 @@ def observation_block(cfg, cycle, work, verbose=True):
         aligned, counts, common_pass = join_obs(own)
         out[obstype] = lv_obsspace.compute(
             obstype, aligned, counts, common_pass, own, cfg)
+        # binned departures and obs-vs-model histograms on the same common
+        # sample; the arrays go to '<cycle>_obsbins.npz', the fits to the
+        # JSON beside the scalar metrics
+        arrays, fits = lv_obsbins.compute(obstype, aligned, common_pass, cfg)
+        for k, v in arrays.items():
+            bins['obsbins/%s/%s' % (obstype, k)] = v
+        out[obstype]['regression'] = fits
         if verbose:
             n = list(counts.values())[0]['n_matched']
             missing = {e.name for e in present} - set(paths)
@@ -101,7 +110,15 @@ def observation_block(cfg, cycle, work, verbose=True):
             print(' matched %8d  common-pass %8d%s'
                  % (n, common_pass.sum(), note))
         del own, aligned
-    return out, skipped
+    return out, skipped, bins
+
+
+def write_obsbins(cfg, cycle, bins):
+    if not bins:
+        return
+    bp = os.path.join(cfg['cache'], '%s_obsbins.npz' % cycle)
+    np.savez_compressed(bp + '.tmp.npz', **bins)
+    os.replace(bp + '.tmp.npz', bp)
 
 
 def compute_cycle(cfg, cycle, grid, work, verbose=True):
@@ -116,26 +133,36 @@ def compute_cycle(cfg, cycle, grid, work, verbose=True):
            'obs': {}, 'state': {}}
     maps = {}
 
-    out['obs'], _ = observation_block(cfg, cycle, work, verbose)
+    out['obs'], _, bins = observation_block(cfg, cycle, work, verbose)
 
     for e in cfg['experiments']:
         if verbose:
             print('  state %-32s' % e.name, end='', flush=True)
         res, m = lv_statespace.compute(grid, e, cycle, cfg)
+        # the forcing the ocean/ice background was driven by, when the
+        # coupled atmosphere's surface history is archived
+        atm, am = lv_atmos.compute(grid, e, cycle, cfg, grid.regions(cfg),
+                                   int(cfg.get('map_stride', 2)))
+        if atm:
+            res['atmos'] = atm
+            m.update(am)
         out['state'][e.name] = res
         for k, v in m.items():
             maps['%s/%s' % (e.name, k)] = v
         if verbose:
-            realms = [k for k in res if isinstance(res[k], dict)]
+            realms = [k for k in res if isinstance(res[k], dict)
+                      and k != 'atmos']
             bkg = [k for k in realms if res[k].get('has_background')]
-            print(' %d realms, %d maps%s' % (len(realms), len(m),
-                  (', bkg %s' % '+'.join(bkg)) if bkg else ', no background'))
+            print(' %d realms, %d maps%s%s'
+                  % (len(realms), len(m),
+                     (', bkg %s' % '+'.join(bkg)) if bkg else ', no background',
+                     ', atmos' if atm else ''))
 
     out['elapsed_sec'] = round(time.time() - t0, 1)
-    return out, maps
+    return out, maps, bins
 
 
-def rejoin_one(cfg, cycle, work, verbose=True):
+def rejoin_one(cfg, cycle, work, verbose=True, force=False):
     """Recompute only the observation block, for every registered experiment.
 
     Merging caches from separate runs cannot rebuild the common sample, because
@@ -145,6 +172,20 @@ def rejoin_one(cfg, cycle, work, verbose=True):
     and maps untouched.
     """
     jpath = os.path.join(cfg['cache'], '%s.json' % cycle)
+    sources = [p for p in (os.path.join(root, '%s.json' % cycle)
+                           for root in cfg['caches'][1:]) if os.path.exists(p)]
+    # The join only changes when a source cache does: a page-cache file
+    # newer than every per-experiment file it merges is still the right
+    # answer, and re-reading 650 MB of observations to reproduce it was the
+    # one part of a rerun that scaled with the cycle count for nothing.
+    bpath = os.path.join(cfg['cache'], '%s_obsbins.npz' % cycle)
+    # (With the page cache as the only cache there is nothing to merge from,
+    # and the existing file is the answer by definition.)
+    if (not force and os.path.exists(jpath)
+            and os.path.exists(bpath)      # an older join predates the bins
+            and (not sources or os.path.getmtime(jpath)
+                 > max(map(os.path.getmtime, sources)))):
+        return 'cached', 'join newer than its sources (--force to redo)'
     merged = None
     for root in cfg['caches']:
         p = os.path.join(root, '%s.json' % cycle)
@@ -154,10 +195,11 @@ def rejoin_one(cfg, cycle, work, verbose=True):
     if merged is None:
         return 'absent', 'nothing cached for this cycle'
 
-    obs, _ = observation_block(cfg, cycle, work, verbose)
+    obs, _, bins = observation_block(cfg, cycle, work, verbose)
     if not obs:
         return 'empty', 'no observation types resolved'
     merged['obs'] = obs
+    write_obsbins(cfg, cycle, bins)
     merged['experiments'] = {e.name: {'label': e.label, 'kind': e.kind}
                              for e in cfg['experiments']}
     merged['reference'] = cfg.get('reference')
@@ -186,7 +228,7 @@ def run_one(cfg, cycle, grid, work, force=False, verbose=True,
     # directory per lookup (each returns None, nothing crashes); gating the
     # whole cycle up front on analysis-directory presence discarded that
     # background before it was ever looked for.
-    out, maps = compute_cycle(cfg, cycle, grid, work, verbose)
+    out, maps, bins = compute_cycle(cfg, cycle, grid, work, verbose)
     has_state = any(r.get('has_background') or r.get('has_increment')
                     for exp_state in out['state'].values()
                     for r in exp_state.values() if isinstance(r, dict))
@@ -204,6 +246,7 @@ def run_one(cfg, cycle, grid, work, force=False, verbose=True,
         mp = os.path.join(cfg['cache'], '%s_maps.npz' % cycle)
         np.savez_compressed(mp + '.tmp.npz', **maps)
         os.replace(mp + '.tmp.npz', mp)
+    write_obsbins(cfg, cycle, bins)
     if not keep_work:
         # the extracted observations are ~1 GB per cycle and nothing
         # downstream reads them; only the cache is needed from here on
@@ -221,12 +264,13 @@ def _rejoin_worker(args):
     sharing the parent's (not picklable, and the observation extraction it
     manages is per-process scratch space anyway).
     """
-    config, root, outdir, cache, experiment, cycle, keep_work = args
+    config, root, outdir, cache, experiment, cycle, keep_work, force = args
     cfg = load_config(config, root, outdir, cache)
     cfg = select_experiments(cfg, experiment)
     work = open_workdir(cfg)
     try:
-        status, detail = rejoin_one(cfg, cycle, work, verbose=False)
+        status, detail = rejoin_one(cfg, cycle, work, verbose=False,
+                                    force=force)
     except Exception as e:                 # one bad cycle must not kill the run
         status, detail = 'failed', '%s: %s' % (type(e).__name__, str(e)[:120])
     if status == 'ok' and not keep_work:
@@ -310,7 +354,7 @@ def main(argv=None):
         # full compute, just against rejoin_one() instead of run_one().
         from concurrent.futures import ProcessPoolExecutor
         tasks = [(a.config, a.root, a.outdir, a.cache, a.experiment,
-                  c, a.keep_work) for c in cycles]
+                  c, a.keep_work, a.force) for c in cycles]
         with ProcessPoolExecutor(max_workers=a.jobs) as ex:
             for cycle, status, detail in ex.map(_rejoin_worker, tasks):
                 results.append((cycle, status, detail))
@@ -320,7 +364,7 @@ def main(argv=None):
         for cycle in cycles:
             print('%s:' % cycle)
             try:
-                status, detail = rejoin_one(cfg, cycle, work)
+                status, detail = rejoin_one(cfg, cycle, work, force=a.force)
             except Exception as e:
                 status, detail = 'failed', '%s: %s' % (type(e).__name__, e)
             if status == 'ok' and not a.keep_work:

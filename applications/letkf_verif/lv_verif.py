@@ -74,7 +74,22 @@ PRODUCTS = {
         # (see _daily_mean and the module docstring), scored once a day at
         # the 12Z cycle rather than at every cycle.
         daily_mean=True, only_hour='12'),
+    # OSTIA's own sea-ice concentration, against the sea-ice background
+    # (aice_h) -- the one product here on the ICE realm. Scored at every
+    # cycle against the day's field: ice moves slowly enough that a daily
+    # analysis is a fair reference at any hour. Both water and ice points
+    # are kept (keep_ice): open water is a real zero, not a missing value.
+    'icec': dict(
+        pattern='{Y}/{m}/{Ymd}*-UKMO-L4_GHRSST-SSTfnd-OSTIA-GLOB-*.nc',
+        var='sea_ice_fraction', lat='lat', lon='lon', idx=(0,),
+        model_var='aice_h', units='fraction',
+        label='Sea-ice concentration (OSTIA)', mask='mask', keep_ice=True,
+        realm='ice'),
 }
+
+
+def product_realm(name):
+    return PRODUCTS.get(name, {}).get('realm', 'ocean')
 
 STATES = ('bkg', 'ana')
 
@@ -179,6 +194,22 @@ def _read(ds, name, idx):
     return np.ma.filled(a.astype('f8'), np.nan)
 
 
+# When an experiment archives no ocean history at all (3dvar-rt), CICE's
+# coupled history carries the ocean surface it was handed as sst_h/sss_h --
+# a stand-in for level-0 Temp/Salt only. Same table as lv_statespace's
+# ICE_OCEAN_FALLBACK_VARMAP; kept here too because of the import direction.
+ICE_FALLBACK = {'Temp': 'sst_h', 'Salt': 'sss_h'}
+
+
+def surface_bkg(exp, cycle, var, realm='ocean'):
+    """Level 0 of ``var`` from the realm's background, falling back to the
+    sea-ice history for Temp/Salt when the ocean history is absent."""
+    fld = _level0(exp.background(cycle, realm), var)
+    if fld is None and realm == 'ocean' and var in ICE_FALLBACK:
+        fld = _level0(exp.background(cycle, 'ice'), ICE_FALLBACK[var])
+    return fld
+
+
 def _level0(path, var):
     """Level 0 (surface) of ``var`` from ``path``, or None.
 
@@ -195,6 +226,28 @@ def _level0(path, var):
         v = ds[var]
         a = v[0, 0] if v.ndim == 4 else v[0]
         return np.ma.filled(a.astype('f8'), np.nan)
+
+
+def _daily_slot(exp, cfg, cycle, hour):
+    """Is this the cycle to score a once-a-day product at?
+
+    Normally the ``hour`` cycle (12Z for OSTIA SST). An experiment archived
+    at fewer hours -- 3dvar-rt keeps 00Z only -- would never be scored, so
+    when it has no background at ``hour`` on this day, the day's cycle
+    nearest to it that does have one stands in (later on a tie), and the
+    "daily mean" is then a mean over whatever cycles the day has.
+    """
+    if cycle[8:10] == hour:
+        return True
+    day = cycle[:8]
+    have = [str(c) for c in cfg['cycles'] if str(c)[:8] == day
+            and (exp.background(str(c), 'ocean') is not None
+                 or exp.background(str(c), 'ice') is not None)]
+    if not have or any(c[8:10] == hour for c in have):
+        return False
+    best = min(have, key=lambda c: (abs(int(c[8:10]) - int(hour)),
+                                    -int(c[8:10])))
+    return cycle == best
 
 
 def _daily_mean(exp, day, var, state):
@@ -215,7 +268,7 @@ def _daily_mean(exp, day, var, state):
     acc = cnt = None
     for hh in ('00', '06', '12', '18'):
         cycle = day + hh
-        fld = _level0(exp.background(cycle, 'ocean'), var)
+        fld = surface_bkg(exp, cycle, var)
         if fld is not None and state == 'ana':
             incr = _level0(exp.increment(cycle, 'ocean'), var)
             fld = None if incr is None else fld + incr
@@ -258,7 +311,10 @@ def load_product(grid, path, spec):
             m = sample_to_grid(grid, _read(ds, spec['mask'], spec['idx']),
                                lat, lon, 0)
             mi = np.where(np.isfinite(m), m, 0).astype(int)
-            keep &= ((mi & 1) > 0) & ((mi & 8) == 0)
+            if spec.get('keep_ice'):
+                keep &= ((mi & 1) > 0) | ((mi & 8) > 0)
+            else:
+                keep &= ((mi & 1) > 0) & ((mi & 8) == 0)
     return val + spec.get('offset', 0.0), err, keep
 
 
@@ -282,8 +338,9 @@ def _stats(grid, diff, sel, err=None):
     return out
 
 
-def verify(grid, exp, cycle, cfg, regions, model_level):
-    """Score this experiment's background and analysis against each product.
+def verify(grid, exp, cycle, cfg, regions, model_level, realm='ocean'):
+    """Score this experiment's background and analysis against each product
+    on ``realm`` (PRODUCTS[...]['realm'], ocean unless said otherwise).
 
     ``model_level`` is a callable (variable, state) -> 2-D field or None, so
     this module does not need to know how a state is assembled.
@@ -306,8 +363,10 @@ def verify(grid, exp, cycle, cfg, regions, model_level):
     scores, maps = {}, {}
     for name, entry in configured(cfg).items():
         spec = PRODUCTS.get(name)
+        if spec is not None and spec.get('realm', 'ocean') != realm:
+            continue
         if spec is not None and spec.get('only_hour') \
-                and cycle[8:10] != spec['only_hour']:
+                and not _daily_slot(exp, cfg, cycle, spec['only_hour']):
             # Restricted to one cycle hour by design (see PRODUCTS), not a
             # missing file -- routine at every other cycle, so quiet rather
             # than reported like an actual miss below.

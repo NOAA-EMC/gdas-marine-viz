@@ -139,13 +139,31 @@ def load_model_grid(path):
                 mask=mask[rows][:, order] > 0)
 
 
-def model_ssh(path, grid):
+def model_field(path, grid, var='ave_ssh'):
+    """One surface field of the written analysis on the separable grid;
+    a 3-D variable (Temp, Salt) gives its top level."""
     with nc.Dataset(path) as dataset:
-        field = np.ma.filled(dataset['ave_ssh'][:], np.nan)
-    field = field[0] if field.ndim == 3 else field
+        field = np.ma.filled(dataset[var][:], np.nan)
+    while field.ndim > 2:
+        field = field[0]
     field = field[grid['rows']][:, grid['order']].astype(float)
     field[~grid['mask']] = np.nan
     return field
+
+
+def model_ssh(path, grid):
+    return model_field(path, grid, 'ave_ssh')
+
+
+def ostia_sst(path):
+    """OSTIA foundation SST in degC with its 1-D axes, for the SST panels
+    beside each region's analysis SST. Missing when the product for the
+    day is not archived; the panels then show the experiments alone."""
+    with nc.Dataset(path) as dataset:
+        sst = np.ma.filled(dataset['analysed_sst'][0].astype('f8'), np.nan)
+        return (sst - 273.15,
+                np.asarray(dataset['lat'][:], float),
+                np.asarray(dataset['lon'][:], float))
 
 
 def copernicus_adt(path):
@@ -156,24 +174,36 @@ def copernicus_adt(path):
 
 
 def check_cycle(cfg, cycle):
-    """Raise a clear error unless every displayed product resolves at `cycle`."""
-    missing = []
+    """The experiments that resolve at `cycle`, or raise a clear error.
+
+    Returns ``(available, missing)`` -- experiment names with an analysis
+    file, and a reason string per experiment without one. Copernicus ADT
+    and at least one experiment are required; a run that starts later, or
+    an archive with a gap, drops out of that cycle's panels instead of
+    blocking the whole cycle for everyone else.
+    """
     if LV.product_path(cfg, 'adt', cycle) is None:
-        missing.append('Copernicus ADT')
-    for experiment in cfg['experiments']:
-        if experiment.analysis(cycle) is None:
-            # Distinguish the two ways this fails: no pattern configured at
-            # all, versus a pattern that matches nothing at this cycle. They
-            # need different fixes and used to read identically.
-            why = ('no analysis_pattern: configured'
-                   if not experiment.analysis_pattern
-                   else 'analysis_pattern %r matched nothing'
-                        % experiment.analysis_pattern)
-            missing.append('%s (%s)' % (experiment.name, why))
-    if missing:
         raise FileNotFoundError(
-            'frontal-analysis cycle %s is unavailable for %s'
+            'frontal-analysis cycle %s is unavailable: no Copernicus ADT'
+            % cycle)
+    available, missing = [], []
+    for experiment in cfg['experiments']:
+        if experiment.analysis(cycle) is not None:
+            available.append(experiment.name)
+            continue
+        # Distinguish the two ways this fails: no pattern configured at
+        # all, versus a pattern that matches nothing at this cycle. They
+        # need different fixes and used to read identically.
+        why = ('no analysis_pattern: configured'
+               if not experiment.analysis_pattern
+               else 'analysis_pattern %r matched nothing'
+                    % experiment.analysis_pattern)
+        missing.append('%s (%s)' % (experiment.name, why))
+    if not available:
+        raise FileNotFoundError(
+            'frontal-analysis cycle %s is unavailable for every experiment: %s'
             % (cycle, ', '.join(missing)))
+    return available, missing
 
 
 def regrid(field, src_lat, src_lon, tgt_lat, tgt_lon):
@@ -257,12 +287,22 @@ def _profile(component, cop_axis, offsets, tlat, tlon, region):
     return np.nanmean(profile, axis=1)
 
 
-def run(cfg, regions, cycle):
-    """Analyze each region at one cycle and return plot-ready arrays."""
+def run(cfg, regions, cycle, experiment_names=None):
+    """Analyze each region at one cycle and return plot-ready arrays.
+
+    ``experiment_names`` restricts the experiments to those check_cycle()
+    found an analysis file for; the default is every registered one.
+    """
     grid = load_model_grid(cfg['grid'])
     experiments = {experiment.name: experiment
-                   for experiment in cfg['experiments']}
+                   for experiment in cfg['experiments']
+                   if experiment_names is None
+                   or experiment.name in experiment_names}
     adt, adt_lat, adt_lon = copernicus_adt(LV.product_path(cfg, 'adt', cycle))
+    sst_path = LV.product_path(cfg, 'sst', cycle)
+    ostia = ostia_sst(sst_path) if sst_path else None
+    model_sst = {key: model_field(experiment.analysis(cycle), grid, 'Temp')
+                 for key, experiment in experiments.items()}
     results = {}
     for name, region in regions.items():
         lat0, lat1 = region['lat']
@@ -291,10 +331,19 @@ def run(cfg, regions, cycle):
             for key, component in components.items():
                 profiles[key] = np.asarray([
                     _profile(component, cop_axis, offsets, tlat, tlon, region)])
+        # The same box's sea surface temperature: OSTIA beside each
+        # analysis. A front is a temperature front as much as a height
+        # front, and the SST says whether the water-mass boundary sits
+        # where the geostrophic jet does.
+        sst = {}
+        if ostia is not None:
+            sst['ostia'] = regrid(ostia[0], ostia[1], ostia[2], tlat, tlon)
+        sst.update({key: regrid(fld, grid['lat'], grid['lon'], tlat, tlon)
+                    for key, fld in model_sst.items()})
         results[name] = dict(
             cfg=region, tlat=tlat, tlon=tlon, offsets=offsets,
             speed=speed, strong_mask=strong, axes=axes, peaks=peaks,
-            profiles=profiles)
+            profiles=profiles, sst=sst)
     return results
 
 
@@ -313,6 +362,8 @@ def metrics(results, experiment_names):
         scale = (np.full(cop_axis.shape[1], 111.0) if region['kind'] == 'zonal'
                  else 111.0 * np.cos(np.deg2rad(result['tlat'])))
         for experiment in experiment_names:
+            if experiment not in result['axes']:
+                continue                      # absent at this cycle
             axis = result['axes'][experiment]
             km = ((axis - cop_axis) * scale[None, :]).ravel()
             km = km[np.isfinite(km)]

@@ -2,6 +2,8 @@
 """State-space figures. Reads only the cache written by compute_cycle.py."""
 
 import argparse
+import contextlib
+import io
 import os
 import sys
 import time
@@ -18,8 +20,9 @@ import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.ticker import FuncFormatter  # noqa: E402
 import lv_plot as P  # noqa: E402
 import lv_verif as LV  # noqa: E402
-from lv_common import (Grid, basin_at, basin_regions,  # noqa: E402
+from lv_common import (Fresh, Grid, basin_at, basin_regions,  # noqa: E402
                        load_config, region_box, region_list)
+import lv_atmos as LA  # noqa: E402
 import lv_woa  # noqa: E402
 from lv_statespace import TRIPOLAR_LAT, section_warnings  # noqa: E402
 
@@ -33,6 +36,13 @@ COAST = '#8d8b84'
 # the obvious move, *introduces* a ragged discontinuity that is not in the
 # data.)
 DATA_LON0 = -120.0
+
+
+def _when(data):
+    """'YYYY-MM-DD HH' for a figure title; the raw cycle id read badly."""
+    c = str(data.get('cycle', ''))
+    return ('%s-%s-%s %s' % (c[:4], c[4:6], c[6:8], c[8:10])
+            if len(c) >= 10 and c[:10].isdigit() else c)
 
 
 TAG = ''
@@ -162,6 +172,24 @@ def _circular_boundary(ax):
     verts = np.column_stack([0.5 + 0.5 * np.cos(theta),
                              0.5 + 0.5 * np.sin(theta)])
     ax.set_boundary(mpath.Path(verts), transform=ax.transAxes)
+
+
+def _blank_panel(ax, name):
+    """An experiment with no field here keeps its panel, blank and labelled:
+    a hidden axis left a gap that read as a layout fault, and with several
+    experiments and dates it was not obvious WHICH one was missing."""
+    ax.set_visible(True)
+    try:                                   # GeoAxes: keep the frame, no map
+        ax.spines['geo'].set_edgecolor(P.GRID)
+        ax.set_global()
+    except (KeyError, AttributeError):
+        for sp in ax.spines.values():
+            sp.set_edgecolor(P.GRID)
+        ax.set_xticks([])
+        ax.set_yticks([])
+    ax.patch.set_facecolor(P.SURFACE)
+    ax.text(0.5, 0.5, '%s: no data' % name, transform=ax.transAxes,
+            ha='center', va='center', fontsize=9, color=P.MUTED)
 
 
 def _decorate(ax, polar=False):
@@ -395,7 +423,7 @@ def fig_regional_profiles(data, cfg, grid, block='incr_region',
         P.maybe_legend(axes[0][0], fontsize=8)
         fig.suptitle('%s: %s by region, shaded band = spatial spread within '
                      'region - %s' % (reg.replace('_', ' '), label,
-                                      data['cycle']),
+                                      _when(data)),
                      y=1.01, fontsize=11.5, color=P.INK)
         fig.tight_layout()
         written.append(_save(fig, cfg, '%s_region_%s.png' % (base, P.slug(reg))))
@@ -474,7 +502,7 @@ def fig_spread_regions(data, cfg, grid):
                      for n in have)
               else 'solid prior / dashed analysis')
     fig.suptitle('Ensemble spread against depth by region, %s - %s'
-                 % (stages, data['cycle']), y=1.01,
+                 % (stages, _when(data)), y=1.01,
                  fontsize=11.5, color=P.INK)
     fig.tight_layout()
     return _save(fig, cfg, 'state_spread_regions.png')
@@ -538,7 +566,7 @@ def fig_increment_profiles(data, cfg, grid):
     if flat:
         axes[len(vars3d)].set_ylabel('RMS increment (field units)')
     fig.suptitle('Increment magnitude, area-weighted over the wet grid - %s'
-                 % data['cycle'], y=1.02, fontsize=11.5, color=P.INK)
+                 % _when(data), y=1.02, fontsize=11.5, color=P.INK)
     fig.tight_layout()
     return _save(fig, cfg, 'state_increment_profiles.png')
 
@@ -583,7 +611,7 @@ def fig_spread_profiles(data, cfg, grid):
         axL.legend(fontsize=7.5, loc='lower right')
         if i == 0:
             axL.set_ylabel('depth (m)')
-    fig.suptitle('Ensemble spread against depth - %s' % data['cycle'],
+    fig.suptitle('Ensemble spread against depth - %s' % _when(data),
                  y=1.02, fontsize=11.5, color=P.INK)
     fig.tight_layout()
     return _save(fig, cfg, 'state_spread_profiles.png')
@@ -661,7 +689,7 @@ def fig_woa_bias_profiles(data, cfg, grid):
         P.maybe_legend(axR, fontsize=8)
     fig.suptitle('Background against the WOA23 climatology - %s   '
                  '(a climatology, not an analysis: the difference carries the '
-                 'real anomaly too)' % data['cycle'],
+                 'real anomaly too)' % _when(data),
                  y=1.02, fontsize=11.5, color=P.INK)
     fig.tight_layout()
     return _save(fig, cfg, 'woa_bias_profiles.png')
@@ -696,7 +724,7 @@ def fig_woa_bias_maps(data, cfg, grid, maps):
     for view in views_for('ocean'):
         out = map_grid(cfg, grid, rows, names,
                        'Background $-$ WOA23 climatology - ocean %s'
-                       % data['cycle'],
+                       % _when(data),
                        'woa_bias_maps_ocean.png', view, limits=limits,
                        cb_label='background $-$ WOA23',
                        row_label=lambda k: _map_row_label(data, k),
@@ -767,7 +795,7 @@ def fig_background_profiles(data, cfg, grid):
         P.maybe_legend(axR, fontsize=8)
     _, dsrc = depth_axis(data, grid)
     fig.suptitle('Background mean state against depth - %s   (depth from %s)'
-                 % (data['cycle'], dsrc), y=1.02, fontsize=11.5, color=P.INK)
+                 % (_when(data), dsrc), y=1.02, fontsize=11.5, color=P.INK)
     fig.tight_layout()
     return _save(fig, cfg, 'bkg_profiles.png')
 
@@ -844,7 +872,10 @@ def map_grid(cfg, grid, rows, names, title, fname, view,
         for c, n in enumerate(names):
             ax = axes[r][c]
             if fields[c] is None:
-                ax.set_visible(False)
+                _blank_panel(ax, n)
+                if n not in titled:
+                    ax.set_title(n, fontsize=10, color=P.INK)
+                    titled.add(n)
                 continue
             if extent is not None:
                 ax.set_extent(extent, crs=ccrs.PlateCarree())
@@ -939,7 +970,7 @@ def fig_background_maps(data, cfg, grid, maps, realm='ocean'):
                 limits[key] = (float(np.percentile(allv, 1)),
                                float(np.percentile(allv, 99)), _field_cmap(key))
         out = map_grid(cfg, grid, rows, names,
-                       'Background state - %s %s' % (realm, data['cycle']),
+                       'Background state - %s %s' % (realm, _when(data)),
                        'bkg_maps_%s.png' % realm, view, limits=limits,
                        row_label=lambda k: _map_row_label(data, k)) or out
     return out
@@ -1017,7 +1048,7 @@ def fig_maps(data, cfg, grid, maps, kind='incr', realm='ocean'):
                 if fixed is not None:
                     row_limits[key] = fixed
         out = map_grid(cfg, grid, rows, names,
-                       '%s - %s %s' % (title, realm, data['cycle']),
+                       '%s - %s %s' % (title, realm, _when(data)),
                        fname, view, limits=row_limits, cb_label=cb_label,
                        note=_zero_note if kind == 'incr' else None,
                        row_label=lambda k: _map_row_label(data, k)) or out
@@ -1228,7 +1259,7 @@ def section_grid(cfg, rows, names, axes, title, fname, limits,
         for c, n in enumerate(names):
             ax = axs[r][c]
             if fields[c] is None:
-                ax.set_visible(False)
+                _blank_panel(ax, n)
                 continue
             handle = _section_panel(ax, X, Y, fields[c], cm, vmin, vmax)
             if deep:
@@ -1317,7 +1348,7 @@ def fig_sections(data, cfg, grid, maps, kind='incr'):
             p = section_grid(
                 cfg, kept, cols, axes,
                 '%s along vertical sections - %s (%s) - %s'
-                % (what, var, label, data['cycle']),
+                % (what, var, label, _when(data)),
                 'state_sections_%s_%s%s.png' % (kind, var, suffix),
                 limits=limits, cb_label=var, note=_tripolar_note,
                 depth_cut=cut)
@@ -1339,7 +1370,8 @@ def fig_verif_maps(data, cfg, grid, maps, prod):
     if maps is None:
         return None
     exps = P.exp_names(data)
-    found = dict(_rows_for(maps, exps, '/ocean/verif/'))
+    realm = LV.product_realm(prod)
+    found = dict(_rows_for(maps, exps, '/%s/verif/' % realm))
     spec = LV.PRODUCTS[prod]
     obs = found.get('%s_obs_k0' % prod)
     if obs is None:
@@ -1371,7 +1403,7 @@ def fig_verif_maps(data, cfg, grid, maps, prod):
         lim = _robust(vals, 99.0)
         lo, hi, cm = -lim, lim, P.DIVERGING
     else:
-        fixed = _fixed_limits(cfg, 'ocean', '%s_k0' % spec['model_var'])
+        fixed = _fixed_limits(cfg, realm, '%s_k0' % spec['model_var'])
         if fixed is not None:
             lo, hi, cm = fixed
         else:
@@ -1382,10 +1414,10 @@ def fig_verif_maps(data, cfg, grid, maps, prod):
     limits = {k: (lo, hi, cm) for k, _ in rows}
     note = ('  (mean removed)' if spec.get('remove_mean') else '')
     out = None
-    for view in views_for('ocean'):
+    for view in views_for(realm):
         out = map_grid(cfg, grid, rows, names,
                        '%s and the model state%s - %s'
-                       % (spec['label'], note, data['cycle']),
+                       % (spec['label'], note, _when(data)),
                        'verif_maps_%s.png' % prod, view, limits=limits,
                        cb_label='%s (%s)' % (prod.upper(), spec['units']),
                        dpi=VERIF_MAP_DPI) or out
@@ -1403,7 +1435,8 @@ def fig_verif_diffs(data, cfg, grid, maps, prod):
     if maps is None:
         return None
     names = P.exp_names(data)
-    found = dict(_rows_for(maps, names, '/ocean/verif/'))
+    realm = LV.product_realm(prod)
+    found = dict(_rows_for(maps, names, '/%s/verif/' % realm))
     rows = [(lbl, found['%s_%s_diff_k0' % (prod, st)])
             for st, lbl in (('bkg', 'background'), ('ana', 'analysis'))
             if '%s_%s_diff_k0' % (prod, st) in found]
@@ -1414,10 +1447,10 @@ def fig_verif_diffs(data, cfg, grid, maps, prod):
     limits = {k: (-lim, lim, P.DIVERGING) for k, _ in rows}
     note = ('  (mean removed from both)' if spec.get('remove_mean') else '')
     out = None
-    for view in views_for('ocean'):
+    for view in views_for(realm):
         out = map_grid(cfg, grid, rows, names,
                        'Model minus %s%s - %s'
-                       % (spec['label'], note, data['cycle']),
+                       % (spec['label'], note, _when(data)),
                        'verif_diff_%s.png' % prod, view, limits=limits,
                        cb_label='model $-$ product (%s)' % spec['units'],
                        dpi=VERIF_MAP_DPI) or out
@@ -1486,6 +1519,63 @@ def fig_ocean_regions(cfg, grid):
     return _save(fig, cfg, 'ocean_regions.png')
 
 
+def fig_atmos_maps(data, cfg, grid, maps):
+    """The forcing the background was driven by: rows are lv_atmos fields,
+    columns experiments, on fixed scales so dates and runs compare."""
+    if maps is None:
+        return None
+    names = P.exp_names(data)
+    rows = _rows_for(maps, names, '/atmos/', drop=('u10', 'v10'))
+    if not rows:
+        return None
+    # Direction arrows on the wind-speed row: map_grid's note callback only
+    # sees the (sliced) field, so the components are looked up through the
+    # array the slice was taken from.
+    vectors = {}
+    for c, n in enumerate(names):
+        ku, kv = '%s/atmos/u10_k0' % n, '%s/atmos/v10_k0' % n
+        if ku in maps.files and kv in maps.files:
+            for key, fields in rows:
+                if key.startswith('wind10') and fields[c] is not None:
+                    vectors[id(fields[c])] = (maps[ku], maps[kv])
+    stride = int(cfg.get('map_stride', 2))
+    q = max(1, int(round(32 / stride)))          # one arrow per ~8 degrees
+
+    def arrows(ax, key, fld):
+        src = vectors.get(id(fld.base) if fld.base is not None else id(fld))
+        if src is None:
+            return
+        u, v = src
+        lon = grid.lon[::stride, ::stride][::q, ::q]
+        lat = grid.lat[::stride, ::stride][::q, ::q]
+        ax.quiver(lon, lat, u[::q, ::q], v[::q, ::q],
+                  transform=ccrs.PlateCarree(), color=P.INK, scale=400,
+                  width=0.0022, headwidth=3.5, headlength=4, alpha=0.75,
+                  zorder=5)
+    order = list(LA.FIELDS)
+    rows.sort(key=lambda kv: order.index(kv[0].rsplit('_k', 1)[0])
+              if kv[0].rsplit('_k', 1)[0] in order else 99)
+    limits = {}
+    for key, _fields in rows:
+        name = key.rsplit('_k', 1)[0]
+        if name in LA.FIELDS:
+            _label, _units, (lo, hi), div = LA.FIELDS[name]
+            limits[key] = (lo, hi, P.DIVERGING if div else
+                           (P.SEQ_WARM if name == 't2m' else P.SEQUENTIAL))
+
+    def row_label(key):
+        name = key.rsplit('_k', 1)[0]
+        if name in LA.FIELDS:
+            label, units, _l, _d = LA.FIELDS[name]
+            return '%s\n(%s)' % (label, units)
+        return key
+    return map_grid(cfg, grid, rows, names,
+                    'Atmospheric forcing over the ocean, f006 valid at the '
+                    'analysis time - %s' % _when(data),
+                    'atmos_maps.png', views_for('ocean')[0], limits=limits,
+                    row_label=row_label, note=arrows)
+
+
 def fig_corr_lengths(data, cfg, grid):
     """Increment correlation length -- the footprint the covariance produced."""
     names = P.exp_names(data)
@@ -1519,7 +1609,7 @@ def fig_corr_lengths(data, cfg, grid):
             ax.set_ylabel('increment 1/e correlation length (km)')
         P.tidy(ax)
     P.maybe_legend(axes[0], fontsize=8.5)
-    fig.suptitle('Horizontal structure of the increment - %s' % data['cycle'],
+    fig.suptitle('Horizontal structure of the increment - %s' % _when(data),
                  y=1.02, fontsize=11.5, color=P.INK)
     fig.tight_layout()
     return _save(fig, cfg, 'state_correlation_lengths.png')
@@ -1539,22 +1629,76 @@ def cycle_row_label(cycle):
     return '%s-%s-%s %s' % (c[:4], c[4:6], c[6:8], c[8:10])
 
 
-def fig_map_sequence(cycles, cfg, grid, field, realm='ocean', kind='incr',
-                     max_rows=8):
-    """One field across dates: rows are cycles, columns are experiments.
+def cycle_inputs(cfg, cycle):
+    """The cache files a cycle's figures are drawn from, for Fresh."""
+    out = []
+    for root in cfg.get('caches', [cfg['cache']]):
+        for ext in ('.json', '_maps.npz'):
+            p = os.path.join(root, '%s%s' % (cycle, ext))
+            if os.path.exists(p):
+                out.append(p)
+    return out + [cfg['grid']]
 
-    This is the view that shows whether the increment pattern is stable from
-    cycle to cycle or wandering, which a single date cannot say. Long runs are
-    subsampled evenly to keep the figure readable.
+
+def sequence_fields(cfg):
+    """(realm, field) pairs the across-date sequences are drawn for.
+
+    `state_vars` IS the increment variable list -- fig_sections and
+    fig_increment_profiles both read it for kind='incr'. This used to take
+    the ocean fields from an undocumented `sequence_fields` key (defaulting
+    to Temp/ave_ssh, so a configured Salt silently never appeared) and
+    hardcode the single ice field, which is why adding a field to the config
+    did nothing here. NO_LEVEL_LABEL already knows which fields are 2-D and
+    so have no level to sweep.
+    """
+    levels = cfg.get('map_levels', [0])
+    svars = cfg.get('state_vars', {})
+    seq = [('ocean', '%s_k%d' % (v, k))
+           for v in svars.get('ocean', [])
+           for k in ([0] if v in NO_LEVEL_LABEL else levels)]
+    seq += [('ice', '%s_k0' % v) for v in svars.get('ice', [])]
+    return seq
+
+
+def _hemi_slice(grid, stride, latcut):
+    if latcut is None:
+        return slice(None)
+    lat = grid.lat[::stride, ::stride]
+    sel = lat > latcut if latcut > 0 else lat < latcut
+    jj = np.where(sel.any(axis=1))[0]
+    return slice(jj.min(), jj.max() + 1) if jj.size else slice(0, 0)
+
+
+def sequence_plan(cycles, cfg, grid, kind='incr'):
+    """One pass over every cycle's maps: which (realm, field) has at least
+    two dates, and one colour scale per field and view for all of them.
+
+    The scale is cfg['map_limits'] when declared, else one robust range
+    pooled over every date, so a growing increment reads as growing instead
+    of being renormalised away. Pooling is what forces this pre-pass: the
+    per-cycle workers that draw the figures afterwards must all agree on it.
+    Each cycle's npz is loaded exactly once here (it used to be once per
+    field, 13x over).
+
+    Returns (stride, {(realm, field): {view suffix: (vmin, vmax, cmap)}}).
     """
     order = sorted(cycles)
-    if len(order) > max_rows:
-        pick = np.linspace(0, len(order) - 1, max_rows).round().astype(int)
-        order = [order[i] for i in sorted(set(pick))]
     names = P.exp_names(cycles[order[-1]])
-    key = '%s/%s/%s' % (realm, kind, field)
-
-    rows, stride = [], None
+    seq = sequence_fields(cfg)
+    stride = None
+    present = {rf: 0 for rf in seq}
+    pooled = {}                      # (realm, field, suffix) -> [abs values]
+    need = {}                        # (realm, field, suffix) -> latcut
+    fixed_lim = {}                   # (realm, field, suffix) -> configured
+    for realm, field in seq:
+        for view in views_for(realm):
+            fixed = ((0.0, 1.0, P.SEQUENTIAL) if kind != 'incr' else
+                     _fixed_incr_limits(cfg, realm, field, view[0] or None))
+            # pooled either way: a field with a fixed scale is pooled too,
+            # only to say whether the configured value matches the data
+            need[(realm, field, view[0])] = view[4]
+            if fixed is not None:
+                fixed_lim[(realm, field, view[0])] = fixed[1]
     for c in order:
         m = P.load_maps(cfg, c)
         if m is None:
@@ -1566,42 +1710,122 @@ def fig_map_sequence(cycles, cfg, grid, field, realm='ocean', kind='incr',
             print('  ! %s cached with map_stride %d, expected %d -- skipped'
                   % (c, st, stride))
             continue
-        fields = [m['%s/%s' % (n, key)] if '%s/%s' % (n, key) in m.files
-                  else None for n in names]
-        if any(f is not None for f in fields):
-            rows.append((c, fields))
-    if stride is None or len(rows) < 2:
-        return None
+        for realm, field in seq:
+            key = '%s/%s/%s' % (realm, kind, field)
+            fields = [m['%s/%s' % (n, key)] for n in names
+                      if '%s/%s' % (n, key) in m.files]
+            if not fields:
+                continue
+            present[(realm, field)] += 1
+            for (r, f, suffix), latcut in need.items():
+                if (r, f) != (realm, field):
+                    continue
+                sl = _hemi_slice(grid, stride, latcut)
+                for x in fields:
+                    v = x[sl]
+                    v = np.abs(v[np.isfinite(v)])
+                    if v.size:
+                        # subsample: the 99th percentile of a 1e5 sample is
+                        # as good as of the 4e5 full field, at a quarter of
+                        # the memory for 65 cycles held at once
+                        pooled.setdefault((r, f, suffix), []).append(
+                            v[::4] if v.size > 200000 else v)
+    limits = {}
+    for realm, field in seq:
+        if present[(realm, field)] < 2:
+            continue
+        per_view = {}
+        for view in views_for(realm):
+            fixed = ((0.0, 1.0, P.SEQUENTIAL) if kind != 'incr' else
+                     _fixed_incr_limits(cfg, realm, field, view[0] or None))
+            vals = pooled.get((realm, field, view[0]))
+            lim = (float(np.percentile(np.concatenate(vals), 99.0))
+                   if vals else 1.0)
+            if fixed is not None:
+                per_view[view[0]] = fixed
+                # A configured scale far from the data hides the field (a
+                # 0.5 psu scale on a 0.02 psu surface salinity increment
+                # drew a blank panel) or saturates it; say so, with the
+                # number to put in map_limits.increment instead.
+                cfg_lim = fixed_lim[(realm, field, view[0])]
+                if kind == 'incr' and lim > 0 and not (
+                        lim / 3 <= cfg_lim <= lim * 3):
+                    print('  ! map_limits.increment.%s.%s%s is %g; the pooled '
+                          '99th percentile of |increment| over %d cycles is '
+                          '%.3g' % (realm, field,
+                                    ' (%s)' % view[0] if view[0] else '',
+                                    cfg_lim, present[(realm, field)], lim),
+                          flush=True)
+                continue
+            per_view[view[0]] = (-lim, lim, P.DIVERGING)
+        limits[(realm, field)] = per_view
+    return stride, limits
 
-    limits = None
-    if kind != 'incr':
-        limits = {c: (0.0, 1.0, P.SEQUENTIAL) for c, _ in rows}
-    what = ('increment' if kind == 'incr'
-            else r'spread reduction $1-\sigma_a/\sigma_b$')
-    title = ('%s %s across dates - %s (%d of %d cycles shown)'
-             % (_map_row_label(cycles[order[-1]], field).replace('\n', ' '),
-                what, realm,
-                len(rows), len(cycles)))
-    out = None
-    for view in views_for(realm):
-        out = map_grid(cfg, grid, rows, names, title,
-                       'seq_%s_%s_%s.png' % (realm, kind, field), view,
-                       limits=limits, row_label=cycle_row_label) or out
-    return out
+
+def render_sequence_cycle(cycle, cycles, cfg, grid, stride, limits,
+                          kind='incr', fresh=None):
+    """Every field's across-date figure for ONE cycle: experiments side by
+    side, one row, filenames 'seq_<realm>_<kind>_<field>[_<hemi>]_<cycle>.png'.
+
+    The report puts a date menu over these (it used to be one tall grid of
+    up to eight subsampled dates per field, each row on its own scale).
+    """
+    global TAG
+    key = 'seq:%s' % cycle
+    inputs = cycle_inputs(cfg, cycle) + [__file__]
+    params = {'limits': {'%s/%s/%s' % (r, f, sfx): (lo, hi)
+                         for (r, f), pv in limits.items()
+                         for sfx, (lo, hi, _cm) in pv.items()}}
+    if fresh and fresh.ok(key, inputs, params):
+        return []
+    m = P.load_maps(cfg, cycle)
+    written = []
+    if m is not None and _stride(cycles[cycle], cfg) == stride:
+        names = P.exp_names(cycles[sorted(cycles)[-1]])
+        what = ('increment' if kind == 'incr'
+                else r'spread reduction $1-\sigma_a/\sigma_b$')
+        TAG = '_%s' % cycle
+        for (realm, field), per_view in limits.items():
+            k = '%s/%s/%s' % (realm, kind, field)
+            fields = [m['%s/%s' % (n, k)] if '%s/%s' % (n, k) in m.files
+                      else None for n in names]
+            if not any(f is not None for f in fields):
+                continue
+            label = _map_row_label(cycles[cycle], field).replace('\n', ' ')
+            title = '%s %s - %s %s' % (label, what, realm,
+                                       cycle_row_label(cycle))
+            for view in views_for(realm):
+                out = map_grid(cfg, grid, [(cycle, fields)], names, title,
+                               'seq_%s_%s_%s.png' % (realm, kind, field),
+                               view, limits={cycle: per_view[view[0]]},
+                               row_label=cycle_row_label)
+                if out:
+                    written.append(out)
+        TAG = ''
+    if fresh:
+        fresh.record(key, inputs, params, written)
+    return written
 
 
-def render_cycle(cycle, cycles, cfg, grid, index=None, total=None):
+def render_cycle(cycle, cycles, cfg, grid, index=None, total=None,
+                 fresh=None):
     """Render one date's state figures, reporting progress as it goes.
 
     Each map figure takes seconds, so a long run needs to say where it is
-    rather than sitting silent.
+    rather than sitting silent. With ``fresh`` the whole cycle is skipped
+    when its cache files have not changed since it was last drawn.
     """
     global TAG
     t0 = time.time()
+    where = ('[%d/%d] ' % (index, total)) if total else ''
+    key = 'cycle:%s' % cycle
+    inputs = cycle_inputs(cfg, cycle) + [__file__]
+    if fresh and fresh.ok(key, inputs):
+        print('%s%s: up to date, skipped' % (where, cycle), flush=True)
+        return []
     data = cycles[cycle]
     maps = P.load_maps(cfg, cycle)
     TAG = '_%s' % cycle if len(cycles) > 1 else ''
-    where = ('[%d/%d] ' % (index, total)) if total else ''
     print('%s%s: state-space figures' % (where, cycle), flush=True)
 
     steps = [('increment profiles', lambda: fig_increment_profiles(data, cfg, grid)),
@@ -1652,8 +1876,10 @@ def render_cycle(cycle, cycles, cfg, grid, index=None, total=None):
                       lambda p=prod: fig_verif_diffs(data, cfg, grid, maps, p)))
     steps.append(('correlation lengths',
                   lambda: fig_corr_lengths(data, cfg, grid)))
+    steps.append(('atmospheric forcing maps',
+                  lambda: fig_atmos_maps(data, cfg, grid, maps)))
 
-    written = 0
+    written = []
     for label, fn in steps:
         t = time.time()
         print('    %-28s' % label, end='', flush=True)
@@ -1662,15 +1888,49 @@ def render_cycle(cycle, cycles, cfg, grid, index=None, total=None):
         # other step here still returns a single path or None.
         paths = result if isinstance(result, list) else ([result] if result else [])
         if paths:
-            written += len(paths)
+            written += paths
             tail = (os.path.basename(paths[0]) if len(paths) == 1 else
                    '%d files (%s...)' % (len(paths), os.path.basename(paths[0])))
             print(' %-46s %5.1fs' % (tail, time.time() - t), flush=True)
         else:
             print(' %-46s %5.1fs' % ('(nothing to plot)', time.time() - t),
                   flush=True)
-    print('  %s: %d figures in %.1fs' % (cycle, written, time.time() - t0),
+    print('  %s: %d figures in %.1fs' % (cycle, len(written), time.time() - t0),
           flush=True)
+    if fresh:
+        fresh.record(key, inputs, None, written)
+    return written
+
+
+# Shared with forked workers: set once in main() before the pool is created,
+# so the (unpicklable) grid and the whole cycle dict are inherited rather
+# than shipped to every task.
+_SHARED = {}
+
+
+def _cycle_worker(task):
+    """One per-cycle render in a worker; returns its log and Fresh records.
+
+    Output is captured rather than printed: a dozen workers interleaving
+    one partial line per figure would be unreadable.
+    """
+    kind, cycle, index, total = task
+    sh = _SHARED
+    fresh = Fresh(sh['cfg'], sh['stage'], force=sh['force'], script=__file__)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        try:
+            if kind == 'cycle':
+                render_cycle(cycle, sh['per_cycle'], sh['cfg'], sh['grid'],
+                             index, total, fresh=fresh)
+            else:
+                render_sequence_cycle(cycle, sh['cycles'], sh['cfg'],
+                                      sh['grid'], sh['stride'], sh['limits'],
+                                      fresh=fresh)
+        except Exception as e:                      # keep the pool alive
+            print('  ! %s %s failed: %s: %s' % (kind, cycle,
+                                                type(e).__name__, e))
+    return cycle, buf.getvalue(), fresh.new, fresh.skipped
 
 
 def main(argv=None):
@@ -1691,9 +1951,21 @@ def main(argv=None):
                     help='render only this cycle (repeatable)')
     ap.add_argument('--latest', action='store_true',
                     help='render only the most recent cached cycle')
+    ap.add_argument('--hours', default=None,
+                    help='render the per-date figures only for cycles at these '
+                         'UTC hours (comma-separated, e.g. "00" or "00,12"), '
+                         'plus the most recent cycle whatever its hour; '
+                         '"all" renders every cached cycle (the default)')
     ap.add_argument('--no-per-cycle', action='store_true',
                     help='skip the per-date figures, write only the '
                          'across-date sequences')
+    ap.add_argument('--jobs', type=int, default=1,
+                    help='cycles to draw in parallel (per-date figures and '
+                         'the across-date sequences alike; each cycle is '
+                         'independent once the shared colour scales are set)')
+    ap.add_argument('--force', action='store_true',
+                    help='redraw everything; by default a cycle whose cache '
+                         'files have not changed since it was drawn is skipped')
     a = ap.parse_args(argv)
     a.config = a.config or a.config_opt
     t_all = time.time()
@@ -1702,10 +1974,12 @@ def main(argv=None):
     print('loading grid %s' % os.path.basename(cfg['grid']), flush=True)
     grid = Grid(cfg['grid'])
     print('figures -> %s' % cfg['figs'], flush=True)
+    os.makedirs(cfg['figs'], exist_ok=True)
     # Printed here rather than from render_cycle(), which writes one
     # partial line per figure and would be garbled by an interleaved warning.
     for w in section_warnings(cfg):
         print('  ! %s' % w, flush=True)
+    fresh = Fresh(cfg, 'statespace', force=a.force, script=__file__)
 
     # Static reference figure -- not tied to a cycle, so drawn once here
     # rather than from render_cycle().
@@ -1714,38 +1988,58 @@ def main(argv=None):
     todo = sorted(cycles)
     if a.latest:
         todo = todo[-1:]
-    if not a.no_per_cycle:
-        print('rendering %d cycle(s)' % len(todo), flush=True)
-        for i, cycle in enumerate(todo, 1):
-            render_cycle(cycle, cycles if not a.latest else {cycle: cycles[cycle]},
-                         cfg, grid, i, len(todo))
+    elif a.hours and a.hours.lower() != 'all':
+        # The report puts a date menu over the per-cycle figures, and one
+        # cycle a day is enough to see the state move; the latest is always
+        # kept so the single-date views in section 03 show the end of the run.
+        hours = {h.strip().zfill(2) for h in a.hours.split(',') if h.strip()}
+        todo = [c for c in todo if str(c)[8:10] in hours or c == todo[-1]]
+    per_cycle_dict = cycles if not a.latest else {todo[0]: cycles[todo[0]]}
 
-    # across-date views, only meaningful with more than one cycle
+    tasks = []
+    if not a.no_per_cycle:
+        tasks += [('cycle', c, i, len(todo)) for i, c in enumerate(todo, 1)]
+    stride = limits = None
     if len(cycles) > 1:
-        global TAG
-        TAG = ''
-        print('across-date sequences (%d cycles)' % len(cycles), flush=True)
-        levels = cfg.get('map_levels', [0])
-        # `state_vars` IS the increment variable list -- fig_sections and
-        # fig_increment_profiles both read it for kind='incr'. This used to
-        # take the ocean fields from an undocumented `sequence_fields` key
-        # (defaulting to Temp/ave_ssh, so a configured Salt silently never
-        # appeared) and hardcode the single ice field, which is why adding a
-        # field to the config did nothing here. NO_LEVEL_LABEL already knows
-        # which fields are 2-D and so have no level to sweep.
-        svars = cfg.get('state_vars', {})
-        seq = [('ocean', '%s_k%d' % (v, k))
-               for v in svars.get('ocean', [])
-               for k in ([0] if v in NO_LEVEL_LABEL else levels)]
-        seq += [('ice', '%s_k0' % v) for v in svars.get('ice', [])]
-        for realm, field in seq:
-            t = time.time()
-            print('    %-28s' % ('%s %s' % (realm, field)), end='', flush=True)
-            path = fig_map_sequence(cycles, cfg, grid, field, realm, 'incr')
-            print(' %-46s %5.1fs'
-                  % (os.path.basename(path) if path else '(nothing to plot)',
-                     time.time() - t), flush=True)
-    print('done in %.1fs' % (time.time() - t_all), flush=True)
+        # across-date views, only meaningful with more than one cycle; the
+        # colour scales are pooled over every date before any is drawn
+        t = time.time()
+        stride, limits = sequence_plan(cycles, cfg, grid)
+        print('across-date sequences: %d field(s) over %d cycles, scales '
+              'pooled in %.1fs' % (len(limits), len(cycles), time.time() - t),
+              flush=True)
+        if limits:
+            tasks += [('seq', c, None, None) for c in sorted(cycles)]
+
+    jobs = max(1, min(a.jobs, len(tasks)))
+    print('rendering %d cycle(s) per-date%s, %d-way'
+          % (len(todo) if not a.no_per_cycle else 0,
+             ' + %d sequence date(s)' % len(cycles) if limits else '', jobs),
+          flush=True)
+    if jobs == 1:
+        for kind, c, i, n in tasks:
+            if kind == 'cycle':
+                render_cycle(c, per_cycle_dict, cfg, grid, i, n, fresh=fresh)
+            else:
+                render_sequence_cycle(c, cycles, cfg, grid, stride, limits,
+                                      fresh=fresh)
+    else:
+        from concurrent.futures import ProcessPoolExecutor
+        # per-cycle tasks with --latest see the single-cycle dict (untagged
+        # names); the sequences always see the full one. Workers are forked
+        # after this, so they inherit both without pickling the grid.
+        _SHARED.update(cfg=cfg, grid=grid, cycles=cycles,
+                       per_cycle=per_cycle_dict, stage='statespace',
+                       force=a.force, stride=stride, limits=limits)
+        with ProcessPoolExecutor(max_workers=jobs) as ex:
+            for c, log, records, skipped in ex.map(_cycle_worker, tasks):
+                if log.strip():
+                    print(log.rstrip(), flush=True)
+                fresh.merge(records)
+                fresh.skipped += skipped
+    fresh.save()
+    print('done in %.1fs (%d unit(s) up to date and skipped)'
+          % (time.time() - t_all, fresh.skipped), flush=True)
     return 0
 
 

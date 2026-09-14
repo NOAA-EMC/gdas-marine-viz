@@ -235,8 +235,15 @@ class Experiment:
     def increment(self, cycle, realm):
         default = ('*ensmean_incr.nc' if self.kind == 'letkf'
                    else '*jedi_increment*.nc')
-        pat = '%s/%s' % (realm, self.incr_pattern or default)
-        return self._glob1(cycle, pat, required=False)
+        # A list is tried in order, like analysis_pattern: 3dvar-rt's
+        # archive wrote *ocn.incr.nc, then *jedi_increment* from 2025-12-18.
+        pats = self.incr_pattern or default
+        pats = pats if isinstance(pats, (list, tuple)) else [pats]
+        for pat in pats:
+            hit = self._glob1(cycle, '%s/%s' % (realm, pat), required=False)
+            if hit is not None:
+                return hit
+        return None
 
     def analysis(self, cycle, realm='ocean'):
         """Written analysis state for an optional archive-specific pattern.
@@ -247,8 +254,17 @@ class Experiment:
         """
         if not self.analysis_pattern:
             return None
-        return self._glob1(cycle, '%s/%s' % (realm, self.analysis_pattern),
-                           required=False)
+        # A list tries each pattern in turn: an archive whose file naming
+        # changed mid-run (3dvar-rt wrote *ocn.ana.nc, then *jedi_analysis*)
+        # has no single glob that resolves at every cycle.
+        patterns = (self.analysis_pattern
+                    if isinstance(self.analysis_pattern, (list, tuple))
+                    else [self.analysis_pattern])
+        for pattern in patterns:
+            hit = self._glob1(cycle, '%s/%s' % (realm, pattern), required=False)
+            if hit is not None:
+                return hit
+        return None
 
     def ensvar(self, cycle, realm, when):
         """Path to the 'prior' / 'post' / 'an' ensemble variance, or None."""
@@ -316,7 +332,9 @@ def load_config(path=None, root_override=None, outdir_override=None,
     src = [src] if isinstance(src, str) else list(src)
     if cache_override:
         src = list(cache_override) + [p for p in src if p not in cache_override]
-    cfg['caches'] = [_abs(p) for p in src]
+    # De-duplicated, order kept: build_comparison.py passes the page cache
+    # and then whatever the caller listed, which may name it again.
+    cfg['caches'] = list(dict.fromkeys(_abs(p) for p in src))
     cfg['cache'] = cfg['caches'][0]
     cfg['figs'] = _abs(cfg.get('figs') or os.path.join(outdir, 'figs'))
     cfg['report'] = _abs(cfg.get('report')
@@ -354,9 +372,135 @@ def load_config(path=None, root_override=None, outdir_override=None,
     if cfg.get('reference') and cfg['reference'] not in names:
         raise ValueError('reference %r not among %s' % (cfg['reference'], names))
     check_retired(cfg)
+    # Regions every report gets without asking: the basin mask's Southern
+    # Ocean stops short of the ice, and neither it nor the Arctic basin
+    # gives the polar cap that the sea-ice and high-latitude SST/SSS
+    # scores need. Only lat bands, so they work with or without a basin
+    # mask; a config entry of the same name replaces the default.
+    have = {r['name'] for r in cfg.get('regions') or []}
+    cfg['regions'] = list(cfg.get('regions') or []) + [
+        dict(r) for r in DEFAULT_REGIONS if r['name'] not in have]
     corr_regions(cfg)          # validate the names now, not mid-run
     cfg['cycles'] = resolve_cycles(cfg['cycles'])
     return cfg
+
+
+# ---------------------------------------------------------------------------
+# figure freshness
+# ---------------------------------------------------------------------------
+
+# The parts of the config that change how a figure LOOKS. `cycles:` is
+# deliberately not among them: adding a cycle must not redraw every other
+# cycle's figures, which is the whole point of caching them.
+VIEW_KEYS = ('map_limits', 'sections', 'map_levels', 'map_stride',
+             'state_vars', 'background_vars', 'regions', 'corr_regions',
+             'depth_bins', 'depth_max', 'verification', 'woa',
+             'frontal_analysis', 'ocean_basin_mask', 'reference', 'obs_bins',
+             'atmos_vars')
+
+
+def view_hash(cfg):
+    """Short digest of the view-affecting config plus the experiment list."""
+    import hashlib
+    import json
+    view = {k: cfg.get(k) for k in VIEW_KEYS}
+    view['experiments'] = [(e.name, e.label, e.kind) for e in cfg['experiments']]
+    blob = json.dumps(view, sort_keys=True, default=str).encode()
+    return hashlib.sha1(blob).hexdigest()[:12]
+
+
+class Fresh:
+    """Skip figures whose inputs have not changed since they were drawn.
+
+    Every plot stage redrew everything on every run -- 30 minutes of
+    state-space maps for a rerun that had added one cycle. Each stage keeps
+    one record file, figs/.fresh-<stage>.json: for every unit of work it
+    drew (a cycle, a field, one figure) the mtimes of the inputs it read,
+    the parameters that shaped it (view_hash(cfg), a colour scale, ...) and
+    the files it wrote. ``ok(key, inputs, params)`` says whether that unit
+    can be skipped: same inputs, same params, every output still there.
+    ``force`` (a --force flag) ignores the records; an edit to the plot
+    script itself counts as an input, so code changes redraw too.
+
+    Records are held in memory and written by ``save()`` -- call it at the
+    end of the stage, and after merging what parallel workers return.
+    """
+
+    def __init__(self, cfg, stage, force=False, script=None):
+        self.path = os.path.join(cfg['figs'], '.fresh-%s.json' % stage)
+        self.force = force
+        self.view = view_hash(cfg)
+        self.always = [script] if script else []
+        self.always.append(os.path.join(HERE, 'lv_plot.py'))
+        self.records = {}
+        if os.path.exists(self.path) and not force:
+            import json
+            try:
+                with open(self.path) as f:
+                    self.records = json.load(f)
+            except (OSError, ValueError):
+                self.records = {}
+        self.skipped = 0
+        self.new = {}                 # records added this run (workers return these)
+
+    @staticmethod
+    def _mtimes(paths):
+        # normalised, so './plot_x.py' from one invocation and the absolute
+        # path from another are the same input
+        out = {}
+        for p in paths:
+            if not p:
+                continue
+            p = os.path.normpath(os.path.abspath(p))
+            out[p] = os.path.getmtime(p) if os.path.exists(p) else None
+        return out
+
+    def _stamp(self, inputs, params):
+        import json
+        return json.dumps({'inputs': self._mtimes(list(inputs) + self.always),
+                           'params': dict(params or {}, view=self.view)},
+                          sort_keys=True, default=str)
+
+    def ok(self, key, inputs, params=None):
+        """True when ``key`` was drawn from these inputs and params and its
+        outputs are all still there (or it legitimately drew nothing)."""
+        if self.force:
+            return False
+        rec = self.records.get(key)
+        if not rec or rec.get('stamp') != self._stamp(inputs, params):
+            return False
+        if not rec.get('empty') and not all(
+                os.path.exists(o) for o in rec.get('outputs') or []):
+            return False
+        self.skipped += 1
+        return True
+
+    def record(self, key, inputs, params, outputs):
+        """Note what was just drawn. ``outputs`` may be empty when the unit
+        legitimately produced nothing; that is recorded too, so a unit with
+        nothing to draw is not retried on every run."""
+        outputs = [o for o in (outputs or []) if o]
+        self.records[key] = self.new[key] = {
+            'stamp': self._stamp(inputs, params),
+            'outputs': outputs, 'empty': not outputs}
+
+    def merge(self, records):
+        """Fold in records returned by a worker process."""
+        self.records.update(records or {})
+
+    def save(self):
+        import json
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        tmp = self.path + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(self.records, f, indent=0, sort_keys=True)
+        os.replace(tmp, self.path)
+
+
+# Appended to `regions:` by load_config() unless the config names them.
+DEFAULT_REGIONS = [
+    {'name': 'Antarctic', 'lat0': -90, 'lat1': -45, 'lon0': -180, 'lon1': 180},
+]
 
 
 def region_box(r):

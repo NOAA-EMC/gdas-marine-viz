@@ -15,6 +15,7 @@ import argparse
 import base64
 import html
 import os
+import re
 import sys
 import tarfile
 from string import Template
@@ -53,6 +54,16 @@ def fig_path(figs, base, cycle):
 
 _MISSING = []
 
+# Figures are LINKED from the pages by default -- '<img src="figs/x.png">' --
+# and the tarball carries every PNG a page references. Embedding them as
+# base64 made a page grow with every field, region and now every cycle it
+# shows; with a date menu over the background and gridded-product views that
+# was heading past 100 MB a page. ``EMBED`` (--embed) restores the old
+# single-file pages for the odd case where one HTML file has to travel alone.
+EMBED = False
+FIG_REL = 'figs'      # page -> figs directory, set by main()
+_USED = {}            # absolute figure path -> path inside the tarball
+
 
 def hemi_imgs(figs, base, cycle, alt, optional=False):
     """Both hemispheres of a polar figure, in order."""
@@ -63,25 +74,39 @@ def hemi_imgs(figs, base, cycle, alt, optional=False):
 
 
 def img(path, alt, optional=False):
-    """Embed a figure. A missing one is reported, never silently dropped.
+    """A figure, linked (or with --embed, inlined). A missing one is
+    reported, never silently dropped.
 
     Silently returning '' let renamed figures vanish from the report while
-    every script still reported success.
+    every script still reported success. Linked images load lazily: a page
+    with a date menu over a dozen map families references hundreds of PNGs,
+    and the browser only needs the ones on screen.
     """
     if not os.path.exists(path):
         if not optional:
             _MISSING.append(os.path.basename(path))
         return ''
-    with open(path, 'rb') as f:
-        b64 = base64.b64encode(f.read()).decode()
+    if EMBED:
+        with open(path, 'rb') as f:
+            src = 'data:image/png;base64,%s' % base64.b64encode(f.read()).decode()
+        lazy = ''
+    else:
+        rel = '%s/%s' % (FIG_REL, os.path.basename(path))
+        _USED[os.path.abspath(path)] = rel
+        src = html.escape(rel)
+        lazy = ' loading="lazy"'
+    # The link is the zoom: with JS it opens the lightbox in HEAD (fit to the
+    # window, click again for 1:1 pixels, click outside or Esc to close);
+    # without it, or middle-clicked, it is just the PNG in its own tab.
     return ('<figure class="fig"><div class="fig-scroll">'
-            '<img src="data:image/png;base64,%s" alt="%s"></div>'
-            '<figcaption>%s</figcaption></figure>' % (b64, html.escape(alt),
-                                                      html.escape(alt)))
+            '<a class="fig-zoom" href="%s" onclick="return lvZoom(this)" '
+            'title="%s">'
+            '<img src="%s" alt="%s"%s></a></div></figure>'
+            % (src, html.escape(alt), src, html.escape(alt), lazy))
 
 
 def picker_widget(group, items, label_fn, panel_fn, style_fn=None,
-                  collapsible=None, dropdown=None):
+                  collapsible=None, dropdown=None, default=None):
     """Pure-CSS radio-button tabs, or (``dropdown``) a native <select>: one
     panel visible at a time. At most one of ``collapsible``/``dropdown``.
 
@@ -114,14 +139,17 @@ def picker_widget(group, items, label_fn, panel_fn, style_fn=None,
     ``label_fn``/``panel_fn``/``style_fn`` take one raw item (not its slug)
     and return its chip/option label, its panel's inner HTML, and (chip mode
     only) an optional ` style="..."` string for the chip (e.g. to colour-
-    match a companion map) respectively.
+    match a companion map) respectively. ``default`` names the item shown
+    first (the first in ``items`` when not given) -- a date menu opens on
+    the latest cycle while still listing them oldest first.
     """
     tabs, rules, panels, options = [], [], [], []
+    first = default if default in items else items[0] if items else None
     for i, item in enumerate(items):
         s = P.slug(item)
         tid, pid = '%s-tab-%s' % (group, s), '%s-panel-%s' % (group, s)
         label = label_fn(item)
-        default = i == 0
+        default = item == first
         if dropdown:
             options.append('<option value="%s"%s>%s</option>'
                            % (pid, ' selected' if default else '',
@@ -150,8 +178,9 @@ def picker_widget(group, items, label_fn, panel_fn, style_fn=None,
 
     if dropdown:
         chooser = (
+            '<label class="picker-row"><span class="picker-label">%s</span>'
             '<select class="picker-select" aria-label="%s" '
-            'onchange="lvPickerShow(this)">%s</select>'
+            'onchange="lvPickerShow(this)">%s</select></label>'
             # ":scope >" so this only ever touches its OWN panels. A plain
             # ".picker-panel" search also matches the panels of any picker
             # NESTED inside one of them, and inline display:none beats the
@@ -164,7 +193,8 @@ def picker_widget(group, items, label_fn, panel_fn, style_fn=None,
             'for(var i=0;i<p.length;i++){p[i].style.display="none"}'
             'var t=document.getElementById(s.value);'
             'if(t){t.style.display="block"}}</script>'
-            % (html.escape(dropdown), ''.join(options)))
+            % (html.escape(dropdown), html.escape(dropdown),
+               ''.join(options)))
     elif collapsible:
         chooser = (
             '<details class="picker-chooser"><summary>%s</summary>'
@@ -233,36 +263,186 @@ def verif_widget(cycles, cfg, names, figs):
         style_fn=lambda r: _basin_chip_style(basin_color, r))
 
 
+def _verif_pair(figs, prod, cycle):
+    """Product-beside-model maps then model-minus-product, for one date;
+    the ice-realm product comes as a hemisphere pair."""
+    hemi = LV.product_realm(prod) == 'ice'
+    when = PS.cycle_row_label(cycle)
+    up = prod.upper()
+    if hemi:
+        return (hemi_imgs(figs, 'verif_maps_%s' % prod, cycle,
+                          '%s: product beside the model background and '
+                          'analysis, %s' % (up, when), optional=True)
+                + hemi_imgs(figs, 'verif_diff_%s' % prod, cycle,
+                            'Model minus %s, %s' % (up, when), optional=True))
+    return (img(fig_path(figs, 'verif_maps_%s' % prod, cycle),
+                '%s: product beside the model background and analysis, %s'
+                % (up, when), optional=True)
+            + img(fig_path(figs, 'verif_diff_%s' % prod, cycle),
+                  'Model minus %s, %s' % (up, when), optional=True))
+
+
+def regional_series_widget(group, cfg, figs, base, label):
+    """Region chips over per-region time-series figures ('<base>_<slug>.png'),
+    the way verif_widget does for the gridded-analysis scores."""
+    regions = ['global'] + region_list(cfg)
+    regions = [r for r in regions if os.path.exists(
+        os.path.join(figs, '%s_%s.png' % (base, P.slug(r))))]
+    if not regions:
+        return ''
+    basin_color = basin_colors(cfg)
+    return picker_widget(
+        group, regions,
+        label_fn=lambda r: r.replace('_', ' '),
+        panel_fn=lambda r: img(
+            os.path.join(figs, '%s_%s.png' % (base, P.slug(r))),
+            '%s: %s' % (r.replace('_', ' '), label), optional=True),
+        style_fn=lambda r: _basin_chip_style(basin_color, r))
+
+
+def stability_widget(cfg, figs):
+    """SSH cycling-stability figure + verdict table per experiment, from
+    plot_stability.py's outputs (figs/cycle_ssh_stability_<exp>.png and
+    ssh_stability_<exp>.json beside the report)."""
+    entries = []
+    for e in cfg['experiments']:
+        slug = P.slug(e.name)
+        png = os.path.join(figs, 'cycle_ssh_stability_%s.png' % slug)
+        jpath = os.path.join(cfg['outdir'], 'ssh_stability_%s.json' % slug)
+        if not os.path.exists(png):
+            continue
+        block = img(png, '%s: SSH cycling-stability metrics against cycle, '
+                    'dotted lines are the fitted trends' % e.name)
+        if os.path.exists(jpath):
+            import json
+            with open(jpath) as fh:
+                v = json.load(fh)
+            rows_by_metric = {}
+            for row in v.get('verdict', []):
+                rows_by_metric.setdefault(row['metric'], {})[row['region']] = row
+            regions = list(dict.fromkeys(row['region'] for row in v['verdict']))
+            cells = []
+            for m, per in rows_by_metric.items():
+                line = [html.escape(m)]
+                for r in regions:
+                    row = per.get(r)
+                    if row is None or row.get('pct_per_day') is None:
+                        line.append('&mdash;')
+                        continue
+                    txt = '%+.1f <span class="dim">(t %.1f)</span>' % (
+                        row['pct_per_day'], row['t'] or 0.0)
+                    line.append('<span class="bad">%s</span>' % txt
+                                if row.get('flag') else txt)
+                cells.append(line)
+            block += (
+                '<p class="lede">Trend of each metric over the %d cycles, in '
+                '%% of its mean per day, with the t statistic; '
+                '<span class="bad">red</span> = significant (|t| &gt; 3) in '
+                'the direction that means trouble.</p>' % len(v['cycles'])
+                + table(['metric'] + [r.replace('_', ' ') for r in regions],
+                        cells))
+        entries.append((e.name, block))
+    if not entries:
+        return ''
+    lede = (
+        '<section class="subsection"><h3>SSH cycling stability</h3>'
+        '<p class="lede">A tight fit to altimetry has, in the past, gone '
+        'unstable in a way no score catches early: the analysis inserts a '
+        'feature the model does not hold, the forecast pushes it back, the '
+        'next analysis re-inserts it larger, and after enough cycles it is a '
+        'stripe along a track or a blob in a basin. An animation of the SSH '
+        'field catches it late and only where one happens to look, so these '
+        'panels track, every cycle, the quantities that move first, and fit '
+        'a trend to each.</p>'
+        '<p class="lede"><b>What the panels are.</b> The <b>increment</b> '
+        'RMS and maximum say how hard the analysis is pushing; a growing '
+        'increment is the loop tightening. The <b>6-h forecast change</b> is '
+        'background(t) minus the previous analysis: what the model does on '
+        'its own between analyses (mostly the barotropic response to the '
+        'winds, so it breathes with the weather). <b>Persistence</b> is the '
+        'spatial correlation of one increment with the previous one: near '
+        'zero when each analysis corrects something new, sustained positive '
+        'when the same correction is made every cycle &mdash; a bias the '
+        'model rejects, or a mode being fed. <b>Rejection</b> is the slope of '
+        'the forecast change on the previous increment: 0 means the model '
+        'keeps what it was given, &minus;1 that it undoes it exactly; a '
+        'drift toward &minus;1 with a growing increment is the feedback loop '
+        'in the act. The <b>small-scale variance</b> of the background SSH '
+        '(scales under about 2&deg;) is where noise accumulates before it '
+        'is visible anywhere, and its <b>grid-scale</b> part separates '
+        'mesoscale spin-up (which raises the first but not the second) from '
+        'numerical noise (which raises both). <b>Shock</b> compares the '
+        'first three hours of each forecast with the next three: above ~1.5 '
+        'the analysis is being shaken off as soon as the model starts. '
+        '<b>Big cells</b> counts increments beyond a threshold and locates '
+        'the largest cluster, so a local blow-up is found, not just noticed. '
+        'The <b>on-track index</b> is the increment variance in 1&deg; bins '
+        'that had altimeter observations over bins that had none: how much '
+        'of the increment lives on the tracks.</p>'
+        '<p class="lede"><b>How to read the table.</b> Every metric gets a '
+        'linear trend over the period, in percent of its mean per day, with '
+        'the t statistic of the slope. Red marks a trend that is both '
+        'significant and in the adverse direction. A healthy run reads as a '
+        'table of grey; one red entry is a question; red in the increment, '
+        'rejection and grid-scale rows together is the instability.</p>')
+    return lede + figure_menu('stability', 'experiment', entries) + '</section>'
+
+
 def frontal_widget(cfg, figs):
-    """Configured strong-current maps plus the narrow-jet profile diagnostic."""
+    """Configured strong-current maps plus the narrow-jet profile diagnostic.
+
+    plot_fronts.py draws them for the cycles build_comparison.py --hours
+    selects (00z plus the latest by default), tagged '_<cycle>' like the
+    state-space figures, so each current gets a date menu inside its chip.
+    """
     frontal = cfg.get('frontal_analysis') or {}
     if not frontal.get('enabled'):
         return ''
     entries = frontal.get('regions') or []
     entries = (entries.values() if isinstance(entries, dict) else entries)
-    regions = {entry['name']: dict(entry or {}) for entry in entries
-           if entry and entry.get('name') and os.path.exists(
-             os.path.join(figs, 'front_strong_%s.png'
-                  % P.slug(entry['name'])))}
+    order = [str(c) for c in cfg['cycles']]
+    regions = {}
+    for entry in entries:
+        if not entry or not entry.get('name'):
+            continue
+        base = 'front_strong_%s' % P.slug(entry['name'])
+        dates = rendered_cycles(figs, re.escape(base), order)
+        if dates:
+            regions[entry['name']] = (base, dates)
     if not regions:
         return ''
     picker = picker_widget(
-      'fronts', list(regions),
-      label_fn=lambda name: name,
-      panel_fn=lambda name: img(
-        os.path.join(figs, 'front_strong_%s.png' % P.slug(name)),
-            '%s: geostrophic current speed and strong-current footprint'
-        % name, optional=True),
+        'fronts', list(regions),
+        label_fn=lambda name: name,
+        panel_fn=lambda name: cycle_menu(
+            'fronts-%s' % P.slug(name), regions[name][1],
+            lambda c, name=name: img(
+                fig_path(figs, regions[name][0], c),
+                '%s: geostrophic current speed and strong-current footprint, %s'
+                % (name, PS.cycle_row_label(c)), optional=True)
+            + img(fig_path(figs, 'front_sst_%s' % P.slug(name), c),
+                  '%s: sea surface temperature, OSTIA beside each analysis, %s'
+                  % (name, PS.cycle_row_label(c)), optional=True)),
         collapsible='choose current')
-    profile = img(os.path.join(figs, 'front_profiles.png'),
-                  'Cross-front structure for selected coherent jets', optional=True)
+    profile = cycle_menu(
+        'frontprof', rendered_cycles(figs, 'front_profiles', order),
+        lambda c: img(fig_path(figs, 'front_profiles', c),
+                      'Cross-front structure for selected coherent jets, %s'
+                      % PS.cycle_row_label(c), optional=True))
     return (
         '<section class="subsection"><h3>Frontal-current placement</h3>'
         '<p class="lede">Broad and branching currents are shown as the area '
         'where geostrophic speed reaches a fixed <b>absolute threshold</b>, '
         'rather than being forced into one artificial axis. Each panel is one '
-        'analysis cycle; its configured threshold is identical for Copernicus '
-        'L4 ADT and every experiment in that current&rsquo;s box. Copernicus L4 '
+        'analysis cycle &mdash; pick the current, then the cycle; each '
+        'current comes with its sea surface temperature, OSTIA beside each '
+        'analysis with the same outlines, so the jet can be read against the '
+        'temperature front it should sit on. The '
+        'configured threshold is identical for Copernicus '
+        'L4 ADT and every experiment in that current&rsquo;s box. The Global '
+        'box is too big for an outline to read, so it shows the share of each '
+        '2&deg; square at or above the threshold instead, with each '
+        'experiment&rsquo;s difference from Copernicus beneath it. Copernicus L4 '
         'is a higher-resolution mapped analysis of much of the same altimeter '
         'information, not independent truth.</p>%s%s</section>' % (picker, profile))
 
@@ -282,15 +462,70 @@ def obstype_dropdown_widget(cycles, figs, base, label):
     one that opened onto a blank panel.
     """
     types = sorted({t for d in cycles.values() for t in d.get('obs', {})})
-    types = [t for t in types if os.path.exists(
-        os.path.join(figs, '%s_type_%s.png' % (base, P.slug(t))))]
+    def path(t):
+        # 'obsfit_type_<slug>.png' / 'obscount_type_<slug>.png', but the
+        # per-type cycling figures are plain 'cycle_<type>.png'
+        return os.path.join(figs, ('cycle_%s.png' % t if base == 'cycle'
+                                   else '%s_type_%s.png' % (base, P.slug(t))))
+    types = [t for t in types if os.path.exists(path(t))]
     return picker_widget(
         base, types,
         label_fn=P.short,
-        panel_fn=lambda t: img(
-            os.path.join(figs, '%s_type_%s.png' % (base, P.slug(t))),
-            '%s: %s' % (P.short(t), label), optional=True),
-        dropdown='choose obs type')
+        panel_fn=lambda t: img(path(t), '%s: %s' % (P.short(t), label),
+                               optional=True),
+        dropdown='obs type')
+
+
+def binned_widget(cycles, cfg, figs):
+    """Obs type -> view -> date, over plot_obsbins.py's figures.
+
+    Dates come from the files ('_<cycle>' tags plus '_all' for the pooled
+    figure), so a type drawn for fewer dates simply lists fewer.
+    """
+    order = [str(c) for c in sorted(cycles)]
+    types = sorted({t for d in cycles.values() for t in d.get('obs', {})})
+    views = [('map', 'Maps: count, O-B, O-A, obs error'),
+             ('reg', 'Regression: observation against model'),
+             ('sec', 'Depth x latitude (profiles)')]
+
+    def date_menu(t, view):
+        base = 'obsbins_%s_%s' % (view, P.slug(t))
+        dates = rendered_cycles(figs, re.escape(base), order)
+        pooled = os.path.join(figs, '%s_all.png' % base)
+        entries = []
+        if os.path.exists(pooled):
+            entries.append(('all', img(pooled, '%s: %s, every cached cycle '
+                                        'pooled' % (P.short(t), view),
+                                        optional=True)))
+        entries += [(c, img(fig_path(figs, base, c),
+                            '%s: %s, %s' % (P.short(t), view,
+                                            PS.cycle_row_label(c)),
+                            optional=True)) for c in dates]
+        entries = [(c, h) for c, h in entries if h]
+        if not entries:
+            return ''
+        by = dict(entries)
+        return picker_widget(
+            'binned-%s-%s' % (view, P.slug(t)), [c for c, _h in entries],
+            label_fn=lambda c: 'all cycles' if c == 'all'
+            else PS.cycle_row_label(c),
+            panel_fn=lambda c: by[c], dropdown='cycle',
+            default='all')
+
+    def type_panel(t):
+        return figure_menu('binned-%s' % P.slug(t), 'view', [
+            (label, date_menu(t, view)) for view, label in views])
+
+    types = [t for t in types if any(
+        rendered_cycles(figs, re.escape('obsbins_%s_%s' % (v, P.slug(t))),
+                        order)
+        or os.path.exists(os.path.join(figs, 'obsbins_%s_%s_all.png'
+                                       % (v, P.slug(t))))
+        for v, _l in views)]
+    if not types:
+        return ''
+    return picker_widget('binned', types, label_fn=P.short,
+                         panel_fn=type_panel, dropdown='obs type')
 
 
 def obsfit_widget(cycles, cfg, figs):
@@ -306,7 +541,7 @@ def counts_widget(cycles, cfg, figs):
                                    'observations assimilated per cycle')
 
 
-def profiles_widget(data, cfg, figs):
+def profiles_widget(data, cfg, figs, cycle=None):
     """Region picker + one panel per region for profile obs departures.
 
     Same pure-CSS tabs and basin colouring as verif_widget. Filtered to
@@ -320,18 +555,18 @@ def profiles_widget(data, cfg, figs):
         return ''
     regions = ['global'] + region_list(cfg)
     regions = [r for r in regions if os.path.exists(
-        os.path.join(figs, 'obs_profiles_region_%s.png' % P.slug(r)))]
+        fig_path(figs, 'obs_profiles_region_%s' % P.slug(r), cycle))]
     if not regions:
         return ''
 
     basin_color = basin_colors(cfg)
     return picker_widget(
-        'profiles', regions,
+        'profiles-%s' % (cycle or 'last'), regions,
         label_fn=lambda r: r.replace('_', ' '),
         panel_fn=lambda r: img(
-            os.path.join(figs, 'obs_profiles_region_%s.png' % P.slug(r)),
-            '%s: profile observations against depth' % r.replace('_', ' '),
-            optional=True),
+            fig_path(figs, 'obs_profiles_region_%s' % P.slug(r), cycle),
+            '%s: profile observations against depth, %s'
+            % (r.replace('_', ' '), PS.cycle_row_label(cycle)), optional=True),
         style_fn=lambda r: _basin_chip_style(basin_color, r))
 
 
@@ -359,6 +594,55 @@ def regional_widget(group, cfg, figs, last, base, label):
             fig_path(figs, '%s_region_%s' % (base, P.slug(r)), last),
             '%s: %s by region' % (r.replace('_', ' '), label), optional=True),
         style_fn=lambda r: _basin_chip_style(basin_color, r))
+
+
+_TAGGED = re.compile(r'^(.*)_(\d{10})\.png$')
+
+
+def rendered_cycles(figs, stem_re, cycles):
+    """Cached cycles that have a per-cycle figure whose stem matches
+    ``stem_re`` (a regex, matched in full against the name before the
+    '_<cycle>.png' tag), oldest first.
+
+    plot_statespace.py draws the per-date figures for a subset of the cached
+    cycles (build_comparison.py --hours: the 00z ones plus the latest), so
+    the menu is read off the files that exist rather than off the cache. A
+    single-cycle run writes untagged names; those count as the last cycle,
+    which is how fig_path() resolves them too.
+    """
+    pat = re.compile(stem_re)
+    order = sorted(str(c) for c in cycles)
+    tagged, untagged = set(), False
+    for f in os.listdir(figs):
+        m = _TAGGED.match(f)
+        if m and pat.fullmatch(m.group(1)):
+            tagged.add(m.group(2))
+        elif not m and f.endswith('.png') and pat.fullmatch(f[:-4]):
+            untagged = True
+    have = [c for c in order if c in tagged]
+    if not have and untagged:
+        have = order[-1:]
+    return have
+
+
+def cycle_menu(group, dates, panel_fn):
+    """A date <select> over per-cycle figure blocks, opening on the latest.
+
+    ``panel_fn`` takes a cycle string and returns that date's block; empty
+    blocks drop out and a lone survivor is returned bare, like figure_menu.
+    """
+    entries = [(c, panel_fn(c)) for c in dates]
+    entries = [(c, h) for c, h in entries if h]
+    if not entries:
+        return ''
+    if len(entries) == 1:
+        return entries[0][1]
+    by_cycle = dict(entries)
+    default = DEFAULT_CYCLE if DEFAULT_CYCLE in by_cycle else entries[-1][0]
+    return picker_widget(group, [c for c, _h in entries],
+                         label_fn=PS.cycle_row_label,
+                         panel_fn=lambda c: by_cycle[c],
+                         dropdown='cycle', default=default)
 
 
 def figure_menu(group, label, entries):
@@ -421,40 +705,61 @@ def sections_widget(group, cfg, figs, last, kind):
             optional=True))
 
 
-def sequence_widget(group, cfg, figs, data):
-    """Field picker over the across-date increment sequences.
+def sequence_widget(group, cfg, figs, cycles):
+    """Field menu, then a date menu, over the across-date increment figures.
 
-    plot_statespace.py writes one 'seq_<realm>_incr_<field>_k<lev>.png' per
-    configured field, split per hemisphere for ice. The menu is ordered from
-    `state_vars` -- the same list that decides which sequences get drawn --
-    so it reads in config order rather than the alphabetical order a plain
-    directory glob produced, and the level labels carry their approximate
-    depth the way the figures' own row labels do. Any seq_ file the config
-    no longer names is still appended rather than silently dropped, so a
-    stale figure is visible instead of invisible.
+    plot_statespace.py writes one 'seq_<realm>_incr_<field>_k<lev>[_<hemi>]
+    _<cycle>.png' per configured field and cached cycle (it used to be one
+    tall grid of up to eight subsampled dates per field). The outer menu is
+    ordered from `state_vars` -- the same list that decides which sequences
+    get drawn -- so it reads in config order rather than the alphabetical
+    order a plain directory glob produced, and the level labels carry their
+    approximate depth the way the figures' own titles do. The inner menu
+    lists every date that has the figure, oldest first, and shows one at a
+    time. Any seq_ file the config no longer names is still appended rather
+    than silently dropped, so a stale figure is visible instead of invisible.
     """
+    order = sorted(cycles)
+    data = cycles[order[-1]]
     levels = cfg.get('map_levels', [0])
     svars = cfg.get('state_vars', {})
     want = []
     for v in svars.get('ocean', []):
         flat = v in PS.NO_LEVEL_LABEL
         for k in ([0] if flat else levels):
-            want.append(('seq_ocean_incr_%s_k%d.png' % (v, k),
+            want.append(('seq_ocean_incr_%s_k%d' % (v, k),
                          v if flat else '%s, %s' % (v, PS.level_label(data, k))))
     for v in svars.get('ice', []):
         for h in ('nh', 'sh'):
-            want.append(('seq_ice_incr_%s_k0_%s.png' % (v, h),
+            want.append(('seq_ice_incr_%s_k0_%s' % (v, h),
                          '%s, %s' % (v, PS.HEMIS[h][0])))
-    named = {f for f, _label in want}
-    want += [(f, f[4:-4]) for f in sorted(os.listdir(figs))
-             if f.startswith('seq_') and f not in named]
-    # optional=True throughout: a configured field legitimately has no
-    # sequence when only one cycle is cached, or when no experiment writes
-    # it. figure_menu drops those empty entries and unwraps a lone survivor.
-    return figure_menu(group, 'increment sequence', [
-        (label, img(os.path.join(figs, f),
-                    'Increment across dates: %s' % label, optional=True))
-        for f, label in want])
+    named = {b for b, _label in want}
+    tagged = re.compile(r'^(seq_.+)_(\d{10})\.png$')
+    stale = sorted({m.group(1) for m in map(tagged.match, os.listdir(figs))
+                    if m and m.group(1) not in named})
+    want += [(b, b[4:]) for b in stale]
+
+    entries = []
+    for base, label in want:
+        dates = [c for c in order
+                 if os.path.exists(os.path.join(figs, '%s_%s.png' % (base, c)))]
+        dates += sorted({m.group(2) for m in map(tagged.match, os.listdir(figs))
+                         if m and m.group(1) == base and m.group(2) not in order})
+        if not dates:
+            # A configured field legitimately has no sequence when only one
+            # cycle is cached, or when no experiment writes it; figure_menu
+            # drops the empty entry and unwraps a lone survivor.
+            entries.append((label, ''))
+            continue
+        entries.append((label, picker_widget(
+            '%s-%s' % (group, P.slug(base)), dates,
+            label_fn=PS.cycle_row_label,
+            panel_fn=lambda c, base=base, label=label: img(
+                os.path.join(figs, '%s_%s.png' % (base, c)),
+                'Increment across dates: %s, %s'
+                % (label, PS.cycle_row_label(c)), optional=True),
+            dropdown='date')))
+    return figure_menu(group, 'increment sequence', entries)
 
 
 def table(headers, rows, cls=''):
@@ -506,6 +811,8 @@ SECTIONS = [
     ('06', 'verif', 'Fit to gridded analyses'),
     ('07', 'cycling', 'Cycling behaviour'),
     ('08', 'calibration', 'Ensemble calibration'),
+    ('09', 'binned', 'Binned departures'),
+    ('10', 'forcing', 'Atmospheric forcing'),
 ]
 
 
@@ -543,24 +850,73 @@ def _mean(v):
     return float(np.nanmean(v)) if np.any(np.isfinite(v)) else np.nan
 
 
+def present(data, name):
+    """Whether an experiment actually has data at this cycle.
+
+    After compute_cycle.py --rejoin every cycle lists the whole registry
+    under 'experiments', so exp_names() is no test; what says an experiment
+    was really there is a state block or an own-sample obs block of its own.
+    """
+    if name in (data.get('state') or {}):
+        return True
+    return any(name in (o.get('own') or {}) for o in data.get('obs', {}).values())
+
+
 def _cycle_set(cycles, name):
-    return {c for c in cycles if name in P.exp_names(cycles[c])}
+    return {c for c in cycles if present(cycles[c], name)}
+
+
+def latest_complete(cycles, names):
+    """The most recent cycle where EVERY experiment has data, else the most
+    recent cycle. A run's reference usually stops before the newest cycle
+    (it is fetched from an archive), and defaulting every single-date view
+    and table to the newest cycle showed an empty reference column."""
+    order = sorted(cycles)
+    for c in reversed(order):
+        if all(present(cycles[c], n) for n in names):
+            return c
+    return order[-1]
+
+
+# Set by build(): the cycle every date menu opens on.
+DEFAULT_CYCLE = None
 
 
 def build(cfg, cycles, out):
-    last = sorted(cycles)[-1]
-    data = cycles[last]
-    # The union across every cached cycle, not just exp_names() on ``last``:
-    # a config whose experiments cover disjoint cycle windows (see the
-    # caveat in experiments.yaml) has no single cycle where all of them are
-    # present, so reading the experiment list off one cycle -- even the
-    # latest -- silently drops whichever experiments do not reach that date.
+    global DEFAULT_CYCLE
+    newest = sorted(cycles)[-1]
+    # The union across every cached cycle, not just exp_names() on one:
+    # see all_exp_names(). ``last`` is the latest COMPLETE cycle -- where
+    # every experiment has data -- and is what the single-date tables and
+    # the date menus open on; ``newest`` is only reported in the masthead.
     names = P.all_exp_names(cfg, cycles)
+    last = DEFAULT_CYCLE = latest_complete(cycles, names)
+    data = cycles[last]
     labels = {e.name: e.label for e in cfg['experiments']}
     ref = cfg.get('reference') or names[0]
     others = [n for n in names if n != ref]
     col = P.color_map(names)
     figs = cfg['figs']
+
+    # Per-cycle families behind a date menu: everything the plot stages
+    # drew for more than one cycle (build_comparison.py --hours). Each view
+    # keeps its own menu so stepping through dates holds the view fixed --
+    # the comparison that matters -- and a nested region/field picker gets a
+    # per-cycle group name so its ids stay unique across the dates.
+    def dates(stem_re):
+        return rendered_cycles(figs, stem_re, cycles)
+
+    def dated(group, base, alt, optional=False):
+        """Date menu over one '<base>[_<cycle>].png' family."""
+        return cycle_menu(group, dates(re.escape(base)), lambda c: img(
+            fig_path(figs, base, c), '%s, %s' % (alt, PS.cycle_row_label(c)),
+            optional=optional))
+
+    def dated_hemi(group, base, alt, optional=False):
+        return cycle_menu(group, dates(re.escape(base) + '_nh'),
+                          lambda c: hemi_imgs(figs, base, c, '%s, %s'
+                                              % (alt, PS.cycle_row_label(c)),
+                                              optional=optional))
 
     legend = ''.join(
         '<span class="exp"><i style="background:%s"></i>%s'
@@ -659,13 +1015,27 @@ def build(cfg, cycles, out):
                 '&sigma;<sub>a</sub>/&sigma;<sub>b</sub>', 'CRPS'], rows)
 
     # -- state ---------------------------------------------------------------
+    # Averaged over every cycle each experiment has, like the obs table: a
+    # single-cycle snapshot read off the newest date showed an empty column
+    # for a reference that stops earlier, and one date is a poor summary of
+    # a cycling run anyway. The count of cycles behind each column is in
+    # the header.
     levels = cfg.get('map_levels', [0])
-    rows = []
+
+    def level_mean(key, n, realm, var, k):
+        vals = []
+        for c in cycles:
+            p = P.get(cycles[c]['state'], n, realm, key, var, default=None)
+            if p and k < len(p) and p[k] is not None:
+                vals.append(p[k])
+        return _mean(np.array(vals, dtype='f8')) if vals else np.nan, len(vals)
+
+    rows, n_incr = [], {n: 0 for n in names}
     for realm in ('ocean', 'ice'):
         for var in cfg.get('state_vars', {}).get(realm, []):
-            prof = {n: P.get(data['state'], n, realm, 'incr_rms', var,
-                             default=None) for n in names}
-            avail = [p for p in prof.values() if p]
+            avail = [P.get(cycles[c]['state'], n, realm, 'incr_rms', var,
+                           default=None) for c in cycles for n in names]
+            avail = [p for p in avail if p]
             if not avail:
                 continue
             ks = levels if max(len(p) for p in avail) > 1 else [0]
@@ -676,32 +1046,31 @@ def build(cfg, cycles, out):
                          '%d <span class="dim">%s</span>'
                          % (k, _depth_note(PS.level_depth(data, k)))]
                 for n in names:
-                    p = prof[n]
-                    cells.append(fmt(p[k], 5) if p and k < len(p) else '&mdash;')
+                    v, cnt = level_mean('incr_rms', n, realm, var, k)
+                    n_incr[n] = max(n_incr[n], cnt)
+                    cells.append(fmt(v, 5) if np.isfinite(v) else '&mdash;')
                 for n in names:
-                    r = P.get(data['state'], n, realm, 'spread_ratio', var,
-                              default=None)
-                    cells.append(fmt(r[k]) if r and k < len(r) else '&mdash;')
+                    v, _cnt = level_mean('spread_ratio', n, realm, var, k)
+                    cells.append(fmt(v) if np.isfinite(v) else '&mdash;')
                 rows.append(cells)
     t4 = table(['field', 'level']
-               + ['RMS incr %s' % n for n in names]
+               + ['RMS incr %s <span class="dim">%d cyc</span>' % (n, n_incr[n])
+                  for n in names]
                + ['&sigma;<sub>a</sub>/&sigma;<sub>b</sub> %s' % n
                   for n in names], rows)
 
-    f_increg = regional_widget('increg', cfg, figs, last,
-                               'state_increment_regions', 'RMS increment')
-    f_bkgreg = regional_widget('bkgreg', cfg, figs, last,
-                               'bkg_profiles_regions', 'background mean')
-    f_cons = img(os.path.join(figs, 'obs_consistency.png'),
-                 'Departure against the spread that should match it',
-                 optional=not has_ens)
-    f_bkgprof = img(fig_path(figs, 'bkg_profiles', last),
-                    'Background mean temperature and salinity against depth')
-    f_bkgocn = img(fig_path(figs, 'bkg_maps_ocean', last),
-                   'Ocean background state')
-    f_bkgice = hemi_imgs(figs, 'bkg_maps_ice', last, 'Sea-ice background state')
+    f_increg = cycle_menu(
+        'increg', rendered_cycles(figs, 'state_increment_regions_region_global',
+                                  cycles),
+        lambda c: regional_widget('increg-%s' % c, cfg, figs, c,
+                                  'state_increment_regions', 'RMS increment'))
+    f_cons = cycle_menu('cons', dates('obs_consistency'), lambda c: img(
+        fig_path(figs, 'obs_consistency', c),
+        'Departure against the spread that should match it, %s'
+        % PS.cycle_row_label(c), optional=not has_ens))
     drift = img(os.path.join(figs, 'cycle_background_drift.png'),
                 'Background global means across cycles')
+
 
     any_own = any(P.type_sample(cycles, t) == 'own' for t in types)
     sample_note = (
@@ -717,16 +1086,16 @@ def build(cfg, cycles, out):
         'thinning and QC. Run <code>compute_cycle.py --rejoin</code> to '
         'rebuild a true common sample where possible.')
 
-    seq_figs = sequence_widget('seq', cfg, figs, data)
+    seq_figs = sequence_widget('seq', cfg, figs, cycles)
     hov = img(os.path.join(figs, 'cycle_increment_hovmoller.png'),
               'RMS increment against depth and cycle', optional=True)
     inc2d = img(os.path.join(figs, 'cycle_increment_2d.png'),
                 '2-D field increment magnitude across cycles', optional=True)
 
-    cycle_figs = ''.join(
-        img(os.path.join(figs, 'cycle_%s.png' % t),
-            '%s: headline metrics across cycles' % P.short(t), optional=True)
-        for t in types)
+    # Behind an obs-type menu, like sections 01/02: thirty of these stacked
+    # flat put the stability block a very long scroll away.
+    cycle_figs = obstype_dropdown_widget(cycles, figs, 'cycle',
+                                         'headline metrics across cycles')
 
     ncyc = len(cycles)
     cyc_note = ('Only one cycle is cached, so these panels are dot plots. '
@@ -737,81 +1106,126 @@ def build(cfg, cycles, out):
                 '%d cycles cached.' % ncyc)
 
     subs = dict(
-        cycle=last, ncyc=ncyc,
-        cycle_list=', '.join(sorted(cycles)),
+        cycle=PS.cycle_row_label(last), newest=PS.cycle_row_label(newest),
+        ncyc=ncyc,
+        first_cycle=PS.cycle_row_label(sorted(cycles)[0]),
         nexp=len(names), ref=html.escape(ref),
         legend=legend,
         t1=t1, t2=t2, t4=t4,
-        f_departures=img(os.path.join(figs, 'obs_departures.png'),
-                         'Background and analysis fit to observations, common sample'),
-        f_spread=img(os.path.join(figs, 'obs_spread.png'),
-                     'Consistency ratio and posterior/prior spread',
-                     optional=not has_ens),
-        f_rank=img(os.path.join(figs, 'obs_rank_histograms.png'),
-                   'Rank histograms of the observation within the prior ensemble',
+        f_departures=dated('departures', 'obs_departures',
+                           'Background and analysis fit to observations, '
+                           'common sample'),
+        f_spread=dated('spread', 'obs_spread',
+                       'Consistency ratio and posterior/prior spread',
+                       optional=not has_ens),
+        f_rank=dated('rank', 'obs_rank_histograms',
+                     'Rank histograms of the observation within the prior '
+                     'ensemble', optional=not has_ens),
+        f_ss=dated('ss', 'obs_spread_skill',
+                   'Spread-skill relationship, binned by ensemble spread',
                    optional=not has_ens),
-        f_ss=img(os.path.join(figs, 'obs_spread_skill.png'),
-                 'Spread-skill relationship, binned by ensemble spread',
-                 optional=not has_ens),
-        f_prof=profiles_widget(data, cfg, figs),
+        f_prof=cycle_menu('profiles', dates('obs_profiles_region_global'),
+                          lambda c: profiles_widget(cycles[c], cfg, figs, c)),
         # only written when `ocean_basin_mask:` is configured
         f_regions=img(os.path.join(figs, 'ocean_regions.png'),
                       'Ocean basins and named regions used for every '
                       'regional breakdown in this report', optional=True),
         f_counts=counts_widget(cycles, cfg, figs),
-        f_incr=img(fig_path(figs, 'state_increment_profiles', last), 'RMS analysis increment against depth'),
-        f_sprprof=img(fig_path(figs, 'state_spread_profiles', last),
-                      'Prior and posterior ensemble spread against depth',
-                      optional=not has_ens),
-        f_sprreg=img(fig_path(figs, 'state_spread_regions', last),
-                     'Ensemble spread and spread reduction by region',
-                     optional=not has_ens),
-        f_map_ocn=img(fig_path(figs, 'state_maps_ocean_increment', last), 'Ocean analysis increment maps'),
-        f_map_spr=img(fig_path(figs, 'state_maps_ocean_spread_reduction', last),
-                      'Ocean ensemble spread reduction maps', optional=not has_ens),
-        f_map_ice=hemi_imgs(figs, 'state_maps_ice_increment', last,
-                            'Sea-ice analysis increment maps'),
-        f_ice=hemi_imgs(figs, 'state_maps_ice_spread_reduction', last,
-                        'Sea-ice ensemble spread reduction maps', optional=not has_ens),
+        f_incr=dated('incr', 'state_increment_profiles',
+                     'RMS analysis increment against depth'),
+        f_sprprof=dated('sprprof', 'state_spread_profiles',
+                        'Prior and posterior ensemble spread against depth',
+                        optional=not has_ens),
+        f_sprreg=dated('sprreg', 'state_spread_regions',
+                       'Ensemble spread and spread reduction by region',
+                       optional=not has_ens),
+        f_map_ocn=dated('mapocn', 'state_maps_ocean_increment',
+                        'Ocean analysis increment maps'),
+        f_map_spr=dated('mapspr', 'state_maps_ocean_spread_reduction',
+                        'Ocean ensemble spread reduction maps',
+                        optional=not has_ens),
+        f_map_ice=dated_hemi('mapice', 'state_maps_ice_increment',
+                             'Sea-ice analysis increment maps'),
+        f_ice=dated_hemi('icespr', 'state_maps_ice_spread_reduction',
+                         'Sea-ice ensemble spread reduction maps',
+                         optional=not has_ens),
         # only written when the post-inflation variance file is present, so
         # optional -- but reported as missing if it is, like every other figure
-        f_map_inf=img(fig_path(figs, 'state_maps_ocean_inflation', last),
-                      'Ocean applied-inflation maps', optional=True),
-        f_ice_inf=hemi_imgs(figs, 'state_maps_ice_inflation', last,
-                            'Sea-ice applied-inflation maps', optional=True),
+        f_map_inf=dated('mapinf', 'state_maps_ocean_inflation',
+                        'Ocean applied-inflation maps', optional=True),
+        f_ice_inf=dated_hemi('iceinf', 'state_maps_ice_inflation',
+                             'Sea-ice applied-inflation maps', optional=True),
+        f_corr=dated('corr', 'state_correlation_lengths',
+                     'Horizontal correlation length of the increment by '
+                     'region', optional=True),
         f_stab=img(os.path.join(figs, 'cycle_stability.png'),
                    'Cycling stability of the background fit', optional=True),
         # empty when `verification:` names no products, or none resolved to
         # a real file for any cached cycle
         f_verif=verif_widget(cycles, cfg, names, figs),
         f_obsfit=obsfit_widget(cycles, cfg, figs),
+        f_binned=binned_widget(cycles, cfg, figs),
+        f_atmos_series=regional_series_widget(
+            'atmos', cfg, figs, 'atmos_region',
+            'atmospheric forcing over the ocean against cycle'),
+        f_atmos_maps=dated('atmosmaps', 'atmos_maps',
+                           'Atmospheric forcing over the ocean', optional=True),
+        f_stability=stability_widget(cfg, figs),
+        bin_deg='%g' % float((cfg.get('obs_bins') or {}).get('deg', 1.0)),
         # fields then their difference, per product: the fields say whether
         # the model reproduces the product, the difference is where the error
-        # is actually legible
-        f_verif_maps=''.join(
-            img(fig_path(figs, 'verif_maps_%s' % p, last),
-                '%s: product beside the model background and analysis'
-                % p.upper(), optional=True)
-            + img(fig_path(figs, 'verif_diff_%s' % p, last),
-                  'Model minus %s' % p.upper(), optional=True)
-            for p in ('adt', 'sss', 'sst')),
-              f_fronts=frontal_widget(cfg, figs),
+        # is actually legible. One date menu per product.
+        f_verif_maps=figure_menu('verifmaps', 'gridded product', [
+            ('%s: fields, then model minus product' % p.upper(),
+             cycle_menu('verifmaps-%s' % p,
+                        dates(r'verif_maps_%s' % p
+                              + ('_nh' if LV.product_realm(p) == 'ice' else '')),
+                        lambda c, p=p: _verif_pair(figs, p, c)))
+            for p in LV.PRODUCTS]),
+        f_fronts=frontal_widget(cfg, figs),
         sample_note=sample_note, overlap_warning=overlap_warning,
+        sample_word='common' if not any_own else 'common (partly own)',
         cycle_figs=cycle_figs, cyc_note=cyc_note,
         seq_figs=seq_figs, hov=hov, inc2d=inc2d,
-        f_bkgprof=f_bkgprof, f_bkgocn=f_bkgocn, f_bkgice=f_bkgice,
-        f_increg=f_increg, f_bkgreg=f_bkgreg, f_cons=f_cons,
-        f_incrsec=sections_widget('incrsec', cfg, figs, last, 'incr'),
-        f_bkgsec=sections_widget('bkgsec', cfg, figs, last, 'bkg'),
-        f_woasec=sections_widget('woasec', cfg, figs, last, 'woa_bias'),
-        f_woaprof=img(fig_path(figs, 'woa_bias_profiles', last),
-                      'Background and the WOA23 climatology against depth, '
-                      'and their difference', optional=True),
-        f_woabias=img(fig_path(figs, 'woa_bias_maps_ocean', last),
-                      'Background minus the WOA23 climatology', optional=True),
-        f_woareg=regional_widget('woareg', cfg, figs, last,
-                                 'woa_bias_regions',
-                                 'background $-$ WOA23'),
+        f_increg=f_increg, f_cons=f_cons,
+        f_incrsec=cycle_menu(
+            'incrsec', dates(r'state_sections_incr_.*'),
+            lambda c: sections_widget('incrsec-%s' % c, cfg, figs, c, 'incr')),
+        f_bkgprof=cycle_menu('bkgprof', dates('bkg_profiles'), lambda c: img(
+            fig_path(figs, 'bkg_profiles', c),
+            'Background mean temperature and salinity against depth, %s'
+            % PS.cycle_row_label(c))),
+        f_bkgreg=cycle_menu(
+            'bkgreg', dates('bkg_profiles_regions_region_global'),
+            lambda c: regional_widget('bkgreg-%s' % c, cfg, figs, c,
+                                      'bkg_profiles_regions',
+                                      'background mean')),
+        f_bkgocn=cycle_menu('bkgocn', dates('bkg_maps_ocean'), lambda c: img(
+            fig_path(figs, 'bkg_maps_ocean', c),
+            'Ocean background state, %s' % PS.cycle_row_label(c))),
+        f_bkgsec=cycle_menu(
+            'bkgsec', dates(r'state_sections_bkg_.*'),
+            lambda c: sections_widget('bkgsec-%s' % c, cfg, figs, c, 'bkg')),
+        f_bkgice=cycle_menu('bkgice', dates('bkg_maps_ice_nh'), lambda c: hemi_imgs(
+            figs, 'bkg_maps_ice', c,
+            'Sea-ice background state, %s' % PS.cycle_row_label(c))),
+        f_woaprof=cycle_menu('woaprof', dates('woa_bias_profiles'), lambda c: img(
+            fig_path(figs, 'woa_bias_profiles', c),
+            'Background and the WOA23 climatology against depth, and their '
+            'difference, %s' % PS.cycle_row_label(c), optional=True)),
+        f_woareg=cycle_menu(
+            'woareg', dates('woa_bias_regions_region_global'),
+            lambda c: regional_widget('woareg-%s' % c, cfg, figs, c,
+                                      'woa_bias_regions',
+                                      'background $-$ WOA23')),
+        f_woabias=cycle_menu('woabias', dates('woa_bias_maps_ocean'), lambda c: img(
+            fig_path(figs, 'woa_bias_maps_ocean', c),
+            'Background minus the WOA23 climatology, %s'
+            % PS.cycle_row_label(c), optional=True)),
+        f_woasec=cycle_menu(
+            'woasec', dates(r'state_sections_woa_bias_.*'),
+            lambda c: sections_widget('woasec-%s' % c, cfg, figs, c,
+                                      'woa_bias')),
         drift=drift)
 
     # Group the tall blocks behind dropdowns. Stacked flat, sections 03 and
@@ -848,6 +1262,7 @@ def build(cfg, cycles, out):
     subs['m_state_maps'] = figure_menu('statemaps', 'Map view', [
         ('Ocean increment', subs['f_map_ocn']),
         ('Ocean increment sections', note(incr_sec_note, subs['f_incrsec'])),
+        ('Increment correlation lengths', subs['f_corr']),
         ('Ocean spread reduction', subs['f_map_spr']),
         ('Ocean applied inflation', subs['f_map_inf']),
         ('Sea-ice increment', subs['f_map_ice']),
@@ -995,6 +1410,14 @@ h3{font-family:var(--sans); font-weight:600; font-size:15px; margin:14px 0 0;
 .fig-scroll{overflow-x:auto}
 .fig img{display:block; max-width:100%; height:auto; margin:0 auto;
   border-radius:4px}
+.fig-zoom{display:block; cursor:zoom-in}
+/* lightbox: one <dialog> per page, filled by lvZoom() */
+#lv-zoom{padding:0; border:0; background:transparent; max-width:96vw;
+  max-height:96vh; overflow:auto; cursor:zoom-out}
+#lv-zoom::backdrop{background:rgba(8,12,18,.82)}
+#lv-zoom img{display:block; max-width:96vw; height:auto; cursor:zoom-in;
+  background:#fff; border-radius:6px}
+#lv-zoom.full img{max-width:none; cursor:zoom-out}
 figcaption{font-size:12px; color:var(--ink-3); font-family:var(--mono);
   line-height:1.45}
 
@@ -1016,7 +1439,7 @@ td:first-child,td:nth-child(2){font-family:var(--sans)}
 .dim{color:var(--ink-3); font-size:11px}
 .delta{font-size:11px; padding-left:4px}
 .delta.good{color:var(--ok)}
-.delta.bad{color:var(--alert)}
+.delta.bad, .bad{color:var(--alert); font-weight:600}
 .delta.flat{color:var(--ink-3)}
 .chip-good{color:var(--ok); font-weight:500}
 .chip-flat{color:var(--ink-2)}
@@ -1053,9 +1476,13 @@ td:first-child,td:nth-child(2){font-family:var(--sans)}
 /* dropdown chooser (picker_widget(dropdown=...)) -- JS (see lvPickerShow)
    swaps .picker-panel visibility on change; .default is this mode's only
    static starting state, since there is no :checked to key a CSS rule off */
-.picker-select{flex:1 0 100%; font:inherit; font-size:13px; padding:7px 12px;
+.picker-row{flex:1 0 100%; display:flex; align-items:center; gap:10px}
+.picker-label{font-family:var(--mono); font-size:11.5px; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--ink-3); white-space:nowrap;
+  min-width:9ch}
+.picker-select{flex:1 1 auto; font:inherit; font-size:13px; padding:7px 12px;
   border-radius:8px; border:1.5px solid var(--rule); background:var(--surface);
-  color:var(--ink); cursor:pointer; max-width:100%}
+  color:var(--ink); cursor:pointer; max-width:100%; min-width:0}
 .picker-select:hover{border-color:var(--accent)}
 .picker-select:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
 .picker-panel.default{display:block}
@@ -1084,15 +1511,36 @@ a{color:var(--accent)}
 """
 
 HEAD = STYLE + r"""
+<dialog id="lv-zoom"><img alt=""></dialog>
+<script>
+function lvZoom(a){
+  var d=document.getElementById('lv-zoom');
+  if(!d||!d.showModal){return true}          /* no <dialog>: follow the link */
+  var im=d.querySelector('img');
+  im.src=a.href; im.alt=a.querySelector('img').alt; d.classList.remove('full');
+  d.showModal(); d.scrollTop=0; d.scrollLeft=0;
+  return false;
+}
+document.addEventListener('DOMContentLoaded',function(){
+  var d=document.getElementById('lv-zoom'); if(!d){return}
+  var im=d.querySelector('img');
+  im.addEventListener('click',function(e){d.classList.toggle('full');
+    e.stopPropagation()});                   /* fit <-> native pixels */
+  d.addEventListener('click',function(){d.close()});   /* outside the image */
+  d.addEventListener('close',function(){im.src=''});
+});
+</script>
 <div class="wrap">
 
 <header class="mast">
   <span class="eyebrow">Marine data assimilation &middot; verification</span>
   <h1>Marine analysis verification</h1>
   <p class="sub">Every number below is computed from the analysis output of
-  ${nexp} experiments. ${sample_note}</p>
+  ${nexp} experiments, scored on the ${sample_word} sample &mdash; see
+  section 01 for what that means.</p>
   <div class="meta">
-    <span>cycle <b>${cycle}</b></span>
+    <span>latest complete cycle <b>${cycle}</b></span>
+    <span>newest cached <b>${newest}</b></span>
     <span>cached cycles <b>${ncyc}</b></span>
     <span>reference <b>${ref}</b></span>
   </div>
@@ -1115,6 +1563,7 @@ SEC_FIT = r"""
   &radic;(&sigma;<sub>b</sub><sup>2</sup>&nbsp;+&nbsp;R<sup>2</sup>), the value
   it should equal when the ensemble and the assigned observation error are
   consistent, with those two contributions drawn behind it.</p>
+  <p class="lede">${sample_note}</p>
   ${f_regions}
   ${overlap_warning}
   ${t1}
@@ -1183,6 +1632,11 @@ SEC_BACKGROUND = r"""
   climatology for this day of year on the same scale &mdash; a reference for
   the shape of the state, not another experiment. Section 06 carries the
   departure from it, and the caveats that go with a climatology.</p>
+  <p class="lede">Each view carries a <b>cycle menu</b> over every date it was
+  drawn for &mdash; the 00z cycles plus the latest by default
+  (<code>build_comparison.py --hours</code>) &mdash; opening on the most
+  recent. The colour scales are fixed by <code>map_limits:</code>, so the
+  state is comparable from one date to the next.</p>
   ${m_bkg}
 </section>
 """
@@ -1194,9 +1648,10 @@ SEC_DATES = r"""
   <p class="lede">The same fields at every cached cycle. A configuration that is
   behaving puts its increments in similar places each cycle; a pattern that
   wanders, or grows, is the signature the single-date maps in section 03 cannot
-  show. The depth&ndash;cycle panels cover every cycle; the map sequences are
-  subsampled evenly when there are many. Every field in <code>state_vars:</code>
-  gets a sequence &mdash; pick one from the menu below.</p>
+  show. The depth&ndash;cycle panels cover every cycle. Every field in
+  <code>state_vars:</code> gets a map per cycle &mdash; pick the field, then the
+  date; every date of one field shares one colour scale, so step through them
+  and the increment is comparable from one to the next.</p>
   ${hov}
   ${inc2d}
   ${seq_figs}
@@ -1209,8 +1664,9 @@ SEC_VERIF = r"""
     <h2>Fit to gridded analyses</h2></div>
   <p class="lede">Every other section scores this system against its own
   observations or against itself. This one scores the surface state against
-  three daily L4 products produced outside it: sea surface height against CMEMS
-  ADT, salinity against CMEMS SSS, and temperature against OSTIA. Both the
+  daily L4 products produced outside it: sea surface height against CMEMS
+  ADT, salinity against CMEMS SSS, temperature against OSTIA, and sea-ice
+  concentration against OSTIA&rsquo;s own ice field. Both the
   background and the analysis are scored, so the bar pairs show whether the
   analysis step moved the state toward the independent product or away from it.
   The <b>analysis</b> here is the background plus the increment: the DA writes
@@ -1226,7 +1682,9 @@ SEC_VERIF = r"""
   difference, so what the model got right is as visible as what it got wrong
   &mdash; and each is followed by the difference, where the error is legible
   at all. At global scale a 0.45&nbsp;&deg;C error vanishes against a
-  0&ndash;30&nbsp;&deg;C ramp, so the two are read together.</p>
+  0&ndash;30&nbsp;&deg;C ramp, so the two are read together. Pick the product,
+  then the cycle: the maps exist for every date the background views in
+  section 04 do.</p>
   ${f_verif}
   ${f_verif_maps}
   ${f_fronts}
@@ -1244,9 +1702,11 @@ SEC_CYCLING = r"""
     <h2>Cycling behaviour</h2></div>
   <p class="lede">${cyc_note} Slow drift is the failure mode a single cycle
   cannot reveal, and the one that most often decides whether a configuration is
-  usable.</p>
+  usable. Pick an observation type for its headline metrics against cycle;
+  the SSH stability diagnostics follow.</p>
   ${f_stab}
   ${cycle_figs}
+  ${f_stability}
 </section>
 """
 
@@ -1268,8 +1728,57 @@ SEC_CALIBRATION = r"""
 </section>
 """
 
+SEC_BINNED = r"""
+<section>
+  <div class="sec-head"><span class="sec-n">09</span>
+    <h2>Binned departures</h2></div>
+  <p class="lede">Where each system fits its observations, not just how well.
+  Every observation on the common sample is binned on a
+  ${bin_deg}&deg; grid: the count, mean and RMS of O&minus;B and O&minus;A,
+  the <b>assigned</b> observation error and the <b>effective</b> one (what
+  the analysis actually weighted with, after QC and any inflation), and
+  RMS(O&minus;B) over each &mdash; the ratio that should sit near 1 if the
+  error is right, and reads below 1 where the error is slack and above 1
+  where the background is worse than the error budget allows. Profile types
+  get the same on depth
+  &times; latitude. The <b>regression</b> view puts observation against the
+  model at the observation points, background and analysis, as a density
+  with the least-squares line: a slope below 1 at high correlation is a
+  system damping the signal it assimilates; an analysis line closer to 1:1
+  than the background is the update working. Pick the obs type, the view,
+  then the date &mdash; <b>all cycles</b> pools every cached cycle, and
+  every date of one type shares its colour scale.</p>
+  ${f_binned}
+</section>
+"""
+
+SEC_FORCING = r"""
+<section>
+  <div class="sec-head"><span class="sec-n">10</span>
+    <h2>Atmospheric forcing</h2></div>
+  <p class="lede">What drove the ocean and ice backgrounds. Each experiment
+  here is a coupled run with its own atmosphere, so part of any difference
+  between their backgrounds is a difference in forcing rather than in the
+  analysis &mdash; and the ocean state feeds back on the winds and fluxes
+  above it. The fields are the coupled atmosphere&rsquo;s surface history at
+  the same f006 the ocean background is: 10&nbsp;m wind speed, wind stress,
+  net surface heat flux into the ocean (SW&nbsp;+&nbsp;LW&nbsp;&minus;&nbsp;LH
+  &minus;&nbsp;SH), precipitation and 2&nbsp;m air temperature, over ocean
+  points only. The fluxes are the model&rsquo;s averages over the 6&nbsp;h
+  ending at the analysis time, so a single map of the heat flux is mostly
+  the diurnal cycle at that hour &mdash; compare maps at the same hour, and
+  read the daily mean off the time series, which carry every cycle. The
+  time series are area means by region; the maps are per cycle on fixed
+  scales. An experiment that keeps no atmosphere history
+  (3dvar-rt archives its restarts only) has no panels here.</p>
+  ${f_atmos_series}
+  ${f_atmos_maps}
+</section>
+"""
+
 SECTION_TEMPLATES = [SEC_FIT, SEC_USAGE, SEC_STATE, SEC_BACKGROUND, SEC_DATES,
-                     SEC_VERIF, SEC_CYCLING, SEC_CALIBRATION]
+                     SEC_VERIF, SEC_CYCLING, SEC_CALIBRATION, SEC_BINNED,
+                     SEC_FORCING]
 
 TAIL = r"""
 <section>
@@ -1295,11 +1804,11 @@ TAIL = r"""
 </section>
 
 <footer>
-  Generated by <code>tools/letkf_verif/build_report.py</code> from
-  <code>cache/${cycle}.json</code> &middot; cycles: ${cycle_list}<br>
-  Regenerate with <code>compute_cycle.py &amp;&amp; plot_obsspace.py &amp;&amp;
-  plot_statespace.py &amp;&amp; plot_timeseries.py &amp;&amp; scorecard.py
-  &amp;&amp; build_report.py</code>
+  Generated by <code>letkf_verif/build_report.py</code> from
+  <code>cache/&lt;cycle&gt;.json</code> &middot; ${ncyc} cycles,
+  ${first_cycle} to ${newest}<br>
+  Regenerate with <code>build_comparison.py</code> (rejoin, figures,
+  scorecard, report)
 </footer>
 
 </div>
@@ -1321,6 +1830,10 @@ def main(argv=None):
                     help='extra cache directory to read and merge (repeatable); '
                          'the first is where new results are written')
     ap.add_argument('--out', default=None)
+    ap.add_argument('--embed', action='store_true',
+                    help='inline every figure as base64 instead of linking '
+                         'it from the figures directory (single-file pages, '
+                         'tens of MB each)')
     a = ap.parse_args(argv)
     a.config = a.config or a.config_opt
     cfg = load_config(a.config, a.root, a.outdir, a.cache)
@@ -1328,7 +1841,19 @@ def main(argv=None):
     out = a.out or cfg['report']
     # The output directory is the user's, not the code's, so it may not
     # exist yet.
-    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    page_dir = os.path.dirname(os.path.abspath(out))
+    os.makedirs(page_dir, exist_ok=True)
+    global EMBED, FIG_REL
+    EMBED = a.embed
+    # Pages link figures relative to their own directory; the tarball keeps
+    # the same layout so the links hold once it is unpacked. A figures
+    # directory outside the page directory is linked by absolute path and
+    # still packed under figs/ -- the pages then only work from the tar.
+    FIG_REL = os.path.relpath(cfg['figs'], page_dir).replace(os.sep, '/')
+    if FIG_REL.startswith('..'):
+        print('  i figures live outside the page directory (%s); pages link '
+              'them by absolute path' % cfg['figs'])
+        FIG_REL = cfg['figs']
     pages = build(cfg, cycles, out)
     over = []
     for path, content in pages:
@@ -1339,21 +1864,28 @@ def main(argv=None):
         if size > WARN_SIZE_MB:
             over.append((path, size))
 
-    # One tarball of every report page, for handing the whole thing off in
-    # one file -- the report is 8 separate HTML pages so nav between
-    # sections works, but that also means "send me the report" needs all 8.
-    page_dir = os.path.dirname(os.path.abspath(out))
+    # One tarball of every report page plus every figure a page links, for
+    # handing the whole thing off in one file -- the report is 8 separate
+    # HTML pages so nav between sections works, and the figures are linked
+    # rather than embedded, so "send me the report" needs all of it.
     html_files = sorted(f for f in os.listdir(page_dir) if f.endswith('.html'))
+    packed = {os.path.abspath(p): rel for p, rel in _USED.items()}
+    if FIG_REL == cfg['figs']:            # absolute links: pack under figs/
+        packed = {p: 'figs/%s' % os.path.basename(p) for p in packed}
+    print('%d pages link %d figures (%.0f MB) under %s'
+          % (len(html_files), len(packed),
+             sum(os.path.getsize(p) for p in packed) / 1e6, page_dir))
     tar_path = os.path.join(
         page_dir, os.path.splitext(os.path.basename(out))[0] + '.tar')
     with tarfile.open(tar_path, 'w') as tf:
         for f in html_files:
             tf.add(os.path.join(page_dir, f), arcname=f)
-    print('wrote %s (%d files)' % (tar_path, len(html_files)))
+        for p, rel in sorted(packed.items()):
+            tf.add(p, arcname=rel)
+    print('wrote %s (%.0f MB)' % (tar_path, os.path.getsize(tar_path) / 1e6))
 
     if over:
-        # Every figure is embedded as base64, so a page grows with the number
-        # of FIELDS and REGIONS on it rather than with the number of cycles.
+        # Only reachable with --embed: a linked page is a few hundred KB.
         # Noted here rather than discovered at publish time -- but the pages
         # below were written in full, and nothing about them was reduced.
         print('  i %d page(s) over %.0f MB. Written in full and fine to view '

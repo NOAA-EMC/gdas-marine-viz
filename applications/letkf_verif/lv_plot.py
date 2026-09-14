@@ -296,6 +296,21 @@ def load_maps(cfg, cycle):
     return out or None
 
 
+def load_obsbins(cfg, cycle):
+    """The cycle's binned departures ('<cycle>_obsbins.npz'), merged across
+    caches the way load_maps() merges the map files: the first cache that
+    has a key wins, and the page cache comes first, so a rejoined common
+    sample overrides a per-experiment own sample."""
+    out = _Maps()
+    for root in cfg.get('caches', [cfg['cache']]):
+        p = os.path.join(root, '%s_obsbins.npz' % cycle)
+        if os.path.exists(p):
+            with np.load(p) as z:
+                for k in z.files:
+                    out.setdefault(k, z[k])
+    return out or None
+
+
 def exp_names(data):
     """Experiment names in registry order, as stored in the cache."""
     return list(data['experiments'].keys())

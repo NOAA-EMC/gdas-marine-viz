@@ -1,0 +1,263 @@
+grid: lv_grid.nc
+
+reference: 3dvar-rt    # the pre-existing 3DVar realtime baseline
+
+cycles:
+  - 2025121300
+  - 2025121306
+  - 2025121312
+  - 2025121318
+  - 2025121400
+  - 2025121406
+  - 2025121412
+  - 2025121418
+  - 2025121500
+  - 2025121506
+  - 2025121512
+  - 2025121518
+  - 2025121600
+  - 2025121606
+  - 2025121612
+  - 2025121618
+  - 2025121700
+  - 2025121706
+  - 2025121712
+  - 2025121718
+  - 2025121800
+  - 2025121806
+  - 2025121812
+  - 2025121818
+  - 2025121900
+  - 2025121906
+  - 2025121912
+  - 2025121918
+  - 2025122000
+  - 2025122006
+  - 2025122012
+  - 2025122018
+  - 2025122100
+  - 2025122106
+  - 2025122112
+  - 2025122118
+  - 2025122200
+  - 2025122206
+  - 2025122212
+  - 2025122218
+  - 2025122300
+  - 2025122306
+  - 2025122312
+  - 2025122318
+  - 2025122400
+  - 2025122406
+  - 2025122412
+  - 2025122418
+  - 2025122500
+  - 2025122506
+  - 2025122512
+  - 2025122518
+  - 2025122600
+  - 2025122606
+  - 2025122612
+  - 2025122618
+  - 2025122700
+  - 2025122706
+  - 2025122712
+  - 2025122718
+  - 2025122800
+  - 2025122806
+  - 2025122812
+  - 2025122818
+  - 2025122900
+  - 2025122906
+  - 2025122912
+  - 2025122918
+  - 2025123000
+  - 2025123006
+  - 2025123012
+  - 2025123018
+  - 2025123100
+  - 2025123106
+  - 2025123112
+  - 2025123118
+  - 2026010100
+  - 2026010106
+  - 2026010112
+  - 2026010118
+  - 2026010200
+  - 2026010206
+  - 2026010212
+  - 2026010218
+  - 2026010300
+  - 2026010306
+  - 2026010312
+  - 2026010318
+  - 2026010400
+  - 2026010406
+  - 2026010412
+  - 2026010418
+  - 2026010500
+
+experiments:
+#  - name:  cp06.torchbalance
+#    label: cp06.torchbalance
+#    kind:  var
+#    root:  /scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfs-dev/cp06.torchbalance/COMROOT/cp06.torchbalance
+#    stem:  "gdas.{Ymd}/{HH}/analysis"
+#    analysis_pattern: "*jedi_analysis*.nc"
+#
+#  - name:  cp06.torchbalance.1
+#    label: cp06.torchbalance.1
+#    kind:  var
+#    root:  /scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfs-dev/cp06.torchbalance.1/COMROOT/cp06.torchbalance.1
+#    stem:  "gdas.{Ymd}/{HH}/analysis"
+#    analysis_pattern: "*jedi_analysis*.nc"
+#
+#  - name:  cp06.torchbalance.2
+#    label: cp06.torchbalance.2
+#    kind:  var
+#    root:  /scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfs-dev/cp06.torchbalance.2/COMROOT/cp06.torchbalance.2
+#    stem:  "gdas.{Ymd}/{HH}/analysis"
+#    analysis_pattern: "*jedi_analysis*.nc"
+
+  - name:  cp06.torchbalance.3
+    label: cp06.torchbalance.3
+    kind:  var
+    root:  /scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfs-dev/cp06.torchbalance.3/COMROOT/cp06.torchbalance.3
+    stem:  "gdas.{Ymd}/{HH}/analysis"
+    analysis_pattern: "*jedi_analysis*.nc"
+
+  - name:  3dvar-rt
+    label: 3dvar-rt
+    kind:  var
+    root:  /scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfs-dev/3dvar-rt
+    stem:  "{YYYYMMDDHH}/gdas.{Ymd}/{HH}/analysis"
+    increment_pattern: ["*jedi_increment*.nc", "*ocn.incr.nc"]   # same name switch as the analysis
+    # the archive switched names on 2025-12-18: *ocn.ana.nc before, *jedi_analysis* after
+    analysis_pattern: ["*jedi_analysis*.nc", "*ocn.ana.nc"]
+    background:
+      stem: "{YYYYMMDDHH}/gdas.{Ymd}/{HH}/model/{realm}/history"
+
+  #- name:  letkf3
+  #  label: letkf3
+  #  kind:  letkf
+  #  root:  /scratch3/NCEPDEV/da/Anna.Shlyaeva/runs/letkf3/COMROOT/letkf3
+  #  stem:  "enkfgdas.{Ymd}/{HH}/ensstat/analysis"
+
+state_vars:
+  ocean: [Temp, Salt, ave_ssh]
+  ice:   [aice_h, hi_div_aice_h, hs_div_aice_h]
+
+background_vars:
+  ocean: [Temp, Salt, ave_ssh, MLD, speed]
+  ice:   [aice_h, hi_div_aice_h, hs_div_aice_h]
+
+verification:
+  products:
+    adt: /scratch3/NCEPDEV/da/common/validation/copernicus_adt
+    sss: /scratch3/NCEPDEV/da/common/validation/copernicus_sss
+    sst: /scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfs-dev/monitor/ostia_raw
+    icec: /scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfs-dev/monitor/ostia_raw   # OSTIA sea_ice_fraction vs aice_h
+
+# Regional frontal-current diagnostic, staged into `figs/` by
+# build_comparison.py.  `strong_speed_mps` is one absolute geostrophic-speed
+# threshold per region, applied identically to Copernicus and every experiment:
+# it makes locations and strength comparable without forcing broad or branching
+# flows into an artificial single axis.  Axis metrics remain only where one
+# coherent jet is defensible.
+frontal_analysis:
+  enabled: true
+  adt_product: adt
+  regions:
+    # The frontal-grid reader is intentionally limited to 60S–60N, where the
+    # separable model-grid and geostrophic approximation are well behaved.
+    - {name: Global, lon: [-179.875, 179.875], lat: [-60, 60], strong_speed_mps: 0.20}
+    - {name: Loop Current, lon: [-98, -80], lat: [18, 31], strong_speed_mps: 0.30}
+    - {name: Gulf Stream, lon: [-98, -50], lat: [10, 45], kind: zonal, sign: 1, strong_speed_mps: 0.40, axis_diagnostic: true}
+    - {name: Labrador + North Atlantic Cur., lon: [-65, -15], lat: [40, 67], kind: zonal, sign: 1, strong_speed_mps: 0.20}
+    - {name: Brazil-Malvinas Currents, lon: [-65, -35], lat: [-50, -15], kind: merid, strong_speed_mps: 0.35}
+    - {name: Agulhas System, lon: [5, 70], lat: [-46, -27], kind: zonal, sign: 1, strong_speed_mps: 0.25, axis_diagnostic: true}
+    - {name: ACC / SAF Indian, lon: [60, 120], lat: [-52, -40], kind: zonal, sign: 1, strong_speed_mps: 0.20}
+    - {name: Kuroshio, lon: [100, 180], lat: [15, 45], kind: zonal, sign: 1, strong_speed_mps: 0.40, axis_diagnostic: true}
+    - {name: East Australian, lon: [140, 170], lat: [-47, -15], kind: merid, sign: -1, strong_speed_mps: 0.35}
+    - {name: ACC / Drake-Scotia, lon: [-80, -10], lat: [-65, -42], kind: zonal, sign: 1, strong_speed_mps: 0.20}
+
+
+map_levels: [0, 10, 30]
+map_stride: 2
+
+# Vertical sections of the increment and the background
+sections:
+  zonal:      [-50, -25, -5, 0, 5, 25, 50]
+  meridional: [-120, -40, 20, 160]
+  depth_views: [500, 1000, full]
+
+# WOA23 climatology, compared against the ocean background. NOT a same-day
+# analysis like the `verification:` products above -- it is the 1955-2022
+# decadal mean, interpolated to the cycle's day of year between the two
+# mid-month fields bracketing it, monthly to 1500 m and annual below. So
+# "model minus WOA" carries the real interannual anomaly as well as any model
+# error: read it for structure, not as a score.
+#
+# WOA distributes IN-SITU temperature and this model writes POTENTIAL
+# temperature, so the temperature is converted (EOS-80) before differencing --
+# the two differ by 0.35 degC at 4000 m, which would otherwise dominate the
+# deep bias. Salinity is practical in both and needs nothing.
+woa:
+  path: /scratch3/NCEPDEV/da/Guillaume.Vernieres/data/woa/woa23
+  # pattern: 'woa23_decav_{v}{mm}_{res}.nc'   # defaults, shown for reference
+  # res: '04'
+  # splice_depth: 1500
+  # potential_temperature: true
+  # sections: true      # the expensive half; false halves the WOA runtime
+
+ocean_basin_mask: /scratch3/NCEPDEV/da/Guillaume.Vernieres/common/monitor_rt/sfc-verif/R2-shared-resources/data/regions/RECCAP2_region_masks_all.nc
+
+# Fixed color-scale bounds for the state maps
+map_limits:
+  ocean:
+    Temp_k0:      [-2, 30]     # surface, degC
+    Temp_k10:     [-2, 30]     # was [-2, 22]: clipped 26% of the field
+    Temp_k30:     [-2, 29]     # was [-2, 12]: clipped 41% of the field
+    Salt_k0:      [29, 37.5]   # psu; plumes below 29 saturate deliberately
+    Salt_k10:     [29, 37.5]   # was [33, 37]: clipped 16% at the low end
+    Salt_k30:     [32, 37.5]   # was [33, 36]: clipped 13% across both ends
+    ave_ssh_k0:   [-2, 0.9]    # m; was [-1.8, 1.2], 8.5% low and 1.2 unused
+    MLD_k0:       [0, 300]     # m; skewed, so this still saturates ~1.5%
+    speed_k0:     [0, 1.2]     # m/s; 1.5 wasted half the ramp (99th is 0.83)
+    speed_k10:    [0, 1.0]
+    speed_k30:    [0, 0.6]
+  ice:
+    aice_h_k0:          [0, 1]                         # fraction, physical
+    hi_div_aice_h_k0:   {nh: [0, 4.5], sh: [0, 2]}     # m
+    hs_div_aice_h_k0:   {nh: [0, 0.4], sh: [0, 0.6]}   # m
+  increment:            # symmetric, +/- this value
+    ocean:
+      Temp_k0:    1.5
+      Salt_k0:    0.5
+      ave_ssh_k0: 0.2
+    ice:
+      aice_h_k0:  0.1
+      hi_div_aice_h_k0: 0.5
+      hs_div_aice_h_k0: 0.1
+
+  # Vertical sections
+  sections:
+    ocean:
+      Temp:     [-2, 30]
+      Salt:     [30, 37.5]
+      speed:    [0, 1.2]
+    increment:
+      ocean:
+        Temp:   0.5
+        Salt:   0.1
+
+# Small boxes kept only for corr_regions (see ocean_basin_mask above) -- not
+# part of the general regional breakdown, which now comes from the basins.
+regions:
+  - {name: N_Atlantic, lat0:  30, lat1:  60, lon0: -70,  lon1: -10}
+  - {name: E_Pacific,  lat0: -10, lat1:  10, lon0: -140, lon1: -100}
+  - {name: S_Ocean,    lat0: -60, lat1: -40, lon0:   0,  lon1:  40}
+  - {name: Kuroshio,   lat0:  25, lat1:  45, lon0: 140,  lon1: 180}
+corr_regions: [N_Atlantic, E_Pacific, S_Ocean, Kuroshio]
+
+depth_bins: [0, 10, 50, 100, 300, 700, 2000, 6000]
