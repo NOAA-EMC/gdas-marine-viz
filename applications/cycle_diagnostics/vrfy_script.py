@@ -92,7 +92,7 @@ configs = []
 if plot_analysis:
     print('Plotting analysis')
     configs_ana = [plotConfig(grid_file=grid_file,
-                              data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.ocnana.nc'),
+                              data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.ocn.ana.nc'),
                               variables_horiz={
                                   'ave_ssh': [-1.8, 1.3],
                                   'Temp': [-1.8, 34.0],
@@ -100,7 +100,7 @@ if plot_analysis:
                               colormap='nipy_spectral',
                               vrfyout=os.path.join(vrfyout, 'vrfy', 'ana')),   # ocean surface analysis
                    plotConfig(grid_file=grid_file,
-                              data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.iceana.nc'),
+                              data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.ice.ana.nc'),
                               variables_horiz={'aice_h': [0.0, 1.0],
                                                'hi_h': [0.0, 4.0],
                                                'hs_h': [0.0, 0.5]},
@@ -379,6 +379,7 @@ if plot_increment:
                               projs=['North', 'South'],
                               vrfyout=os.path.join(vrfyout,
                                                    'vrfy', 'incr.postproc'))]   # sea ice increment after postprocessing
+
     configs.extend(config_incr)
 
 
