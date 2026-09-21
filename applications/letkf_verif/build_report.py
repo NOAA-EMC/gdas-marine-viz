@@ -728,6 +728,10 @@ def sequence_widget(group, cfg, figs, cycles):
     lists every date that has the figure, oldest first, and shows one at a
     time. Any seq_ file the config no longer names is still appended rather
     than silently dropped, so a stale figure is visible instead of invisible.
+    The '_all' figure -- the mean over every cached cycle, on its own
+    colour scale -- heads the date menu and is the default, as for the
+    binned departures: the systematic increment is the first thing to look
+    at, the dates are how it came about.
     """
     order = sorted(cycles)
     data = cycles[order[-1]]
@@ -755,6 +759,8 @@ def sequence_widget(group, cfg, figs, cycles):
                  if os.path.exists(os.path.join(figs, '%s_%s.png' % (base, c)))]
         dates += sorted({m.group(2) for m in map(tagged.match, os.listdir(figs))
                          if m and m.group(1) == base and m.group(2) not in order})
+        if os.path.exists(os.path.join(figs, '%s_all.png' % base)):
+            dates.insert(0, 'all')
         if not dates:
             # A configured field legitimately has no sequence when only one
             # cycle is cached, or when no experiment writes it; figure_menu
@@ -763,12 +769,14 @@ def sequence_widget(group, cfg, figs, cycles):
             continue
         entries.append((label, picker_widget(
             '%s-%s' % (group, P.slug(base)), dates,
-            label_fn=PS.cycle_row_label,
+            label_fn=lambda c: ('mean over all cycles' if c == 'all'
+                                else PS.cycle_row_label(c)),
             panel_fn=lambda c, base=base, label=label: img(
                 os.path.join(figs, '%s_%s.png' % (base, c)),
                 'Increment across dates: %s, %s'
-                % (label, PS.cycle_row_label(c)), optional=True),
-            dropdown='date')))
+                % (label, 'mean over every cached cycle' if c == 'all'
+                   else PS.cycle_row_label(c)), optional=True),
+            dropdown='date', default='all' if dates[0] == 'all' else None)))
     return figure_menu(group, 'increment sequence', entries)
 
 
@@ -1914,7 +1922,12 @@ SEC_DATES = r"""
   show. The depth&ndash;cycle panels cover every cycle. Every field in
   <code>state_vars:</code> gets a map per cycle &mdash; pick the field, then the
   date; every date of one field shares one colour scale, so step through them
-  and the increment is comparable from one to the next.</p>
+  and the increment is comparable from one to the next. The menu opens on the
+  <b>mean over every cached cycle</b>: what averages away is the day-to-day
+  correction, what remains is the systematic one &mdash; the bias the DA
+  pushes against cycle after cycle. That mean is several times smaller than
+  a single increment (tens of times for SSH and salinity), so it is drawn on
+  its own scale; the per-date scale is quoted in its title.</p>
   ${hov}
   <p class="lede">The same depth&ndash;cycle view for the <b>signed,
   area-weighted mean</b> of the increment, by region. The RMS above says how

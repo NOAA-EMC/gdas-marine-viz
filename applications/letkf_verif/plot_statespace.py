@@ -1770,9 +1770,12 @@ def sequence_plan(cycles, cfg, grid, kind='incr'):
     of being renormalised away. Pooling is what forces this pre-pass: the
     per-cycle workers that draw the figures afterwards must all agree on it.
     Each cycle's npz is loaded exactly once here (it used to be once per
-    field, 13x over).
+    field, 13x over), so the same pass also accumulates the mean increment
+    over every cycle, per experiment, for render_sequence_pooled(): the
+    systematic part of the increment, which no single date shows.
 
-    Returns (stride, {(realm, field): {view suffix: (vmin, vmax, cmap)}}).
+    Returns (stride, {(realm, field): {view suffix: (vmin, vmax, cmap)}},
+             {(realm, field): (n cycles, [mean field per experiment])}).
     """
     order = sorted(cycles)
     names = P.exp_names(cycles[order[-1]])
@@ -1780,6 +1783,7 @@ def sequence_plan(cycles, cfg, grid, kind='incr'):
     stride = None
     present = {rf: 0 for rf in seq}
     pooled = {}                      # (realm, field, suffix) -> [abs values]
+    acc = {}                         # (realm, field) -> [(sum, count) per exp]
     need = {}                        # (realm, field, suffix) -> latcut
     fixed_lim = {}                   # (realm, field, suffix) -> configured
     for realm, field in seq:
@@ -1809,6 +1813,19 @@ def sequence_plan(cycles, cfg, grid, kind='incr'):
             if not fields:
                 continue
             present[(realm, field)] += 1
+            # running sum / count per experiment; a masked or missing point
+            # on one date is left out of the mean rather than zeroing it
+            slots = acc.setdefault((realm, field), [None] * len(names))
+            for i, n in enumerate(names):
+                if '%s/%s' % (n, key) not in m.files:
+                    continue
+                x = m['%s/%s' % (n, key)]
+                ok = np.isfinite(x)
+                if slots[i] is None:
+                    slots[i] = (np.where(ok, x, 0.0), ok.astype(np.int32))
+                else:
+                    slots[i][0][ok] += x[ok]
+                    slots[i][1][ok] += 1
             for (r, f, suffix), latcut in need.items():
                 if (r, f) != (realm, field):
                     continue
@@ -1851,7 +1868,73 @@ def sequence_plan(cycles, cfg, grid, kind='incr'):
                 continue
             per_view[view[0]] = (-lim, lim, P.DIVERGING)
         limits[(realm, field)] = per_view
-    return stride, limits
+    means = {}
+    for rf, slots in acc.items():
+        if rf not in limits:
+            continue
+        with np.errstate(invalid='ignore', divide='ignore'):
+            means[rf] = (present[rf], [
+                None if sc is None else
+                np.where(sc[1] > 0, sc[0] / np.maximum(sc[1], 1), np.nan)
+                for sc in slots])
+    return stride, limits, means
+
+
+def render_sequence_pooled(cycles, cfg, grid, stride, limits, means,
+                           kind='incr', fresh=None):
+    """The mean increment over every cached cycle, one figure per field,
+    tagged '_all' like plot_obsbins.py's pooled departures:
+    'seq_<realm>_<kind>_<field>[_<hemi>]_all.png'.
+
+    What stands out is the part of the increment that does not average
+    away -- the systematic correction the DA applies cycle after cycle, i.e.
+    the model bias it is fighting or the observation bias it is importing.
+    That is small next to a typical increment (4x for surface temperature,
+    40-70x for SSH and salinity against their configured map_limits, over
+    73 cycles of the reference comparison), so on the per-date colour scale
+    the SSH mean drew a blank panel. The figure therefore gets its own
+    scale: the 99th percentile of |mean| pooled over the experiments shown,
+    so the columns stay comparable to each other; the per-date scale is
+    printed in the title so the reader knows the ratio.
+    """
+    global TAG
+    key = 'seq:all'
+    inputs = sorted({p for c in cycles for p in cycle_inputs(cfg, c)}) + [__file__]
+    params = {'cycles': len(cycles), 'scale': 'own-p99'}
+    if fresh and fresh.ok(key, inputs, params):
+        return []
+    names = P.exp_names(cycles[sorted(cycles)[-1]])
+    data = cycles[sorted(cycles)[-1]]
+    what = ('mean increment' if kind == 'incr'
+            else r'mean spread reduction $1-\sigma_a/\sigma_b$')
+    written = []
+    TAG = '_all'
+    for (realm, field), (n, fields) in means.items():
+        if not any(f is not None for f in fields):
+            continue
+        label = _map_row_label(data, field).replace('\n', ' ')
+        for view in views_for(realm):
+            sl = _hemi_slice(grid, stride, view[4])
+            vals = [np.abs(f[sl][np.isfinite(f[sl])])
+                    for f in fields if f is not None]
+            vals = [v for v in vals if v.size]
+            lim = float(np.percentile(np.concatenate(vals), 99.0)) if vals else 0
+            if not lim > 0:
+                continue
+            per_date = limits[(realm, field)][view[0]][1]
+            title = ('%s %s - %s, over %d cycles  (own scale; per-date scale '
+                     'is %s%.3g)' % (label, what, realm, n,
+                                     '\u00b1' if kind == 'incr' else '', per_date))
+            out = map_grid(cfg, grid, [('all', fields)], names, title,
+                           'seq_%s_%s_%s.png' % (realm, kind, field),
+                           view, limits={'all': (-lim, lim, P.DIVERGING)},
+                           row_label=lambda _k, n=n: 'mean of\n%d cycles' % n)
+            if out:
+                written.append(out)
+    TAG = ''
+    if fresh:
+        fresh.record(key, inputs, params, written)
+    return written
 
 
 def render_sequence_cycle(cycle, cycles, cfg, grid, stride, limits,
@@ -2129,12 +2212,12 @@ def main(argv=None):
         extra = [c for c in daily_product_cycles(cycles) if c not in todo]
         tasks += [('cycle', c, i, len(extra), 'verification')
                   for i, c in enumerate(extra, 1)]
-    stride = limits = None
+    stride = limits = means = None
     if len(cycles) > 1:
         # across-date views, only meaningful with more than one cycle; the
         # colour scales are pooled over every date before any is drawn
         t = time.time()
-        stride, limits = sequence_plan(cycles, cfg, grid)
+        stride, limits, means = sequence_plan(cycles, cfg, grid)
         print('across-date sequences: %d field(s) over %d cycles, scales '
               'pooled in %.1fs' % (len(limits), len(cycles), time.time() - t),
               flush=True)
@@ -2171,6 +2254,15 @@ def main(argv=None):
                     print(log.rstrip(), flush=True)
                 fresh.merge(records)
                 fresh.skipped += skipped
+    if means:
+        # the across-date mean, from the sums sequence_plan already holds;
+        # drawn here in the parent, after the per-date work
+        t = time.time()
+        out = render_sequence_pooled(cycles, cfg, grid, stride, limits,
+                                     means, fresh=fresh)
+        print('  pooled mean increment: %s'
+              % ('%d figure(s) in %.1fs' % (len(out), time.time() - t)
+                 if out else 'up to date, skipped'), flush=True)
     fresh.save()
     print('done in %.1fs (%d unit(s) up to date and skipped)'
           % (time.time() - t_all, fresh.skipped), flush=True)

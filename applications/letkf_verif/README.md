@@ -99,7 +99,7 @@ Everything lands under `--outdir`.
 | `figs/verif_maps_<product>_<cycle>.png` | Product beside each experiment's background and analysis, one per rendered cycle (`--hours`, 00z plus the latest by default; the background-state and WOA figures are tagged the same way and the report puts a date menu over them) |
 | `figs/verif_diff_<product>.png` | Model minus product |
 | `figs/front_strong_<region>_<cycle>.png` | Optional geostrophic-speed footprint for one configured current box, one per rendered cycle (`--hours`) |
-| `figs/seq_<realm>_incr_<field>_<cycle>.png` | One increment map per field and cached cycle, all dates of a field on one colour scale |
+| `figs/seq_<realm>_incr_<field>_<cycle\|all>.png` | One increment map per field and cached cycle, all dates of a field on one colour scale; `_all` is the mean increment over every cached cycle (the systematic correction) on its own scale, the default in the report's date menu |
 | `figs/cycle_*.png` | Everything against cycle: obs fit, obs counts, gridded-analysis scores, background drift |
 | `figs/cycle_ssh_stability_<exp>.png`, `ssh_stability_<exp>.{csv,json}` | SSH cycling-stability metrics per cycle and region (increment size, persistence, rejection, small/grid-scale variance, shock, on-track index) with fitted trends and a flagged verdict (section 07) |
 | `cache/` | The per-cycle reductions (`<cycle>.json`, `_maps.npz`, `_obsbins.npz`); the report never re-reads model output |
