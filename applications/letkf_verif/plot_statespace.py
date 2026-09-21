@@ -60,7 +60,7 @@ VERIF_MAP_DPI = 78
 # on zero rather than the sequential ramp the other states use. Temperature is
 # deliberately not here: it goes below zero in polar water, but it is still a
 # state whose absolute value is what you read, not a departure from zero.
-SIGNED_FIELDS = {'u', 'v'}
+SIGNED_FIELDS = {'u', 'v', 'u_raw', 'v_raw'}
 
 # Sequential colormap by variable family, keyed on the row-key base name
 # (before "_kN"). Every family is on jet (P.SEQ_BKG) for now, as is the
@@ -378,8 +378,10 @@ def _vars3d(data, cfg, names, block, varlist=None, key='mean'):
 
 def fig_regional_profiles(data, cfg, grid, block='incr_region',
                           label='RMS increment', fname='state_increment_regions.png',
-                          band=True, floor=None, varlist=None):
+                          band=True, floor=None, varlist=None, zero=False):
     """Profiles by region, one PNG per region: rows are variables.
+    ``zero`` draws the x = 0 reference for a signed quantity (the mean
+    increment): a profile that stays on one side of it is a bias.
 
     One file per region rather than one big grid with a column per region --
     with several basins configured that grid squeezed every region into a
@@ -415,6 +417,8 @@ def fig_regional_profiles(data, cfg, grid, block='incr_region',
                 ax.set_visible(False)
                 continue
             drawn_any = True
+            if zero:
+                ax.axvline(0, color=P.MUTED, lw=1.0, ls=(0, (4, 3)), zorder=1)
             ax.set_ylabel('%s\ndepth (m)' % v)
             ax.set_xlabel('%s (%s)' % (label, v))
         if not drawn_any:
@@ -1443,7 +1447,13 @@ def fig_verif_diffs(data, cfg, grid, maps, prod):
     if not rows:
         return None
     spec = LV.PRODUCTS[prod]
-    lim = _robust([f for _k, fs in rows for f in fs if f is not None], 99.0)
+    # cfg['map_limits']['verif_diff'][<product>] fixes the +/- scale; without
+    # it the 99th percentile decides, which the river plumes a quarter-degree
+    # model cannot resolve pushed to +/-4 psu for SSS -- a scale on which the
+    # open-ocean error is invisible.
+    fixed = ((cfg.get('map_limits') or {}).get('verif_diff') or {}).get(prod)
+    lim = (abs(float(fixed)) if fixed is not None else
+           _robust([f for _k, fs in rows for f in fs if f is not None], 99.0))
     limits = {k: (-lim, lim, P.DIVERGING) for k, _ in rows}
     note = ('  (mean removed from both)' if spec.get('remove_mean') else '')
     out = None
@@ -1506,6 +1516,15 @@ def fig_ocean_regions(cfg, grid):
         spans = ([(lon0, lon1)] if lon0 <= lon1
                  else [(lon0, 180.0), (-180.0, lon1)])
         for lo, hi in spans:
+            if hi - lo >= 359.0:
+                # a latitude band round the globe (the built-in Antarctic
+                # region): two parallels, not a rectangle whose sides land
+                # on the dateline
+                for y in (lat0, lat1):
+                    if -90 < y < 90:
+                        ax.plot([lo, hi], [y, y], transform=ccrs.PlateCarree(),
+                                color=P.INK, linewidth=1.1, zorder=5)
+                continue
             ax.plot([lo, hi, hi, lo, lo], [lat0, lat0, lat1, lat1, lat0],
                     transform=ccrs.PlateCarree(), color=P.INK,
                     linewidth=1.1, zorder=5)
@@ -1519,12 +1538,28 @@ def fig_ocean_regions(cfg, grid):
     return _save(fig, cfg, 'ocean_regions.png')
 
 
+def _atmos_ref(data, maps):
+    """The experiment whose forcing is the reference: the configured one if
+    it has an atmosphere block, else the first that does."""
+    names = P.exp_names(data)
+    have = [n for n in names if any(k.startswith('%s/atmos/' % n)
+                                    for k in maps.files)]
+    if not have:
+        return None, []
+    ref = data.get('reference') if data.get('reference') in have else have[0]
+    return ref, [n for n in have if n != ref]
+
+
 def fig_atmos_maps(data, cfg, grid, maps):
-    """The forcing the background was driven by: rows are lv_atmos fields,
-    columns experiments, on fixed scales so dates and runs compare."""
+    """The forcing the reference background was driven by: rows are
+    lv_atmos fields, one column, on fixed scales so dates compare. The other
+    experiments appear in fig_atmos_diff_maps as differences from it."""
     if maps is None:
         return None
-    names = P.exp_names(data)
+    ref, _others = _atmos_ref(data, maps)
+    if ref is None:
+        return None
+    names = [ref]
     rows = _rows_for(maps, names, '/atmos/', drop=('u10', 'v10'))
     if not rows:
         return None
@@ -1571,9 +1606,66 @@ def fig_atmos_maps(data, cfg, grid, maps):
         return key
     return map_grid(cfg, grid, rows, names,
                     'Atmospheric forcing over the ocean, f006 valid at the '
-                    'analysis time - %s' % _when(data),
+                    'analysis time - %s (reference)' % _when(data),
                     'atmos_maps.png', views_for('ocean')[0], limits=limits,
                     row_label=row_label, note=arrows)
+
+
+# +/- colour range of the forcing differences, per field: a fixed scale so
+# dates and experiments compare, sized to what a coupled-run divergence
+# produces after a few days rather than to the fields themselves
+ATMOS_DIFF_LIMITS = {'wind10': 4.0, 'tau': 0.1, 'qnet': 100.0, 'prate': 10.0,
+                     't2m': 3.0}
+
+
+def fig_atmos_diff_maps(data, cfg, grid, maps):
+    """Each other experiment's forcing minus the reference's, per field.
+
+    The absolute maps in fig_atmos_maps are dominated by the weather, which
+    every coupled run shares to first order; what matters for reading a
+    background difference is how far the forcing has diverged, and that is
+    only legible as a difference. Diverging scale, fixed per field
+    (ATMOS_DIFF_LIMITS, overridable under map_limits.atmos_diff), NaN where
+    either side is missing.
+    """
+    if maps is None:
+        return None
+    ref, others = _atmos_ref(data, maps)
+    if ref is None or not others:
+        return None
+    ref_rows = dict(_rows_for(maps, [ref], '/atmos/', drop=('u10', 'v10')))
+    exp_rows = dict(_rows_for(maps, others, '/atmos/', drop=('u10', 'v10')))
+    rows = []
+    for key, r in ref_rows.items():
+        base = r[0]
+        if base is None or key not in exp_rows:
+            continue
+        rows.append((key, [None if f is None else f - base
+                           for f in exp_rows[key]]))
+    if not rows:
+        return None
+    order = list(LA.FIELDS)
+    rows.sort(key=lambda kv: order.index(kv[0].rsplit('_k', 1)[0])
+              if kv[0].rsplit('_k', 1)[0] in order else 99)
+    fixed = (cfg.get('map_limits') or {}).get('atmos_diff') or {}
+    limits = {}
+    for key, _f in rows:
+        name = key.rsplit('_k', 1)[0]
+        lim = fixed.get(name, ATMOS_DIFF_LIMITS.get(name))
+        if lim is not None:
+            limits[key] = (-lim, lim, P.DIVERGING)
+
+    def row_label(key):
+        name = key.rsplit('_k', 1)[0]
+        if name in LA.FIELDS:
+            label, units, _l, _d = LA.FIELDS[name]
+            return '%s\ndifference (%s)' % (label, units)
+        return key
+    return map_grid(cfg, grid, rows, others,
+                    'Atmospheric forcing minus %s, f006 valid at the analysis '
+                    'time - %s' % (ref, _when(data)),
+                    'atmos_diff_maps.png', views_for('ocean')[0], limits=limits,
+                    row_label=row_label)
 
 
 def fig_corr_lengths(data, cfg, grid):
@@ -1808,19 +1900,23 @@ def render_sequence_cycle(cycle, cycles, cfg, grid, stride, limits,
 
 
 def render_cycle(cycle, cycles, cfg, grid, index=None, total=None,
-                 fresh=None):
+                 fresh=None, only=None):
     """Render one date's state figures, reporting progress as it goes.
 
     Each map figure takes seconds, so a long run needs to say where it is
     rather than sitting silent. With ``fresh`` the whole cycle is skipped
     when its cache files have not changed since it was last drawn.
+    ``only`` restricts the steps to those whose label contains it (e.g.
+    'verification': the gridded-product maps alone, for the cycles that
+    carry a once-a-day product but are not in the --hours set).
     """
     global TAG
     t0 = time.time()
     where = ('[%d/%d] ' % (index, total)) if total else ''
     key = 'cycle:%s' % cycle
     inputs = cycle_inputs(cfg, cycle) + [__file__]
-    if fresh and fresh.ok(key, inputs):
+    params = {'only': only} if only else None
+    if fresh and fresh.ok(key, inputs, params):
         print('%s%s: up to date, skipped' % (where, cycle), flush=True)
         return []
     data = cycles[cycle]
@@ -1845,6 +1941,10 @@ def render_cycle(cycle, cycles, cfg, grid, index=None, total=None,
                   lambda: fig_regional_profiles(
                       data, cfg, grid, 'incr_region', 'RMS increment',
                       'state_increment_regions.png', floor=0.0)))
+    steps.append(('mean increment profiles by region',
+                  lambda: fig_regional_profiles(
+                      data, cfg, grid, 'incr_mean_region', 'mean increment',
+                      'state_increment_mean_regions.png', zero=True)))
     steps.append(('spread profiles by region',
                   lambda: fig_spread_regions(data, cfg, grid)))
     steps.append(('background profiles by region',
@@ -1878,6 +1978,10 @@ def render_cycle(cycle, cycles, cfg, grid, index=None, total=None,
                   lambda: fig_corr_lengths(data, cfg, grid)))
     steps.append(('atmospheric forcing maps',
                   lambda: fig_atmos_maps(data, cfg, grid, maps)))
+    steps.append(('atmospheric forcing differences',
+                  lambda: fig_atmos_diff_maps(data, cfg, grid, maps)))
+    if only:
+        steps = [s for s in steps if only in s[0]]
 
     written = []
     for label, fn in steps:
@@ -1898,8 +2002,27 @@ def render_cycle(cycle, cycles, cfg, grid, index=None, total=None,
     print('  %s: %d figures in %.1fs' % (cycle, len(written), time.time() - t0),
           flush=True)
     if fresh:
-        fresh.record(key, inputs, None, written)
+        fresh.record(key, inputs, params, written)
     return written
+
+
+def daily_product_cycles(cycles):
+    """Cycles at which a gridded product restricted to one hour of the day
+    (PRODUCTS[...]['only_hour']) was scored, so a --hours selection that
+    skips that hour still draws their maps. No product is restricted that
+    way at present (OSTIA SST is interpolated in time and scored at every
+    cycle); kept for the next one that is."""
+    daily = {p for p, spec in LV.PRODUCTS.items() if spec.get('only_hour')}
+    if not daily:
+        return []
+    out = []
+    for c, d in cycles.items():
+        for n in P.exp_names(d):
+            v = P.get(d, 'state', n, 'ocean', 'verif', default={}) or {}
+            if daily & set(v):
+                out.append(c)
+                break
+    return sorted(out)
 
 
 # Shared with forked workers: set once in main() before the pool is created,
@@ -1914,7 +2037,8 @@ def _cycle_worker(task):
     Output is captured rather than printed: a dozen workers interleaving
     one partial line per figure would be unreadable.
     """
-    kind, cycle, index, total = task
+    kind, cycle, index, total = task[:4]
+    only = task[4] if len(task) > 4 else None
     sh = _SHARED
     fresh = Fresh(sh['cfg'], sh['stage'], force=sh['force'], script=__file__)
     buf = io.StringIO()
@@ -1922,7 +2046,7 @@ def _cycle_worker(task):
         try:
             if kind == 'cycle':
                 render_cycle(cycle, sh['per_cycle'], sh['cfg'], sh['grid'],
-                             index, total, fresh=fresh)
+                             index, total, fresh=fresh, only=only)
             else:
                 render_sequence_cycle(cycle, sh['cycles'], sh['cfg'],
                                       sh['grid'], sh['stride'], sh['limits'],
@@ -1996,9 +2120,15 @@ def main(argv=None):
         todo = [c for c in todo if str(c)[8:10] in hours or c == todo[-1]]
     per_cycle_dict = cycles if not a.latest else {todo[0]: cycles[todo[0]]}
 
-    tasks = []
+    tasks, extra = [], []
     if not a.no_per_cycle:
         tasks += [('cycle', c, i, len(todo)) for i, c in enumerate(todo, 1)]
+        # The once-a-day products (OSTIA SST at 12Z) live on cycles a
+        # --hours 00 selection skips; draw just their verification maps
+        # there, so the report's SST cycle menu has every scored day.
+        extra = [c for c in daily_product_cycles(cycles) if c not in todo]
+        tasks += [('cycle', c, i, len(extra), 'verification')
+                  for i, c in enumerate(extra, 1)]
     stride = limits = None
     if len(cycles) > 1:
         # across-date views, only meaningful with more than one cycle; the
@@ -2012,14 +2142,18 @@ def main(argv=None):
             tasks += [('seq', c, None, None) for c in sorted(cycles)]
 
     jobs = max(1, min(a.jobs, len(tasks)))
-    print('rendering %d cycle(s) per-date%s, %d-way'
+    print('rendering %d cycle(s) per-date%s%s, %d-way'
           % (len(todo) if not a.no_per_cycle else 0,
+             ' + %d verification-only date(s)' % len(extra)
+             if not a.no_per_cycle and extra else '',
              ' + %d sequence date(s)' % len(cycles) if limits else '', jobs),
           flush=True)
     if jobs == 1:
-        for kind, c, i, n in tasks:
+        for task in tasks:
+            kind, c, i, n = task[:4]
             if kind == 'cycle':
-                render_cycle(c, per_cycle_dict, cfg, grid, i, n, fresh=fresh)
+                render_cycle(c, per_cycle_dict, cfg, grid, i, n, fresh=fresh,
+                             only=task[4] if len(task) > 4 else None)
             else:
                 render_sequence_cycle(c, cycles, cfg, grid, stride, limits,
                                       fresh=fresh)

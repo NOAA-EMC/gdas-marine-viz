@@ -194,6 +194,9 @@ def compute(obstype, aligned, counts, common_pass, own, cfg):
         'is_ice': is_ice(obstype),
         'counts': counts,
         'qc': {n: s.qc_counts() for n, s in own.items()},
+        # monitored, not assimilated (every scored obs carries QC 'passive'):
+        # the report labels these so a fit is not read as a DA result
+        'passive': {n: s.passive_only() for n, s in own.items()},
         'nens': {n: int(s.nens) for n, s in own.items()},
         # the experiments actually joined for the common sample; a merge of
         # separately-computed caches uses this to tell whether 'common' is

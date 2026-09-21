@@ -290,8 +290,8 @@ def sst_map(name, result, figs, cycle, labels, tag=''):
     _colorbar(figure, pm, [.14, .075, .72, .022],
               'sea surface temperature  ($^\\circ$C)')
     _headline(figure, '%s: sea surface temperature' % name,
-              'Cycle %s. OSTIA foundation SST (daily) beside each analysis at '
-              'the surface level%s.'
+              'Cycle %s. OSTIA foundation SST (daily, interpolated in time to '
+              'the cycle) beside each analysis at the surface level%s.'
               % (cycle, '; outline: geostrophic speed at or above the shared '
                         'threshold' if outline else ''))
     figure.subplots_adjust(left=.05, right=.985, bottom=.16, top=.80,
@@ -484,7 +484,10 @@ def main(argv=None):
         for why in missing:
             print('  ! %s: without %s' % (c, why), flush=True)
     if not available:
-        raise SystemExit('no frontal-analysis cycle is available')
+        # a period the ADT archive does not cover is a state, not a failure
+        print('no frontal-analysis cycle is available (no Copernicus ADT '
+              'or no analysis for any of them) -- nothing drawn', flush=True)
+        return 0
 
     figs = cfg['figs']
     os.makedirs(figs, exist_ok=True)

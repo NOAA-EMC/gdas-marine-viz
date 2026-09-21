@@ -13,6 +13,7 @@ sections, so any page works as an entry point, not just the first.
 
 import argparse
 import base64
+import glob
 import html
 import os
 import re
@@ -301,18 +302,25 @@ def regional_series_widget(group, cfg, figs, base, label):
 
 
 def stability_widget(cfg, figs):
-    """SSH cycling-stability figure + verdict table per experiment, from
-    plot_stability.py's outputs (figs/cycle_ssh_stability_<exp>.png and
-    ssh_stability_<exp>.json beside the report)."""
+    """SSH cycling: tendency maps, the tendency strip, the four series and
+    their trend verdict, per experiment, from plot_stability.py's outputs
+    (figs/ssh_tendency_<exp>.png, figs/ssh_tendency_strip_<exp>.png,
+    figs/cycle_ssh_stability_<exp>.png, ssh_stability_<exp>.json)."""
     entries = []
     for e in cfg['experiments']:
         slug = P.slug(e.name)
-        png = os.path.join(figs, 'cycle_ssh_stability_%s.png' % slug)
+        series = os.path.join(figs, 'cycle_ssh_stability_%s.png' % slug)
         jpath = os.path.join(cfg['outdir'], 'ssh_stability_%s.json' % slug)
-        if not os.path.exists(png):
+        if not os.path.exists(series):
             continue
-        block = img(png, '%s: SSH cycling-stability metrics against cycle, '
-                    'dotted lines are the fitted trends' % e.name)
+        block = img(os.path.join(figs, 'ssh_tendency_%s.png' % slug),
+                    '%s: latest cycle -- background SSH, increment, 6-h '
+                    'tendency and its 5-degree low-pass' % e.name, optional=True)
+        block += img(os.path.join(figs, 'ssh_tendency_strip_%s.png' % slug),
+                     '%s: low-pass 6-h tendency of the last four cycles' % e.name,
+                     optional=True)
+        block += img(series, '%s: SSH cycling series against cycle, dotted '
+                     'lines are the fitted trends' % e.name)
         if os.path.exists(jpath):
             import json
             with open(jpath) as fh:
@@ -335,7 +343,7 @@ def stability_widget(cfg, figs):
                                 if row.get('flag') else txt)
                 cells.append(line)
             block += (
-                '<p class="lede">Trend of each metric over the %d cycles, in '
+                '<p class="lede">Trend of each series over the %d cycles, in '
                 '%% of its mean per day, with the t statistic; '
                 '<span class="bad">red</span> = significant (|t| &gt; 3) in '
                 'the direction that means trouble.</p>' % len(v['cycles'])
@@ -345,46 +353,20 @@ def stability_widget(cfg, figs):
     if not entries:
         return ''
     lede = (
-        '<section class="subsection"><h3>SSH cycling stability</h3>'
-        '<p class="lede">A tight fit to altimetry has, in the past, gone '
-        'unstable in a way no score catches early: the analysis inserts a '
-        'feature the model does not hold, the forecast pushes it back, the '
-        'next analysis re-inserts it larger, and after enough cycles it is a '
-        'stripe along a track or a blob in a basin. An animation of the SSH '
-        'field catches it late and only where one happens to look, so these '
-        'panels track, every cycle, the quantities that move first, and fit '
-        'a trend to each.</p>'
-        '<p class="lede"><b>What the panels are.</b> The <b>increment</b> '
-        'RMS and maximum say how hard the analysis is pushing; a growing '
-        'increment is the loop tightening. The <b>6-h forecast change</b> is '
-        'background(t) minus the previous analysis: what the model does on '
-        'its own between analyses (mostly the barotropic response to the '
-        'winds, so it breathes with the weather). <b>Persistence</b> is the '
-        'spatial correlation of one increment with the previous one: near '
-        'zero when each analysis corrects something new, sustained positive '
-        'when the same correction is made every cycle &mdash; a bias the '
-        'model rejects, or a mode being fed. <b>Rejection</b> is the slope of '
-        'the forecast change on the previous increment: 0 means the model '
-        'keeps what it was given, &minus;1 that it undoes it exactly; a '
-        'drift toward &minus;1 with a growing increment is the feedback loop '
-        'in the act. The <b>small-scale variance</b> of the background SSH '
-        '(scales under about 2&deg;) is where noise accumulates before it '
-        'is visible anywhere, and its <b>grid-scale</b> part separates '
-        'mesoscale spin-up (which raises the first but not the second) from '
-        'numerical noise (which raises both). <b>Shock</b> compares the '
-        'first three hours of each forecast with the next three: above ~1.5 '
-        'the analysis is being shaken off as soon as the model starts. '
-        '<b>Big cells</b> counts increments beyond a threshold and locates '
-        'the largest cluster, so a local blow-up is found, not just noticed. '
-        'The <b>on-track index</b> is the increment variance in 1&deg; bins '
-        'that had altimeter observations over bins that had none: how much '
-        'of the increment lives on the tracks.</p>'
-        '<p class="lede"><b>How to read the table.</b> Every metric gets a '
-        'linear trend over the period, in percent of its mean per day, with '
-        'the t statistic of the slope. Red marks a trend that is both '
-        'significant and in the adverse direction. A healthy run reads as a '
-        'table of grey; one red entry is a question; red in the increment, '
-        'rejection and grid-scale rows together is the instability.</p>')
+        '<section class="subsection"><h3>SSH cycling</h3>'
+        '<p class="lede">The <b>6-h tendency</b> &mdash; background(t) minus '
+        'the previous analysis &mdash; is what the model does on its own '
+        'between two analyses. Healthy, it is the barotropic response to the '
+        'winds: about 1.5 cm RMS, large scale, and the same sign from one '
+        'cycle to the next. When the analysis hands the model something it '
+        'cannot hold, this is where it shows first: the tendency grows, its '
+        'large-scale part reverses sign every cycle (the ocean ringing '
+        'through a geostrophic adjustment), and the maps show basin-scale '
+        'patterns that have nothing to do with the increment.</p>'
+        '<p class="lede">Maps of the latest cycle, the low-pass tendency of the '
+        'last four cycles side by side, then four series with their trend; '
+        'the definitions are under <i>How this is computed</i> at the top of '
+        'this section.</p>')
     return lede + figure_menu('stability', 'experiment', entries) + '</section>'
 
 
@@ -447,7 +429,7 @@ def frontal_widget(cfg, figs):
         'information, not independent truth.</p>%s%s</section>' % (picker, profile))
 
 
-def obstype_dropdown_widget(cycles, figs, base, label):
+def obstype_dropdown_widget(cycles, figs, base, label, cfg=None):
     """Obs-type dropdown + one panel per type.
 
     Shared by 'fit to observations' (obsfit_type_*.png) and 'observation
@@ -469,12 +451,33 @@ def obstype_dropdown_widget(cycles, figs, base, label):
         return os.path.join(figs, ('cycle_%s.png' % t if base == 'cycle'
                                    else '%s_type_%s.png' % (base, P.slug(t))))
     types = [t for t in types if os.path.exists(path(t))]
-    return picker_widget(
-        base, types,
-        label_fn=P.short,
-        panel_fn=lambda t: img(path(t), '%s: %s' % (P.short(t), label),
-                               optional=True),
-        dropdown='obs type')
+
+    def panel(t):
+        whole = img(path(t), '%s: %s' % (P.short(t), label), optional=True)
+        if base != 'obsfit':
+            return whole
+        # Section 01 also has the same pair per region stratum
+        # (obsfit_type_<type>_region_<slug>.png, from the strata the cache
+        # carries: basins, `regions:` boxes, NH/SH for ice). Region chips
+        # inside the type panel, 'global' first; only the regions this type
+        # actually has files for.
+        stem = os.path.join(figs, '%s_type_%s_region_' % (base, P.slug(t)))
+        regs = sorted(f[len(stem):-4] for f in glob.glob(stem + '*.png'))
+        if not regs:
+            return whole
+        basin_color = basin_colors(cfg) if cfg else {}
+        return picker_widget(
+            '%s-%s' % (base, P.slug(t)), ['global'] + regs,
+            label_fn=lambda r: r.replace('_', ' '),
+            panel_fn=lambda r: whole if r == 'global' else img(
+                '%s%s.png' % (stem, r),
+                '%s, %s: %s' % (P.short(t), r.replace('_', ' '), label),
+                optional=True),
+            style_fn=lambda r: _basin_chip_style(basin_color, r))
+
+    return picker_widget(base, types, label_fn=P.short, panel_fn=panel,
+                         dropdown='obs type')
+
 
 
 def binned_widget(cycles, cfg, figs):
@@ -485,9 +488,16 @@ def binned_widget(cycles, cfg, figs):
     """
     order = [str(c) for c in sorted(cycles)]
     types = sorted({t for d in cycles.values() for t in d.get('obs', {})})
-    views = [('map', 'Maps: count, O-B, O-A, obs error'),
-             ('reg', 'Regression: observation against model'),
-             ('sec', 'Depth x latitude (profiles)')]
+    views = [('map', 'Maps: count, O-B, O-A, obs error')]
+    # the profile types' maps per depth layer (lv_obsbins.layers)
+    import lv_obsbins as B
+    for lo, hi in B.layers(cfg):
+        slug = B.layer_slug(lo, hi)
+        views.append(('map_%s' % slug, 'Maps, %s (profiles)'
+                      % slug.replace('m-bottom', ' m to the bottom')
+                      .replace('m', ' m')))
+    views += [('reg', 'Regression: observation against model'),
+              ('sec', 'Depth x latitude (profiles)')]
 
     def date_menu(t, view):
         base = 'obsbins_%s_%s' % (view, P.slug(t))
@@ -533,7 +543,7 @@ def obsfit_widget(cycles, cfg, figs):
     """Obs-type picker + one panel per type for 'fit to observations'."""
     return obstype_dropdown_widget(cycles, figs, 'obsfit',
                                    'RMS and bias of the fit to observations '
-                                   'across cycles')
+                                   'across cycles', cfg=cfg)
 
 
 def counts_widget(cycles, cfg, figs):
@@ -839,6 +849,13 @@ def _nav(current, names_out):
 
 # ---------------------------------------------------------------------------
 
+def is_passive(cycles, obstype):
+    """Monitored, not assimilated, in every experiment that has it."""
+    flags = [v for d in cycles.values()
+             for v in (d.get('obs', {}).get(obstype, {}).get('passive') or {}).values()]
+    return bool(flags) and all(flags)
+
+
 def _series(cycles, obstype, name, key, sample):
     """Metric value per cycle for one experiment, NaN where absent."""
     return np.array([P.get(cycles[c].get('obs', {}).get(obstype, {}),
@@ -952,7 +969,9 @@ def build(cfg, cycles, out):
         if not any(np.isfinite(v) for v in (r, ra) + tuple(
                 x for pair in own_vals.values() for x in pair)):
             continue
-        cells = [P.short(t), fmt(r, 4), fmt(ra, 4)]
+        cells = [P.short(t) + (' <span class="dim">passive</span>'
+                               if is_passive(cycles, t) else ''),
+                 fmt(r, 4), fmt(ra, 4)]
         for n in others:
             ob, oa = own_vals[n]
             cells.append(delta_cell(ob, r))
@@ -962,6 +981,14 @@ def build(cfg, cycles, out):
     for n in others:
         hdr += ['%s O&minus;B' % n, '%s O&minus;A' % n]
     t1 = table(hdr, rows)
+    if any(is_passive(cycles, t) for t in types):
+        t1 += ('<p class="lede"><b>passive</b> marks an observation type the '
+               'DA carried but gave no weight (QC flag <i>passive</i>; '
+               'SMAP/SMOS salinity here). Its O&minus;B is a genuine '
+               'monitor of the background against an independent '
+               'measurement; its O&minus;A only shows what the other '
+               'observations did to the analysis at those points, not a '
+               'fit that was asked for.</p>')
 
     # An experiment sharing NO cached cycle with the reference is not a
     # controlled comparison -- its column above is its own separate period
@@ -1051,12 +1078,18 @@ def build(cfg, cycles, out):
                     n_incr[n] = max(n_incr[n], cnt)
                     cells.append(fmt(v, 5) if np.isfinite(v) else '&mdash;')
                 for n in names:
+                    # signed, so a value is shown with its sign; caches
+                    # written before incr_mean existed show a dash
+                    v, _cnt = level_mean('incr_mean', n, realm, var, k)
+                    cells.append(('%+.5f' % v) if np.isfinite(v) else '&mdash;')
+                for n in names:
                     v, _cnt = level_mean('spread_ratio', n, realm, var, k)
                     cells.append(fmt(v) if np.isfinite(v) else '&mdash;')
                 rows.append(cells)
     t4 = table(['field', 'level']
                + ['RMS incr %s <span class="dim">%d cyc</span>' % (n, n_incr[n])
                   for n in names]
+               + ['mean incr %s' % n for n in names]
                + ['&sigma;<sub>a</sub>/&sigma;<sub>b</sub> %s' % n
                   for n in names], rows)
 
@@ -1089,6 +1122,23 @@ def build(cfg, cycles, out):
     seq_figs = sequence_widget('seq', cfg, figs, cycles)
     hov = img(os.path.join(figs, 'cycle_increment_hovmoller.png'),
               'RMS increment against depth and cycle', optional=True)
+    # the signed mean beside the magnitude, per region (chips), from the
+    # incr_mean_region block plot_timeseries.fig_increment_hovmoller_means
+    # writes one file per region for
+    hov_mean = regional_series_widget(
+        'hovmean', cfg, figs, 'cycle_increment_hovmoller_mean_region',
+        'area-weighted mean increment against depth and cycle')
+    # the same signed mean as a line per cycle, on its own axis -- under the
+    # RMS in cycle_increment_2d.png it is flat against zero
+    mean_series = regional_series_widget(
+        'incmeanser', cfg, figs, 'cycle_increment_mean_region',
+        'area-weighted mean increment across cycles: surface (solid), '
+        'column mean (dashed)')
+    f_incmean = cycle_menu(
+        'incmean', rendered_cycles(figs, 'state_increment_mean_regions_region_global',
+                                   cycles),
+        lambda c: regional_widget('incmean-%s' % c, cfg, figs, c,
+                                  'state_increment_mean_regions', 'mean increment'))
     inc2d = img(os.path.join(figs, 'cycle_increment_2d.png'),
                 '2-D field increment magnitude across cycles', optional=True)
 
@@ -1169,7 +1219,11 @@ def build(cfg, cycles, out):
             'atmos', cfg, figs, 'atmos_region',
             'atmospheric forcing over the ocean against cycle'),
         f_atmos_maps=dated('atmosmaps', 'atmos_maps',
-                           'Atmospheric forcing over the ocean', optional=True),
+                           'Atmospheric forcing over the ocean, reference '
+                           'experiment', optional=True),
+        f_atmos_diff=dated('atmosdiff', 'atmos_diff_maps',
+                           'Atmospheric forcing minus the reference, per '
+                           'experiment', optional=True),
         f_stability=stability_widget(cfg, figs),
         bin_deg='%g' % float((cfg.get('obs_bins') or {}).get('deg', 1.0)),
         # fields then their difference, per product: the fields say whether
@@ -1184,10 +1238,12 @@ def build(cfg, cycles, out):
             for p in LV.PRODUCTS]),
         f_fronts=frontal_widget(cfg, figs),
         sample_note=sample_note, overlap_warning=overlap_warning,
+        **{'m_%s' % k: methods(k) for k in METHODS},
         sample_word='common' if not any_own else 'common (partly own)',
         cycle_figs=cycle_figs, cyc_note=cyc_note,
-        seq_figs=seq_figs, hov=hov, inc2d=inc2d,
-        f_increg=f_increg, f_cons=f_cons,
+        seq_figs=seq_figs, hov=hov, hov_mean=hov_mean,
+        mean_series=mean_series, inc2d=inc2d,
+        f_increg=f_increg, f_incmean=f_incmean, f_cons=f_cons,
         f_incrsec=cycle_menu(
             'incrsec', dates(r'state_sections_incr_.*'),
             lambda c: sections_widget('incrsec-%s' % c, cfg, figs, c, 'incr')),
@@ -1257,6 +1313,7 @@ def build(cfg, cycles, out):
     subs['m_state_prof'] = figure_menu('stateprof', 'Profile view', [
         ('Increment, global', subs['f_incr']),
         ('Increment by region', subs['f_increg']),
+        ('Mean increment by region', subs['f_incmean']),
         ('Ensemble spread, global', subs['f_sprprof']),
         ('Ensemble spread by region', subs['f_sprreg'])])
     subs['m_state_maps'] = figure_menu('statemaps', 'Map view', [
@@ -1381,15 +1438,19 @@ h1{font-family:var(--serif); font-weight:600; font-size:clamp(30px,4.4vw,44px);
   color:var(--ink-3)}
 
 /* ---- section nav ---- */
-.secnav{display:flex; flex-wrap:wrap; gap:4px 2px}
-.secnav a{display:inline-flex; align-items:baseline; gap:7px;
-  padding:7px 12px; border-radius:8px; text-decoration:none;
-  color:var(--ink-2); font-size:13px; font-weight:500}
+.secnav{display:flex; flex-wrap:wrap; gap:10px}
+.secnav a{display:inline-flex; align-items:baseline; gap:9px;
+  padding:9px 16px; border-radius:8px; text-decoration:none;
+  border:1.5px solid var(--accent); background:var(--surface);
+  color:var(--accent); font-size:13.5px; font-weight:600;
+  box-shadow:var(--shadow)}
 .secnav a .sec-n{font-family:var(--mono); font-size:11px; color:var(--ink-3);
   font-weight:600}
-.secnav a:hover{background:var(--surface-2); color:var(--ink)}
-.secnav a.on{background:var(--accent-soft); color:var(--accent)}
-.secnav a.on .sec-n{color:var(--accent)}
+.secnav a:hover{background:var(--accent-soft)}
+/* the page being read: filled, and not a link to anywhere */
+.secnav a.on{background:var(--accent); color:#fff; box-shadow:none;
+  cursor:default}
+.secnav a.on .sec-n{color:#fff}
 
 /* ---- sections ---- */
 section{display:flex; flex-direction:column; gap:16px}
@@ -1402,6 +1463,14 @@ h2{font-family:var(--serif); font-weight:600; font-size:23px; margin:0;
 h3{font-family:var(--sans); font-weight:600; font-size:15px; margin:14px 0 0;
   color:var(--ink)}
 .lede{margin:0; color:var(--ink-2); max-width:74ch}
+details.methods{margin:4px 0 6px; max-width:78ch; font-size:13.5px; color:var(--ink-2)}
+details.methods summary{cursor:pointer; font-weight:600; color:var(--ink-3); font-size:12.5px;
+  letter-spacing:.04em; text-transform:uppercase; list-style:none}
+details.methods summary::-webkit-details-marker{display:none}
+details.methods summary::before{content:"\25B8  "; font-size:11px}
+details.methods[open] summary::before{content:"\25BE  "}
+details.methods p, details.methods ul{margin:8px 0; line-height:1.55}
+details.methods ul{padding-left:20px}
 
 /* ---- figures ---- */
 .fig{margin:0; background:var(--surface); border:1px solid var(--rule);
@@ -1550,10 +1619,201 @@ document.addEventListener('DOMContentLoaded',function(){
 ${nav}
 """
 
+# -- "How this is computed" -------------------------------------------------
+# One collapsed block per section, under its lede: the definitions behind the
+# numbers and figures, written from the code that produces them, so a reader
+# never has to guess what a panel is. Plain HTML; $-free so it can go through
+# Template.substitute as a value.
+METHODS = {
+ '01': """
+<p><b>Departures.</b> O&minus;B and O&minus;A are observation minus the
+background / analysis equivalent from the DA's own diagnostic files, with QC
+applied: only observations the DA accepted (EffectiveQC = 0, or <i>passive</i>
+for monitored types) are scored. <b>RMS</b> is the root mean square of the
+departures and <b>bias</b> their signed mean, both unweighted over
+observations. <b>Common sample</b> means the observations present and passing
+QC in <em>every</em> experiment, joined by location and time per obs type; a
+type that could not be joined (assimilated by one experiment only, or caches
+computed separately) is scored on each experiment's own sample and the figure
+title says so.</p>
+<p><b>Averages over cycles</b> in the table are plain means of the per-cycle
+values over the cycles each experiment has cached. <b>Regions</b> in the
+time-series picker are the basins of <code>ocean_basin_mask</code> and the
+<code>regions:</code> boxes from the config, selected by observation
+latitude/longitude; ice types are split NH/SH. <b>Profile</b> types (Argo,
+gliders, moorings) are also binned in depth (<code>depth_bins:</code>), and
+the profile figure draws RMS(O&minus;B) per bin against
+&radic;(&sigma;<sub>b</sub><sup>2</sup>&nbsp;+&nbsp;R<sup>2</sup>), where
+&sigma;<sub>b</sub> is the prior ensemble spread in observation space (zero
+for a deterministic system) and R the assigned observation error.</p>
+""",
+ '02': """
+<p><b>Counts</b> are observations per cycle and obs type with EffectiveQC = 0
+in that experiment's own diagnostic file (<i>n_pass_own</i>), after the DA's
+thinning and quality control; the grey line is the size of the common sample
+(<i>n_common_pass</i>). Nothing is area-weighted here.</p>
+""",
+ '03': """
+<p><b>Increment</b> is the analysis minus the background as the DA wrote it
+(the JEDI increment file; for MOM6 the same fields go into the IAU over the
+next 6 h). Every RMS and mean of a field is <b>area-weighted</b> over wet
+cells of the model grid (cell area from the gridspec), per level; the
+shaded band on a profile is the area-weighted standard deviation across the
+cells of the region at that level. <b>Level</b> indices are mapped to a
+nominal depth from the reference experiment's background layer thickness at
+that cycle. <b>Regions</b> are <code>ocean_basin_mask</code> basins and the
+<code>regions:</code> boxes, as masks on the model grid. Velocity
+<b>u, v</b> are the eastward / northward components at the tracer point:
+face values averaged to the centre (MOM6 history) and rotated with the
+grid's cos_rot / sin_rot, which matters north of the tripolar seam
+(~65&deg;N); <b>speed</b> is |(u, v)|. <b>Sea-ice thickness</b> is
+CICE's grid-cell-mean thickness divided by concentration
+(<code>hi_div_aice_h</code>), the quantity the analysis works on.
+<b>Correlation length</b> of an increment is the 1/e distance of its
+isotropic spatial autocorrelation inside each <code>corr_regions:</code>
+box. Ensemble
+<b>spread</b> panels read the LETKF's prior / posterior variance files; the
+<b>&sigma;<sub>a</sub>/&sigma;<sub>b</sub></b> column is the RMS ratio of
+posterior to prior spread.</p>
+""",
+ '04': """
+<p><b>Background</b> is the model history valid at the analysis time (the
+6-h forecast from the previous analysis, f006), read as stored; ocean
+fields at the <code>map_levels:</code> listed, ice fields per hemisphere.
+Regional profiles are area-weighted means per level with the area-weighted
+spatial standard deviation as the band. <b>MLD</b> is the model's own
+mixed-layer diagnostic and exists only where the history carries it.
+The <b>drift</b> panels are the area-weighted global mean of each field
+against cycle: a mean that trends is a system-wide bias building up, not
+a local feature.</p>
+""",
+ '05': """
+<p>The depth&ndash;cycle panels are the per-level, area-weighted <b>RMS</b>
+of the ocean increment (top) and its <b>signed mean</b> (below, per region)
+at every cached cycle; the colour of the mean panel is symmetric about
+zero. The mean-increment series draw that mean per cycle on its own axis,
+per region: the surface level (solid) and the column mean weighted by the
+nominal layer thickness down to <code>depth_max:</code> (dashed; the full
+column when unset). The 2-D series carry the same two numbers for fields
+without a vertical axis (SSH, ice): RMS solid, mean dashed. The map sequence is the
+increment at one level per cycle on one colour scale per field (the 99th
+percentile of |increment| over the cycles shown), so the pattern can be
+followed from date to date without the scale moving.</p>
+""",
+ '06': """
+<p>Each product is a daily L4 field on a regular lat/lon grid, placed on
+the model grid by index arithmetic (no interpolation), scored against the
+background and against background&nbsp;+&nbsp;increment at every cycle
+where both are valid. <b>RMS</b> and <b>bias</b> are area-weighted over
+the common valid cells, globally and per region. <b>ADT</b> has the mean
+of each field over the valid cells removed first (the product's reference
+surface is a mean dynamic topography, the model's its own geoid), so its
+bias is zero by construction. <b>OSTIA</b> is a foundation temperature
+valid at 12Z, interpolated linearly in time to each cycle, so the 06Z and
+18Z scores carry a few tenths of a degree of the model's diurnal cycle in
+the tropics. OSTIA uses the AVHRR/VIIRS radiances the DA also assimilates,
+so the SST score is a consistency check rather than independent validation.
+<b>WOA23</b> comparisons interpolate the climatology to the model levels
+and subtract; they are a full-depth but climatological reference. The
+<b>frontal</b> diagnostic maps geostrophic-current speed above one fixed
+threshold per region, in the Copernicus ADT and in each experiment, so
+placement and strength are read on the same footing; the one-dimensional
+axis offset in km is reported only for regions marked
+<code>axis_diagnostic</code>, and front position converges over weeks of
+cycling, so read structure as real and position as provisional.</p>
+""",
+ '07': """
+<p><b>Per-obs-type series</b> are the section-01 metrics (RMS and bias of
+O&minus;B / O&minus;A, spread, consistency ratio, Desroziers ratio) at every
+cycle on the common sample, with no smoothing. The <b>SSH cycling</b> block
+works on the ocean surface height of the model history and the increment,
+area-weighted over wet cells:</p>
+<ul>
+<li><b>6-h tendency</b> = background(t) &minus; [background(t&minus;6h)
++ increment(t&minus;6h)]: the change the model made on its own between two
+analyses, with the analysis update taken out. Its <b>low-pass</b> is the
+mean over 5&deg;&times;5&deg; blocks (20&times;20 cells at 1/4&deg;).</li>
+<li><b>lag-6 h correlation</b> is the spatial correlation between the
+low-pass tendency at t and at t&minus;6h over the region: positive when the
+wind-driven adjustment continues from one cycle to the next, negative when
+the large-scale pattern reverses every cycle (a barotropic adjustment
+ringing).</li>
+<li><b>increment RMS</b> of SSH per cycle; at cycles with no altimetry it is
+the steric response to the T/S increments alone.</li>
+<li><b>u/v deep / surface ratio</b>: RMS of the velocity increment on four
+levels below 1000 m divided by the RMS on four levels above 50 m, from the
+increment MOM6 ingests. A geostrophic increment decays with depth, so this
+is well below 1; above 1 the analysis is handing the model a barotropic
+transport.</li>
+<li><b>trend table</b>: a least-squares line through each series over the
+cached cycles, reported as percent of the series mean per day with the
+slope's t statistic; red when |t| &gt; 3 and the sign is the adverse one
+(growth for the RMS metrics and the u/v ratio, a fall for the lag
+correlation).</li>
+</ul>
+<p>The maps are the latest cycle's background, increment, tendency and
+low-pass tendency, and the low-pass tendency of the last four cycles
+(24 h) side by side, all on &plusmn;0.1 m except the background.</p>
+""",
+ '08': """
+<p>All on the common sample, per obs type and cycle. <b>Consistency
+ratio</b> = (RMS(&sigma;<sub>b</sub>)<sup>2</sup> + RMS(R)<sup>2</sup>) /
+RMS(O&minus;B)<sup>2</sup>: the variance the system claims against the
+departure variance actually observed, 1 when calibrated, below 1
+under-dispersive, above 1 over-dispersive. <b>Spread / skill</b> =
+RMS(&sigma;<sub>b</sub>) / RMS(O&minus;B), also targeting 1 once R is
+small. <b>Desroziers</b>:
+&radic;mean(O&minus;B &middot; O&minus;A) estimates R and
+&radic;mean((O&minus;B)(B&minus;A)) estimates HBH<sup>T</sup>; the ratios
+to the assigned R and to the ensemble spread say whether each was right.
+<b>Rank histograms</b> place each observation among the sorted ensemble
+members; flat is calibrated, U-shaped under-dispersive, the reported end
+ratio is the mean of the two end bins over the flat expectation.
+<b>CRPS</b> is the continuous ranked probability score of the ensemble
+against the observation, lower is better.</p>
+""",
+ '09': """
+<p>Observations on the common sample are binned on a regular
+latitude&ndash;longitude grid (profile types on depth &times; latitude);
+each bin reports the count, the mean and RMS of O&minus;B and O&minus;A,
+the RMS assigned observation error and the RMS effective error (after QC
+and inflation), and RMS(O&minus;B) divided by each. <b>All cycles</b> pools
+every cached cycle before binning. The <b>regression</b> view is the 2-D
+density of observation against background and against analysis at the
+observation points, with the least-squares line and its slope and
+correlation.</p>
+""",
+ '10': """
+<p>From the coupled atmosphere's surface history at the same f006 the ocean
+background is, on the atmosphere's Gaussian grid, placed on the ocean grid
+by nearest cell and restricted to ocean points. <b>wind10</b> =
+|(ugrd10m, vgrd10m)|; <b>tau</b> = |(uflx_ave, vflx_ave)|; <b>qnet</b> =
+dswrf &minus; uswrf + dlwrf &minus; ulwrf &minus; lhtfl &minus; shtfl
+(positive into the ocean); <b>prate</b> in mm/day; <b>t2m</b> in &deg;C. The
+<i>_ave</i> fluxes are the model's means over the 6 h ending at the analysis
+time. Time series are area-weighted means per region; differences are
+experiment minus reference at the same cycle, and the maps of difference
+are on fixed &plusmn; scales per field (wind 4 m/s, stress 0.1 N/m&sup2;,
+heat flux 100 W/m&sup2;, precipitation 10 mm/day, temperature 3 &deg;C,
+overridable under <code>map_limits.atmos_diff</code>).</p>
+""",
+}
+
+
+def methods(section):
+    """The section's collapsed 'How this is computed' block."""
+    body = METHODS.get(section)
+    if not body:
+        return ''
+    return ('<details class="methods"><summary>How this is computed</summary>'
+            '%s</details>' % body)
+
+
 SEC_FIT = r"""
 <section>
   <div class="sec-head"><span class="sec-n">01</span>
     <h2>Fit to observations</h2></div>
+  ${m_01}
   <p class="lede">How close each background and analysis lands to the
   observations it was scored against, averaged over every cycle each
   experiment has cached. Lower is better; percentages are the change against
@@ -1577,6 +1837,7 @@ SEC_USAGE = r"""
 <section>
   <div class="sec-head"><span class="sec-n">02</span>
     <h2>Observation usage</h2></div>
+  ${m_02}
   <p class="lede">How many observations each experiment actually assimilated,
   cycle by cycle, with the size of the common sample alongside. A count that
   steps or collapses mid-run is usually the first sign of a problem upstream of
@@ -1590,6 +1851,7 @@ SEC_STATE = r"""
 <section>
   <div class="sec-head"><span class="sec-n">03</span>
     <h2>State space</h2></div>
+  ${m_03}
   <p class="lede">Where each system puts its update, and how far the analysis
   cut the ensemble spread. <b>RMS increment</b> at a level is the
   area-weighted root-mean-square of (analysis &minus; background) over the wet
@@ -1621,6 +1883,7 @@ SEC_BACKGROUND = r"""
 <section>
   <div class="sec-head"><span class="sec-n">04</span>
     <h2>Background state</h2></div>
+  ${m_04}
   <p class="lede">What the increments are correcting, and whether the mean
   state is holding still. Departures and increments can both look healthy while
   the model climate walks away &mdash; the global means below are the only view
@@ -1645,6 +1908,7 @@ SEC_DATES = r"""
 <section>
   <div class="sec-head"><span class="sec-n">05</span>
     <h2>Increments across dates</h2></div>
+  ${m_05}
   <p class="lede">The same fields at every cached cycle. A configuration that is
   behaving puts its increments in similar places each cycle; a pattern that
   wanders, or grows, is the signature the single-date maps in section 03 cannot
@@ -1653,6 +1917,18 @@ SEC_DATES = r"""
   date; every date of one field shares one colour scale, so step through them
   and the increment is comparable from one to the next.</p>
   ${hov}
+  <p class="lede">The same depth&ndash;cycle view for the <b>signed,
+  area-weighted mean</b> of the increment, by region. The RMS above says how
+  large the update is; the mean says which way it goes. A mean that keeps its
+  sign at the same depth cycle after cycle is a bias the model is rejecting
+  each time it is corrected &mdash; the analysis and the forecast disagree
+  systematically there &mdash; and that cannot be read off the magnitude.</p>
+  ${hov_mean}
+  <p class="lede">The mean increment as a <b>time series</b>, per region:
+  one panel per field, the surface level solid and the thickness-weighted
+  column mean dashed for the 3-D fields. The 2-D figure below carries the
+  same mean under the RMS, where it is too small to read.</p>
+  ${mean_series}
   ${inc2d}
   ${seq_figs}
 </section>
@@ -1662,6 +1938,7 @@ SEC_VERIF = r"""
 <section>
   <div class="sec-head"><span class="sec-n">06</span>
     <h2>Fit to gridded analyses</h2></div>
+  ${m_06}
   <p class="lede">Every other section scores this system against its own
   observations or against itself. This one scores the surface state against
   daily L4 products produced outside it: sea surface height against CMEMS
@@ -1700,6 +1977,7 @@ SEC_CYCLING = r"""
 <section>
   <div class="sec-head"><span class="sec-n">07</span>
     <h2>Cycling behaviour</h2></div>
+  ${m_07}
   <p class="lede">${cyc_note} Slow drift is the failure mode a single cycle
   cannot reveal, and the one that most often decides whether a configuration is
   usable. Pick an observation type for its headline metrics against cycle;
@@ -1714,6 +1992,7 @@ SEC_CALIBRATION = r"""
 <section>
   <div class="sec-head"><span class="sec-n">08</span>
     <h2>Ensemble calibration</h2></div>
+  ${m_08}
   <p class="lede">Whether the ensemble's own estimate of its error matches the
   error it actually makes. Two of these columns target <b>1</b>: the
   consistency ratio and spread/skill. Values are coloured green within about
@@ -1732,6 +2011,7 @@ SEC_BINNED = r"""
 <section>
   <div class="sec-head"><span class="sec-n">09</span>
     <h2>Binned departures</h2></div>
+  ${m_09}
   <p class="lede">Where each system fits its observations, not just how well.
   Every observation on the common sample is binned on a
   ${bin_deg}&deg; grid: the count, mean and RMS of O&minus;B and O&minus;A,
@@ -1756,6 +2036,7 @@ SEC_FORCING = r"""
 <section>
   <div class="sec-head"><span class="sec-n">10</span>
     <h2>Atmospheric forcing</h2></div>
+  ${m_10}
   <p class="lede">What drove the ocean and ice backgrounds. Each experiment
   here is a coupled run with its own atmosphere, so part of any difference
   between their backgrounds is a difference in forcing rather than in the
@@ -1767,12 +2048,20 @@ SEC_FORCING = r"""
   points only. The fluxes are the model&rsquo;s averages over the 6&nbsp;h
   ending at the analysis time, so a single map of the heat flux is mostly
   the diurnal cycle at that hour &mdash; compare maps at the same hour, and
-  read the daily mean off the time series, which carry every cycle. The
-  time series are area means by region; the maps are per cycle on fixed
-  scales. An experiment that keeps no atmosphere history
-  (3dvar-rt archives its restarts only) has no panels here.</p>
+  read the daily mean off the time series, which carry every cycle.</p>
+  <p class="lede">Coupled runs share the weather to first order, so the
+  absolute fields look alike and the divergence between experiments is only
+  legible as a <b>difference</b>. The time series are area means by region,
+  with a second row of each experiment minus the reference; the maps show
+  the reference experiment&rsquo;s forcing on fixed scales, then every other
+  experiment as its difference from the reference on a diverging scale fixed
+  per field. The reference is the configured one when it keeps an
+  atmosphere history, otherwise the first experiment that does (3dvar-rt
+  archives its restarts only, so it has no panels here and cannot be the
+  reference).</p>
   ${f_atmos_series}
   ${f_atmos_maps}
+  ${f_atmos_diff}
 </section>
 """
 

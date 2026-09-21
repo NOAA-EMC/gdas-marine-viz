@@ -104,8 +104,25 @@ def span(field):
 PER_PANEL = ('err_r', 'err_reff')
 
 
-def scales(derived_all):
-    """Colour limits per column kind from the pooled fields of one type."""
+def configured_limits(cfg, obstype):
+    """`obs_bins: limits:` entry for an obs type: exact name first, then the
+    longest prefix that matches (so 'sss' covers sss_smap_l2 and
+    sss_smos_l2, 'rads_adt' every altimeter). {} when none."""
+    table = (cfg.get('obs_bins') or {}).get('limits') or {}
+    if obstype in table:
+        return dict(table[obstype] or {})
+    hits = [k for k in table if obstype.startswith(k)]
+    return dict(table[max(hits, key=len)] or {}) if hits else {}
+
+
+def scales(derived_all, cfg=None, obstype=None):
+    """Colour limits per column kind for one obs type: the pooled 98th
+    percentile of the fields, unless `obs_bins: limits:` in the config
+    names the type (or a prefix of it) with its own `mean` (drawn
+    symmetric, +/-) and/or `rms` (0 to). The percentile is the wrong
+    instrument where a few wild observations survive QC -- SMAP/SMOS
+    salinity carried values from 0.1 to 42 psu into a +/-10 psu scale that
+    showed nothing of the ordinary 0.3 psu departures."""
     def pct(keys, q):
         v = np.concatenate([d[k][np.isfinite(d[k])].ravel()
                             for d in derived_all for k in keys if k in d]
@@ -114,8 +131,13 @@ def scales(derived_all):
     # The departures share one scale (rms) across mean/RMS O-B and O-A; an
     # assigned ADT error of metres on that 0.1 m scale flattened the O-B
     # rows to nothing, hence the errors' own, per-panel treatment above.
-    return {'mean': _round(pct(['ombg_mean', 'oman_mean'], 98)) or 1.0,
-            'rms': _round(pct(['ombg_rms', 'oman_rms'], 98)) or 1.0}
+    lim = {'mean': _round(pct(['ombg_mean', 'oman_mean'], 98)) or 1.0,
+           'rms': _round(pct(['ombg_rms', 'oman_rms'], 98)) or 1.0}
+    if cfg is not None and obstype is not None:
+        for k, v in configured_limits(cfg, obstype).items():
+            if k in lim and v is not None:
+                lim[k] = abs(float(v))
+    return lim
 
 
 def _norm(kind, lim, field):
@@ -222,7 +244,9 @@ def _stat_grid(obstype, per_exp, names, cfg, lim, title, deg, kind_of_panel,
     return _save(fig, cfg, fname)
 
 
-def fig_maps(obstype, per_exp, names, cfg, lim, title, deg):
+def fig_maps(obstype, per_exp, names, cfg, lim, title, deg, view='map'):
+    """``view`` is 'map' (every depth) or 'map_<layer>' for one of the
+    profile types' depth layers; it names the file."""
     lon_e, lat_e = B.lon_edges(deg), B.lat_edges(deg)
 
     def panel(ax, field, norm, cmap, proj, extent, polar):
@@ -238,7 +262,7 @@ def fig_maps(obstype, per_exp, names, cfg, lim, title, deg):
         PS._decorate(ax, polar=polar)
         return handle
     return _stat_grid(obstype, per_exp, names, cfg, lim, title, deg, panel,
-                      'obsbins_map_%s.png' % P.slug(obstype))
+                      'obsbins_%s_%s.png' % (view, P.slug(obstype)))
 
 
 def fig_sections(obstype, per_exp, names, cfg, lim, title, deg):
@@ -329,8 +353,8 @@ def per_type(arrays):
     """Split one npz (or a pooled total) into {type: {exp: {rest: array}}}."""
     out = {}
     for k, v in arrays.items():
-        if not k.startswith('obsbins/'):
-            continue
+        if not k.startswith('obsbins/') or k.count('/') < 3:
+            continue                       # e.g. the 'obsbins/version' stamp
         _o, obstype, exp, rest = k.split('/', 3)
         out.setdefault(obstype, {}).setdefault(exp, {})[rest] = v
     return out
@@ -372,15 +396,27 @@ def draw(which, split, names, cycles, cfg, lims, deg):
     written = []
     for obstype in sorted(split):
         exps = split[obstype]
-        derived = {n: B.derived(exps[n], 'map') for n in names if n in exps}
-        derived = {n: d for n, d in derived.items() if d is not None}
         lim = lims.get(obstype) or {'mean': 1.0, 'rms': 1.0}
         short = P.short(obstype)
-        if derived:
+        # every depth, then -- for the profile types -- one map per layer
+        views = ['map'] + sorted({rest.split('/', 1)[0] for e in exps.values()
+                                  for rest in e if rest.startswith('map_')},
+                                 key=lambda v: [B.layer_slug(lo, hi) for lo, hi
+                                                in B.layers(cfg)].index(v[4:])
+                                 if v[4:] in [B.layer_slug(lo, hi) for lo, hi
+                                              in B.layers(cfg)] else 99)
+        for view in views:
+            derived = {n: B.derived(exps[n], view) for n in names if n in exps}
+            derived = {n: d for n, d in derived.items() if d is not None}
+            if not derived:
+                continue
+            what = ('' if view == 'map' else
+                    ', %s' % view[4:].replace('m-bottom', ' m to the bottom')
+                    .replace('m', ' m'))
             written.append(fig_maps(
                 obstype, derived, names, cfg, lim,
-                '%s: binned departures, common sample - %s' % (short, when),
-                deg))
+                '%s: binned departures%s, common sample - %s'
+                % (short, what, when), deg, view=view))
         if is_profile(obstype):
             secs = {n: B.derived(exps[n], 'sec') for n in names if n in exps}
             secs = {n: d for n, d in secs.items() if d is not None}
@@ -467,7 +503,7 @@ def main(argv=None):
     lims = {}
     for obstype, exps in split.items():
         ds = [B.derived(v, 'map') for v in exps.values()]
-        lims[obstype] = scales([d for d in ds if d])
+        lims[obstype] = scales([d for d in ds if d], cfg, obstype)
     params = {'lims': lims, 'deg': deg, 'names': names}
     print('binned departures: %d obs type(s), %d cycle(s) pooled'
           % (len(split), len(have)), flush=True)

@@ -3,99 +3,11 @@ grid: lv_grid.nc
 reference: 3dvar-rt    # the pre-existing 3DVar realtime baseline
 
 cycles:
-  - 2025121300
-  - 2025121306
-  - 2025121312
-  - 2025121318
-  - 2025121400
-  - 2025121406
-  - 2025121412
-  - 2025121418
-  - 2025121500
-  - 2025121506
-  - 2025121512
-  - 2025121518
-  - 2025121600
-  - 2025121606
-  - 2025121612
-  - 2025121618
-  - 2025121700
-  - 2025121706
-  - 2025121712
-  - 2025121718
-  - 2025121800
-  - 2025121806
-  - 2025121812
-  - 2025121818
-  - 2025121900
-  - 2025121906
-  - 2025121912
-  - 2025121918
-  - 2025122000
-  - 2025122006
-  - 2025122012
-  - 2025122018
-  - 2025122100
-  - 2025122106
-  - 2025122112
-  - 2025122118
-  - 2025122200
-  - 2025122206
-  - 2025122212
-  - 2025122218
-  - 2025122300
-  - 2025122306
-  - 2025122312
-  - 2025122318
-  - 2025122400
-  - 2025122406
-  - 2025122412
-  - 2025122418
-  - 2025122500
-  - 2025122506
-  - 2025122512
-  - 2025122518
-  - 2025122600
-  - 2025122606
-  - 2025122612
-  - 2025122618
-  - 2025122700
-  - 2025122706
-  - 2025122712
-  - 2025122718
-  - 2025122800
-  - 2025122806
-  - 2025122812
-  - 2025122818
-  - 2025122900
-  - 2025122906
-  - 2025122912
-  - 2025122918
-  - 2025123000
-  - 2025123006
-  - 2025123012
-  - 2025123018
-  - 2025123100
-  - 2025123106
-  - 2025123112
-  - 2025123118
-  - 2026010100
-  - 2026010106
-  - 2026010112
-  - 2026010118
-  - 2026010200
-  - 2026010206
-  - 2026010212
-  - 2026010218
-  - 2026010300
-  - 2026010306
-  - 2026010312
-  - 2026010318
-  - 2026010400
-  - 2026010406
-  - 2026010412
-  - 2026010418
-  - 2026010500
+  # A cumulative window: `start` is yours to set, `stop` is advanced by
+  # run_daily.sh (newest_cycle.py) to the newest complete cycle on disk.
+  start: 2025121300
+  stop:  2026015000
+  step:  6
 
 experiments:
 #  - name:  cp06.torchbalance
@@ -230,6 +142,8 @@ map_limits:
     aice_h_k0:          [0, 1]                         # fraction, physical
     hi_div_aice_h_k0:   {nh: [0, 4.5], sh: [0, 2]}     # m
     hs_div_aice_h_k0:   {nh: [0, 0.4], sh: [0, 0.6]}   # m
+  verif_diff:           # model minus gridded product, symmetric +/- (obs units)
+    sss: 1.5            # the 99th percentile gave +/-4 psu, all river plumes
   increment:            # symmetric, +/- this value
     ocean:
       Temp_k0:    1.5
@@ -261,3 +175,12 @@ regions:
 corr_regions: [N_Atlantic, E_Pacific, S_Ocean, Kuroshio]
 
 depth_bins: [0, 10, 50, 100, 300, 700, 2000, 6000]
+
+# Binned departures (section 09): colour-scale bounds per obs type or prefix;
+# without an entry the pooled 98th percentile is used, which SMAP/SMOS
+# outliers pushed to +/-10 psu. View setting only, no recompute.
+obs_bins:
+  deg: 1
+  limits:
+    sss: {mean: 1.0, rms: 1.0}
+    rads_adt: {mean: 0.15, rms: 0.15}

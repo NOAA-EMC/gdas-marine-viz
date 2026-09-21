@@ -92,7 +92,20 @@ def observation_block(cfg, cycle, work, verbose=True):
         paths = per_type[obstype]
         if verbose:
             print('  obs  %-32s' % obstype, end='', flush=True)
-        own = {n: ObsSet(p, obstype) for n, p in paths.items()}
+        own = {}
+        for n, p in paths.items():
+            try:
+                own[n] = ObsSet(p, obstype)
+            except (IndexError, KeyError, OSError) as err:
+                # an empty or half-written diag (a glider file with no
+                # locations and no ObsValue group has happened): that type
+                # is dropped for this experiment and cycle, nothing else is
+                print(' ! %s: unreadable (%s: %s) -- skipped'
+                      % (n, type(err).__name__, err), flush=True)
+        if not own:
+            if verbose:
+                print(' no readable file', flush=True)
+            continue
         aligned, counts, common_pass = join_obs(own)
         out[obstype] = lv_obsspace.compute(
             obstype, aligned, counts, common_pass, own, cfg)
@@ -116,6 +129,7 @@ def observation_block(cfg, cycle, work, verbose=True):
 def write_obsbins(cfg, cycle, bins):
     if not bins:
         return
+    bins = dict(bins, **{'obsbins/version': np.array(lv_obsbins.VERSION)})
     bp = os.path.join(cfg['cache'], '%s_obsbins.npz' % cycle)
     np.savez_compressed(bp + '.tmp.npz', **bins)
     os.replace(bp + '.tmp.npz', bp)
@@ -162,6 +176,19 @@ def compute_cycle(cfg, cycle, grid, work, verbose=True):
     return out, maps, bins
 
 
+def _obsbins_current(bpath):
+    """The cycle's bins exist and were written by this version of
+    lv_obsbins (its VERSION is bumped when the contents change)."""
+    if not os.path.exists(bpath):
+        return False
+    try:
+        with np.load(bpath) as z:
+            return ('obsbins/version' in z.files
+                    and int(z['obsbins/version']) >= lv_obsbins.VERSION)
+    except (OSError, ValueError):
+        return False
+
+
 def rejoin_one(cfg, cycle, work, verbose=True, force=False):
     """Recompute only the observation block, for every registered experiment.
 
@@ -182,7 +209,7 @@ def rejoin_one(cfg, cycle, work, verbose=True, force=False):
     # (With the page cache as the only cache there is nothing to merge from,
     # and the existing file is the answer by definition.)
     if (not force and os.path.exists(jpath)
-            and os.path.exists(bpath)      # an older join predates the bins
+            and _obsbins_current(bpath)    # an older join predates the bins
             and (not sources or os.path.getmtime(jpath)
                  > max(map(os.path.getmtime, sources)))):
         return 'cached', 'join newer than its sources (--force to redo)'

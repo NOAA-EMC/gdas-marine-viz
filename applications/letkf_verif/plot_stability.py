@@ -1,48 +1,42 @@
 #!/usr/bin/env python3
-"""SSH cycling-stability diagnostics: numbers instead of watching animations.
+"""SSH cycling diagnostics: the 6-h tendency, in maps and in numbers.
 
-The failure mode a tight fit to altimetry has produced before is a slowly
-growing mode: the analysis inserts a feature the model does not hold, the
-forecast pushes it back, the next analysis re-inserts it larger, and after
-enough cycles it is a stripe or a blob nobody wanted. Watching an animation
-catches it late and only where one happens to look. This computes, for every
-cycle and region, the quantities that move first, fits a trend to each, and
-writes a verdict:
+What went wrong with altimetry in the past showed up first in the 6-h SSH
+tendency -- background(t) minus the previous analysis, what the model does on
+its own between two analyses -- as a large-scale pattern that reverses sign
+from one cycle to the next. No per-cycle score sees a sign flip, and the
+small-scale variances this script used to track never moved. So it now
+draws the tendency and tracks four things:
 
-  incr_rms, incr_max        size of the SSH increment (area-weighted RMS, max |.|)
-  chg_rms                   the 6-h forecast change background(t) - analysis(t-6h)
-  persist                   spatial correlation of increment(t) with increment(t-6h):
-                            ~0 when each increment corrects something new;
-                            sustained positive = the same correction every cycle
-  reject                    slope of the forecast change on the previous increment:
-                            -1 = the model undoes what the analysis put in;
-                            0 = increments are kept
-  hp_var_bkg, hp_var_incr   variance of the small-scale part (< ~2 deg) of the
-                            background and of the increment
-  gs_var_bkg                the same at grid scale (< ~3 cells): mesoscale spin-up
-                            raises hp_var_bkg but not this; DA noise raises both
-  shock                     RMS(f003-f000) / RMS(f006-f003) of the forecast from this
-                            cycle's analysis: initialization adjustment vs the
-                            model's own tendency
-  n_big, big_lon, big_lat   cells with |increment| > --big (m), and where the
-                            largest cluster is
-  ontrack                   increment variance in 1-deg bins with ADT obs over bins
-                            without (from the cycle's obsbins): along-track striping
+  chg_rms        area-weighted RMS of the 6-h tendency
+  chg_ls_rms     the same for its 5-deg block mean (the large-scale part);
+                 a weather-driven tendency is ~1.5 cm and mostly large scale
+  lag1           spatial correlation of the large-scale tendency with the one
+                 6 h earlier: positive when the wind-driven adjustment carries
+                 on, negative when the ocean is ringing
+  incr_rms       area-weighted RMS of the SSH increment
+  uv_deep_ratio  RMS of the u/v increment below --deep (m) over the RMS in the
+                 top --shallow (m), from the mom6 increment: a geostrophic
+                 increment decays with depth, so this is well below 1; above
+                 1 the analysis is handing the model a barotropic transport
 
 Per experiment with an ocean background and increment:
 
-    figs/cycle_ssh_stability_<exp>.png   one panel per metric, one line per region,
-                                         dotted = fitted trend
-    ssh_stability_<exp>.csv              every metric per cycle and region
-    ssh_stability_<exp>.json             the verdict: trend in % of the metric mean
-                                         per day, t statistic, adverse flag
+    figs/cycle_ssh_stability_<exp>.png       the four series, one line per region,
+                                             dotted = fitted trend
+    figs/ssh_tendency_<exp>.png              latest cycle: background, increment,
+                                             6-h tendency, its 5-deg low-pass
+    figs/ssh_tendency_strip_<exp>.png        low-pass tendency of the last 4 cycles
+    ssh_stability_<exp>.csv / .json          every metric per cycle and region;
+                                             the trend verdict
 
-Regions: global plus the `corr_regions:` boxes (small, fixed, made for this).
-The report shows the figure and the verdict table in section 07.
+Regions: global plus the `corr_regions:` boxes. The report shows all three
+figures and the verdict table in section 07.
 """
 
 import argparse
 import csv
+import glob
 import json
 import os
 import sys
@@ -55,30 +49,25 @@ matplotlib.use('Agg')
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import cartopy.crs as ccrs  # noqa: E402
+import cartopy.feature as cfeature  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 from netCDF4 import Dataset  # noqa: E402
-from scipy import ndimage  # noqa: E402
 import lv_plot as P  # noqa: E402
 from lv_common import Fresh, Grid, corr_regions, load_config, region_box  # noqa: E402
 
-HP_CELLS = 9          # boxcar width for the small-scale split (~2 deg at 1/4)
-METRICS = ['incr_rms', 'incr_max', 'chg_rms', 'persist', 'reject',
-           'hp_var_bkg', 'gs_var_bkg', 'hp_var_incr', 'shock', 'n_big',
-           'ontrack']
+BLOCK = 20            # 1/4-deg cells per 5-deg block for the low-pass
+STRIP = 4             # cycles in the tendency strip (24 h)
+METRICS = ['chg_rms', 'chg_ls_rms', 'lag1', 'incr_rms', 'uv_deep_ratio']
 # which direction of trend is bad, for the verdict
-ADVERSE = {'incr_rms': +1, 'incr_max': +1, 'chg_rms': +1, 'persist': +1,
-           'reject': -1, 'hp_var_bkg': +1, 'gs_var_bkg': +1, 'hp_var_incr': +1,
-           'shock': +1, 'n_big': +1, 'ontrack': +1}
-LABELS = {'incr_rms': 'SSH increment RMS (m)', 'incr_max': 'max |increment| (m)',
-          'chg_rms': '6-h forecast change RMS (m)',
-          'persist': 'increment persistence (corr with previous)',
-          'reject': 'rejection: forecast change on previous increment',
-          'hp_var_bkg': 'small-scale (<2 deg) background SSH variance (m$^2$)',
-          'gs_var_bkg': 'grid-scale background SSH variance (m$^2$)',
-          'hp_var_incr': 'small-scale increment variance (m$^2$)',
-          'shock': 'initialization shock (first 3 h / next 3 h)',
-          'n_big': 'cells with |increment| > threshold',
-          'ontrack': 'on-track / off-track increment variance'}
+ADVERSE = {'chg_rms': +1, 'chg_ls_rms': +1, 'lag1': -1, 'incr_rms': +1,
+           'uv_deep_ratio': +1}
+LABELS = {'chg_rms': '6-h SSH tendency RMS (m): total, and 5$^\\circ$ low-pass (dashed)',
+          'lag1': 'lag-6 h correlation of the low-pass tendency',
+          'incr_rms': 'SSH increment RMS (m)',
+          'uv_deep_ratio': 'u/v increment: deep RMS / surface RMS'}
+LAND = '#e7e3db'
+COAST = '#8d8878'
 
 
 def read_level0(path, var):
@@ -103,24 +92,36 @@ def forecast_file(exp, cycle, fhr):
     return None
 
 
-def highpass(f, mask, n=HP_CELLS):
-    """f minus its boxcar mean over n x n wet cells (NaN-aware)."""
-    x = np.where(mask & np.isfinite(f), f, 0.0)
-    w = (mask & np.isfinite(f)).astype('f8')
-    num = ndimage.uniform_filter(x, n, mode='nearest')
-    den = ndimage.uniform_filter(w, n, mode='nearest')
-    with np.errstate(invalid='ignore', divide='ignore'):
-        smooth = np.where(den > 0.3, num / den, np.nan)
-    return np.where(mask, f - smooth, np.nan)
+def mom6_increment(exp, cycle):
+    """The increment MOM6 ingests, with u/v on model layers; falls back to
+    the jedi increment, which carries the same fields."""
+    hits = sorted(glob.glob(os.path.join(exp.dir_for(cycle), 'ocean',
+                                         '*mom6_increment*.nc')))
+    return hits[0] if hits else exp.increment(cycle, 'ocean')
+
+
+def block_mean(a, n=BLOCK):
+    """n x n block mean, NaN-aware."""
+    ny, nx = a.shape
+    b = a[:ny // n * n, :nx // n * n].reshape(ny // n, n, nx // n, n)
+    with np.errstate(invalid='ignore'):
+        return np.nanmean(np.nanmean(b, axis=3), axis=1)
+
+
+def block_up(b, n, shape):
+    """Block mean back on the full grid (nearest), for drawing."""
+    a = np.repeat(np.repeat(b, n, axis=0), n, axis=1)
+    out = np.full(shape, np.nan)
+    out[:a.shape[0], :a.shape[1]] = a
+    return out
 
 
 def wstats(f, w, sel):
     ok = sel & np.isfinite(f)
     if not ok.any():
-        return np.nan, np.nan
+        return np.nan
     ww = w[ok]
-    return (float(np.sqrt(np.sum(ww * f[ok] ** 2) / ww.sum())),
-            float(np.nanmax(np.abs(f[ok]))))
+    return float(np.sqrt(np.sum(ww * f[ok] ** 2) / ww.sum()))
 
 
 def wcorr(a, b, w, sel):
@@ -133,53 +134,35 @@ def wcorr(a, b, w, sel):
     return float(sxy / np.sqrt(sxx * syy)) if sxx > 0 and syy > 0 else np.nan
 
 
-def wslope(y, x, w, sel):
-    """Slope of y on x (area-weighted least squares)."""
-    ok = sel & np.isfinite(x) & np.isfinite(y)
-    if ok.sum() < 10:
+def uv_deep_ratio(path, bkg_path, sel, shallow, deep):
+    """RMS of the u/v increment below ``deep`` m over the RMS above
+    ``shallow`` m, over the region, from a handful of levels each."""
+    if path is None or bkg_path is None or not os.path.exists(bkg_path):
         return np.nan
-    ww = w[ok] / w[ok].sum()
-    xm, ym = np.sum(ww * x[ok]), np.sum(ww * y[ok])
-    sxx = np.sum(ww * (x[ok] - xm) ** 2)
-    return float(np.sum(ww * (x[ok] - xm) * (y[ok] - ym)) / sxx) if sxx > 0 else np.nan
-
-
-def big_cluster(f, thr, lat, lon, sel):
-    """Count of |f| > thr cells and the centroid of the largest cluster."""
-    big = sel & np.isfinite(f) & (np.abs(f) > thr)
-    n = int(big.sum())
-    if n == 0:
-        return 0, np.nan, np.nan
-    lab, nlab = ndimage.label(big)
-    sizes = ndimage.sum(big, lab, index=np.arange(1, nlab + 1))
-    k = int(np.argmax(sizes)) + 1
-    m = lab == k
-    return n, float(np.nanmean(lon[m])), float(np.nanmean(lat[m]))
-
-
-def ontrack_index(incr, cfg, cycle, grid, sel):
-    """Increment variance on 1-deg bins with ADT obs / bins without."""
-    try:
-        bins = P.load_obsbins(cfg, cycle)
-    except Exception:
-        bins = None
-    if bins is None:
+    with Dataset(bkg_path) as ds:
+        if 'z_l' not in ds.variables:
+            return np.nan
+        z = np.asarray(ds['z_l'][:], dtype='f8')
+    top = np.where(z <= shallow)[0]
+    bot = np.where(z >= deep)[0]
+    if top.size == 0 or bot.size == 0:
         return np.nan
-    count = None
-    for k in bins.files:
-        if '/map/n' in k and 'rads_adt' in k:
-            count = bins[k] if count is None else count + bins[k]
-    if count is None:
-        return np.nan
-    deg = 180.0 / count.shape[0]
-    j = np.clip(((grid.lat + 90) / deg).astype(int), 0, count.shape[0] - 1)
-    i = np.clip(((grid.lon180 + 180) / deg).astype(int), 0, count.shape[1] - 1)
-    on = count[j, i] > 0
-    ok = sel & np.isfinite(incr)
-    a, b = ok & on, ok & ~on
-    if a.sum() < 100 or b.sum() < 100:
-        return np.nan
-    return float(np.var(incr[a]) / np.var(incr[b]))
+    top = top[::max(1, top.size // 4)][:4]
+    bot = bot[::max(1, bot.size // 4)][:4]
+    with Dataset(path) as ds:
+        if 'u' not in ds.variables or 'v' not in ds.variables:
+            return np.nan
+
+        def rms(levels):
+            s, n = 0.0, 0
+            for k in levels:
+                for var in ('u', 'v'):
+                    a = np.ma.filled(ds[var][0, k].astype('f8'), 0.0)
+                    s += float(np.sum(a[sel] ** 2))
+                    n += int(sel.sum())
+            return np.sqrt(s / n) if n else np.nan
+        num, den = rms(bot), rms(top)
+    return num / den if den > 0 else np.nan
 
 
 def trend(y, hours_per_step=6.0):
@@ -204,62 +187,52 @@ def trend(y, hours_per_step=6.0):
     return float(pct), float(tstat)
 
 
-def analyse(cfg, exp, cycles, grid, regions, field='ave_ssh', big=0.3,
-            verbose=True):
-    """Every metric for every cycle and region; rows of dicts."""
+def analyse(cfg, exp, cycles, grid, regions, field='ave_ssh', shallow=50.0,
+            deep=1000.0, verbose=True):
+    """Every metric for every cycle and region, plus the fields of the last
+    STRIP cycles for the maps: (rows, maps) where maps is a list of
+    (cycle, bkg, incr, chg, chg_ls)."""
     w = grid.area
-    lat, lon = grid.lat, grid.lon180
-    rows = []
-    prev_incr = prev_ana = None
+    rows, maps = [], []
+    prev_ana = prev_ls = None
     for cycle in cycles:
-        bkg = read_level0(exp.background(cycle, 'ocean'), field)
-        incr = read_level0(exp.increment(cycle, 'ocean'), field)
+        bkg_path = exp.background(cycle, 'ocean')
+        inc_path = mom6_increment(exp, cycle)
+        bkg = read_level0(bkg_path, field)
+        incr = read_level0(inc_path, field)
         if bkg is None or incr is None:
-            prev_incr = prev_ana = None
+            prev_ana = prev_ls = None
             continue
         ana = bkg + incr
-        chg = None if prev_ana is None else bkg - prev_ana
-        hp_b = highpass(bkg, grid.mask)
-        gs_b = highpass(bkg, grid.mask, 3)
-        hp_i = highpass(incr, grid.mask)
-        f0 = read_level0(forecast_file(exp, cycle, 0), field)
-        f3 = read_level0(forecast_file(exp, cycle, 3), field)
-        f6 = read_level0(forecast_file(exp, cycle, 6), field)
+        chg = None if prev_ana is None else np.where(grid.mask, bkg - prev_ana, np.nan)
+        ls = None if chg is None else block_mean(chg)
         for rname, sel in regions.items():
             r = {'cycle': cycle, 'region': rname}
-            r['incr_rms'], r['incr_max'] = wstats(incr, w, sel)
-            r['chg_rms'] = wstats(chg, w, sel)[0] if chg is not None else np.nan
-            r['persist'] = (wcorr(incr, prev_incr, w, sel)
-                            if prev_incr is not None else np.nan)
-            r['reject'] = (wslope(chg, prev_incr, w, sel)
-                           if chg is not None and prev_incr is not None
-                           else np.nan)
-            r['hp_var_bkg'] = wstats(hp_b, w, sel)[0] ** 2
-            r['gs_var_bkg'] = wstats(gs_b, w, sel)[0] ** 2
-            r['hp_var_incr'] = wstats(hp_i, w, sel)[0] ** 2
-            if f0 is not None and f3 is not None and f6 is not None:
-                s1 = wstats(f3 - f0, w, sel)[0]
-                s2 = wstats(f6 - f3, w, sel)[0]
-                r['shock'] = s1 / s2 if s2 > 0 else np.nan
+            r['incr_rms'] = wstats(incr, w, sel)
+            r['chg_rms'] = wstats(chg, w, sel) if chg is not None else np.nan
+            if ls is not None:
+                sel_ls = block_mean(sel.astype('f8')) > 0.5
+                r['chg_ls_rms'] = wstats(ls, np.ones(ls.shape), sel_ls)
+                r['lag1'] = (wcorr(ls, prev_ls, np.ones(ls.shape), sel_ls)
+                             if prev_ls is not None else np.nan)
             else:
-                r['shock'] = np.nan
-            r['n_big'], r['big_lon'], r['big_lat'] = big_cluster(
-                incr, big, lat, lon, sel)
-            r['ontrack'] = ontrack_index(incr, cfg, cycle, grid, sel)
+                r['chg_ls_rms'] = r['lag1'] = np.nan
+            r['uv_deep_ratio'] = uv_deep_ratio(inc_path, bkg_path, sel, shallow, deep)
             rows.append(r)
+        maps.append((cycle, bkg, incr, chg, ls))
+        maps = maps[-STRIP:]
         if verbose:
             g = rows[-len(regions)]
-            print('    %s  incr rms %.4f  chg rms %s  persist %s  reject %s  '
-                  'hp_var_bkg %.2e  shock %s'
+            print('    %s  incr rms %.4f  chg rms %s  low-pass %s  lag1 %s  '
+                  'uv deep/surf %s'
                   % (cycle, g['incr_rms'],
                      '%.4f' % g['chg_rms'] if np.isfinite(g['chg_rms']) else '-',
-                     '%+.2f' % g['persist'] if np.isfinite(g['persist']) else '-',
-                     '%+.2f' % g['reject'] if np.isfinite(g['reject']) else '-',
-                     g['hp_var_bkg'],
-                     '%.2f' % g['shock'] if np.isfinite(g['shock']) else '-'),
+                     '%.4f' % g['chg_ls_rms'] if np.isfinite(g['chg_ls_rms']) else '-',
+                     '%+.2f' % g['lag1'] if np.isfinite(g['lag1']) else '-',
+                     '%.2f' % g['uv_deep_ratio'] if np.isfinite(g['uv_deep_ratio']) else '-'),
                   flush=True)
-        prev_incr, prev_ana = incr, ana
-    return rows
+        prev_ana, prev_ls = ana, ls
+    return rows, maps
 
 
 def verdict(rows, regions):
@@ -277,45 +250,118 @@ def verdict(rows, regions):
     return out
 
 
-def figure(rows, regions, cycles, exp_name, cfg, fname):
+def figure(rows, regions, exp_name, cfg, fname):
     names = list(regions)
     col = P.color_map(names)
-    fig, axes = plt.subplots(6, 2, figsize=(12, 15.5), squeeze=False)
+    panels = ['chg_rms', 'lag1', 'incr_rms', 'uv_deep_ratio']
+    fig, axes = plt.subplots(2, 2, figsize=(12, 7), squeeze=False)
     axes = axes.ravel()
-    for k, m in enumerate(METRICS):
-        ax = axes[k]
+    drawn = sorted({r['cycle'] for r in rows})
+    for ax, m in zip(axes, panels):
         for rname in names:
             y = np.array([r[m] for r in rows if r['region'] == rname], dtype='f8')
             x = np.arange(len(y))
             ax.plot(x, y, '-', lw=1.2, color=col[rname], label=rname)
+            if m == 'chg_rms':
+                y2 = np.array([r['chg_ls_rms'] for r in rows if r['region'] == rname],
+                              dtype='f8')
+                ax.plot(x, y2, '--', lw=0.9, color=col[rname])
             ok = np.isfinite(y)
             if ok.sum() >= 6:
                 coef = np.polyfit(x[ok], y[ok], 1)
                 ax.plot(x, np.polyval(coef, x), ':', lw=1, color=col[rname])
-        ax.set_title(LABELS.get(m, m), fontsize=9.5, color=P.INK)
+        ax.set_title(LABELS[m], fontsize=9.5, color=P.INK)
         ax.tick_params(labelsize=7.5)
         P.tidy(ax)
-        if m in ('reject', 'persist'):
+        if m == 'lag1':
             ax.axhline(0, color=P.MUTED, lw=0.8, ls=(0, (4, 3)))
-        if m in ('shock', 'ontrack'):
+        if m == 'uv_deep_ratio':
             ax.axhline(1, color=P.MUTED, lw=0.8, ls=(0, (4, 3)))
-    drawn = sorted({r['cycle'] for r in rows})
-    step = max(1, len(drawn) // 8)
-    for ax in axes[:len(METRICS)]:
+        step = max(1, len(drawn) // 8)
         ax.set_xticks(np.arange(0, len(drawn), step))
         ax.set_xticklabels([c[4:6] + '-' + c[6:8] + ' ' + c[8:10] + 'Z'
                             for c in drawn[::step]], rotation=30, fontsize=7)
-    for ax in axes[len(METRICS):]:
-        ax.axis('off')
     axes[0].legend(fontsize=8, frameon=False)
 
     def when(c):
         return '%s-%s-%s %sZ' % (c[:4], c[4:6], c[6:8], c[8:10])
-    fig.suptitle('%s: SSH cycling stability, %s to %s (dotted: fitted trend)'
+    fig.suptitle('%s: SSH cycling, %s to %s (dotted: fitted trend)'
                  % (exp_name, when(drawn[0]), when(drawn[-1])),
                  fontsize=12, color=P.INK)
-    fig.tight_layout(rect=[0, 0, 1, 0.97])
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
     return P.save(fig, cfg, fname, dpi=110, quiet=True)
+
+
+def _map(ax, grid, fld, lo, hi, cmap, title, stride=2):
+    lon = grid.lon180[::stride, ::stride]
+    lat = grid.lat[::stride, ::stride]
+    f = np.where(grid.mask, fld, np.nan)[::stride, ::stride]
+    pm = ax.pcolormesh(lon, lat, np.ma.masked_invalid(f), cmap=cmap, vmin=lo,
+                       vmax=hi, shading='nearest', rasterized=True,
+                       transform=ccrs.PlateCarree())
+    ax.add_feature(cfeature.LAND, facecolor=LAND, zorder=2)
+    ax.coastlines(resolution='110m', linewidth=0.35, color=COAST, zorder=3)
+    ax.set_global()
+    ax.set_title(title, fontsize=9, color=P.INK)
+    with np.errstate(invalid='ignore'):
+        ax.text(0.01, 0.02, 'rms %.3f  max|.| %.3f' % (
+            np.sqrt(np.nanmean(f ** 2)), np.nanmax(np.abs(f))),
+            transform=ax.transAxes, fontsize=7, color=P.INK2,
+            bbox=dict(fc='white', ec='none', alpha=0.7, pad=1.5))
+    return pm
+
+
+def tendency_maps(maps, grid, exp_name, cfg, fname, vmax):
+    """Latest cycle: background, increment, 6-h tendency, low-pass tendency."""
+    cycle, bkg, incr, chg, ls = maps[-1]
+    lim = (cfg.get('map_limits') or {})
+    bkg_lim = (lim.get('ocean') or {}).get('ave_ssh_k0')
+    bkg_lim = tuple(bkg_lim) if bkg_lim else (-2.0, 1.0)
+    proj = ccrs.PlateCarree(central_longitude=-120)
+    fig, axes = plt.subplots(2, 2, figsize=(12, 6.2), squeeze=False,
+                             subplot_kw=dict(projection=proj))
+    axes = axes.ravel()
+    panels = [(bkg, 'background SSH (m)', bkg_lim, P.SEQ_BKG),
+              (incr, 'analysis increment (m)', (-vmax, vmax), P.DIVERGING),
+              (chg, '6-h tendency: background minus previous analysis (m)',
+               (-vmax, vmax), P.DIVERGING),
+              (None if ls is None else block_up(ls, BLOCK, bkg.shape),
+               '6-h tendency, 5$^\\circ$ low-pass (m)', (-vmax, vmax), P.DIVERGING)]
+    for ax, (fld, title, (lo, hi), cmap) in zip(axes, panels):
+        if fld is None:
+            ax.set_global()
+            ax.text(0.5, 0.5, 'no previous analysis', ha='center', va='center',
+                    transform=ax.transAxes, fontsize=9, color=P.MUTED)
+            ax.set_title(title, fontsize=9, color=P.INK)
+            continue
+        pm = _map(ax, grid, fld, lo, hi, cmap, title)
+        cb = fig.colorbar(pm, ax=ax, fraction=0.03, pad=0.02)
+        cb.outline.set_visible(False)
+        cb.ax.tick_params(labelsize=6.5)
+    fig.suptitle('%s: SSH at %s-%s-%s %sZ' % (exp_name, cycle[:4], cycle[4:6],
+                                             cycle[6:8], cycle[8:10]),
+                 fontsize=12, color=P.INK)
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.9, bottom=0.03,
+                        wspace=0.1, hspace=0.18)
+    return P.save(fig, cfg, fname, dpi=100, quiet=True)
+
+
+def tendency_strip(maps, grid, exp_name, cfg, fname, vmax):
+    """Low-pass 6-h tendency of the last STRIP cycles side by side: a sign
+    that flips from panel to panel is the ocean ringing."""
+    have = [m for m in maps if m[4] is not None]
+    if not have:
+        return None
+    proj = ccrs.PlateCarree(central_longitude=-120)
+    fig, axes = plt.subplots(1, len(have), figsize=(4.2 * len(have), 2.9),
+                             squeeze=False, subplot_kw=dict(projection=proj))
+    for ax, (cycle, bkg, _i, _c, ls) in zip(axes.ravel(), have):
+        _map(ax, grid, block_up(ls, BLOCK, bkg.shape), -vmax, vmax, P.DIVERGING,
+             '%s-%s %sZ' % (cycle[4:6], cycle[6:8], cycle[8:10]))
+    fig.suptitle('%s: 5$^\\circ$ low-pass 6-h SSH tendency, last %d cycles (m, $\\pm$%.2f)'
+                 % (exp_name, len(have), vmax), fontsize=11, color=P.INK)
+    fig.subplots_adjust(left=0.01, right=0.99, top=0.82, bottom=0.02, wspace=0.05)
+    return P.save(fig, cfg, fname, dpi=100, quiet=True)
 
 
 def stability_regions(cfg, grid):
@@ -342,8 +388,14 @@ def main(argv=None):
                     help='restrict to these experiments (default: every one '
                          'with an ocean background and increment)')
     ap.add_argument('--field', default='ave_ssh')
-    ap.add_argument('--big', type=float, default=0.3,
-                    help='|increment| threshold (m) for the blow-up count')
+    ap.add_argument('--vmax', type=float, default=0.1,
+                    help='colour range (+/- m) for the increment and tendency '
+                         'maps; the increment limit in map_limits is too wide '
+                         'for a tendency (default 0.1)')
+    ap.add_argument('--shallow', type=float, default=50.0,
+                    help='top of the column for the u/v ratio (m)')
+    ap.add_argument('--deep', type=float, default=1000.0,
+                    help='below this depth is "deep" for the u/v ratio (m)')
     ap.add_argument('--force', action='store_true')
     a = ap.parse_args(argv)
     a.config = a.config or a.config_opt
@@ -353,6 +405,7 @@ def main(argv=None):
     grid = Grid(cfg['grid'])
     regions = stability_regions(cfg, grid)
     os.makedirs(cfg['figs'], exist_ok=True)
+    vmax = a.vmax
     fresh = Fresh(cfg, 'stability', force=a.force, script=__file__)
     exps = [e for e in cfg['experiments']
             if not a.experiment or e.name in a.experiment]
@@ -371,21 +424,21 @@ def main(argv=None):
         # regenerated last cycle redraws and nothing else does.
         inputs = [e.background(have[-1], 'ocean'), e.increment(have[-1], 'ocean'),
                   __file__]
-        params = {'cycles': have, 'field': a.field, 'big': a.big,
+        params = {'cycles': have, 'field': a.field, 'vmax': vmax,
+                  'shallow': a.shallow, 'deep': a.deep,
                   'regions': sorted(regions)}
         if fresh.ok('exp:%s' % e.name, inputs, params):
             print('  %s: up to date, skipped' % e.name, flush=True)
             continue
         t = time.time()
         print('  %s: %d cycle(s)' % (e.name, len(have)), flush=True)
-        rows = analyse(cfg, e, have, grid, regions, a.field, a.big)
+        rows, maps = analyse(cfg, e, have, grid, regions, a.field, a.shallow, a.deep)
         if not rows:
             fresh.record('exp:%s' % e.name, inputs, params, [])
             continue
         csv_path = os.path.join(cfg['outdir'], 'ssh_stability_%s.csv' % slug)
         with open(csv_path, 'w', newline='') as fh:
-            wr = csv.DictWriter(fh, fieldnames=['cycle', 'region'] + METRICS
-                                + ['big_lon', 'big_lat'])
+            wr = csv.DictWriter(fh, fieldnames=['cycle', 'region'] + METRICS)
             wr.writeheader()
             wr.writerows(rows)
         v = verdict(rows, regions)
@@ -394,13 +447,16 @@ def main(argv=None):
                       else x) for k, x in row.items()} for row in v]
         with open(json_path, 'w') as fh:
             json.dump({'experiment': e.name, 'cycles': have, 'field': a.field,
-                       'big': a.big, 'verdict': clean}, fh, indent=1)
-        png = figure(rows, regions, have, e.name, cfg,
-                     'cycle_ssh_stability_%s.png' % slug)
-        fresh.record('exp:%s' % e.name, inputs, params, [png, csv_path, json_path])
+                       'verdict': clean}, fh, indent=1)
+        outs = [figure(rows, regions, e.name, cfg, 'cycle_ssh_stability_%s.png' % slug),
+                tendency_maps(maps, grid, e.name, cfg, 'ssh_tendency_%s.png' % slug, vmax),
+                tendency_strip(maps, grid, e.name, cfg,
+                               'ssh_tendency_strip_%s.png' % slug, vmax),
+                csv_path, json_path]
+        fresh.record('exp:%s' % e.name, inputs, params, [o for o in outs if o])
         flagged = [x for x in v if x['flag']]
-        print('  %s: %d figure, %d flagged trend(s)%s in %.0fs'
-              % (e.name, 1, len(flagged),
+        print('  %s: 3 figures, %d flagged trend(s)%s in %.0fs'
+              % (e.name, len(flagged),
                  ' (%s)' % ', '.join('%s/%s' % (x['region'], x['metric'])
                                      for x in flagged[:6]) if flagged else '',
                  time.time() - t), flush=True)

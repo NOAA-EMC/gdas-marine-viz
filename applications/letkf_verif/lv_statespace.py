@@ -171,19 +171,69 @@ def _speed_level(ds, k):
     return np.hypot(u, v)
 
 
+# (cos_rot, sin_rot) of the grid in use, set by set_rotation() from the Grid
+# before any velocity is read. The level readers only see a Dataset, so the
+# rotation rides on the module rather than through every reducer signature.
+_ROT = None
+
+
+def set_rotation(grid):
+    """Register the grid's rotation angles for `u`/`v`; None leaves the
+    components in the grid frame (an lv_grid.nc without cos_rot/sin_rot)."""
+    global _ROT
+    cos = getattr(grid, 'cos_rot', None)
+    sin = getattr(grid, 'sin_rot', None)
+    _ROT = None if cos is None or sin is None else (cos, sin)
+
+
+def _uv_east_north(ds, k):
+    """Both components at tracer points, rotated to geographic east/north.
+
+    MOM6 stores the logical-grid components (face-normal in the history,
+    tracer-point in soca's files); north of the tripolar seam (~65N) the
+    logical axes turn away from east/north, and u alone is meaningless
+    there. This is soca's State::rotate2north.
+    """
+    u, v = _uv_at_centre(ds, k)
+    if _ROT is None:
+        return u, v
+    cos, sin = _ROT
+    return u * cos + v * sin, -u * sin + v * cos
+
+
+def _u_east_level(ds, k):
+    return _uv_east_north(ds, k)[0]
+
+
+def _v_north_level(ds, k):
+    return _uv_east_north(ds, k)[1]
+
+
+def _u_raw_level(ds, k):
+    return _read_level(ds, 'u', k)
+
+
+def _v_raw_level(ds, k):
+    return _read_level(ds, 'v', k)
+
+
 # Fields the files do not store directly.
 #
-# `u` and `v` are deliberately NOT here: asked for by name they are read
-# straight off the file, exactly as stored, with no interpolation. That means
-# MOM6 history plots them on their native faces (u on xq, v on yq) rather than
-# at the tracer point -- a half-cell offset against a collocated file, ~14 km
-# at the equator, which is below what a global map resolves. `speed` still
-# collocates internally because |(u, v)| is meaningless with the two
-# components taken half a cell apart.
+# `u` and `v` are the eastward / northward components at the tracer point:
+# faces averaged to the centre where the file is on the C-grid (MOM6
+# history), then rotated with the grid's cos_rot/sin_rot (set_rotation).
+# `u_raw` / `v_raw` are the components exactly as stored -- logical-grid
+# frame, on their native faces -- for looking at what the model actually
+# holds. `speed` collocates internally because |(u, v)| is meaningless with
+# the two components taken half a cell apart (and is rotation-invariant).
 #   canonical name -> (variable to take the level count from,
 #                      variables that must be present, level reader)
 DERIVED = {
     'speed': ('u', ('u', 'v'), _speed_level),
+    'u': ('u', ('u', 'v'), _u_east_level),
+    'v': ('v', ('u', 'v'), _v_north_level),
+    'u_raw': ('u', ('u',), _u_raw_level),
+    'v_raw': ('v', ('v',), _v_raw_level),
 }
 
 # Fallback for the ocean background when no ocean/history was archived at
@@ -931,6 +981,7 @@ def woa_block(grid, cfg, cycle, bkg, exp, model_depth, regions, blevels,
 
 def compute(grid, exp, cycle, cfg):
     """All state-space diagnostics for one experiment at one cycle."""
+    set_rotation(grid)
     svars = cfg.get('state_vars', {})
     levels = cfg.get('map_levels', [0])
     boxes = lv_common.corr_regions(cfg)
@@ -1016,6 +1067,13 @@ def compute(grid, exp, cycle, cfg):
                                              reducer='rms')
         r['incr_rms'] = {v: d['mean']
                          for v, d in r['incr_region'].get('global', {}).items()}
+        # The signed mean beside the RMS: an increment that is the same sign
+        # cycle after cycle is a bias the model keeps rejecting, and the RMS
+        # cannot tell that from scatter.
+        r['incr_mean_region'] = regional_profiles(grid, incr, variables, regions,
+                                                  reducer='mean')
+        r['incr_mean'] = {v: d['mean']
+                          for v, d in r['incr_mean_region'].get('global', {}).items()}
         if prior is not None:
             # One pass over the variance files serves every region; the global
             # profiles are read straight back out of it.

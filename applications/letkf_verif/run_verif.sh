@@ -1,23 +1,25 @@
 #!/bin/bash
-#SBATCH --job-name=letkf_verif_2exp
+#SBATCH --job-name=verif
 #SBATCH --account=da-cpu
 #SBATCH --qos=batch
 ##SBATCH --partition=hera
 #SBATCH --nodes=1
-#SBATCH --ntasks=96
+#SBATCH --ntasks=128
 ##SBATCH --cpus-per-task=60
 #SBATCH --mem=300GB
 #SBATCH --time=01:30:00
-#SBATCH --output=letkf_verif_2exp.%j.log
+#SBATCH --output=slurm-%j.log
 
-# Example sbatch script: precompute + build the LETKF-verif comparison
+# The verification job: precompute + build the LETKF-verif comparison
 # report for every experiment in experiments.yaml.
 #
-# Copy this (and experiments.example.yaml -> your own experiments.yaml)
-# somewhere of your own and edit CFG/OUT/GRIDSPEC below. Everything else --
-# the experiment list, the cycle count, the per-experiment worker counts and
-# the --cache list for stage 2 -- is read from the yaml at run time, so
-# adding an experiment or a cycle there is the whole edit.
+# Do NOT copy this: make a directory holding your experiments.yaml (and
+# lv_grid.nc, or set GRIDSPEC), symlink this script and run_daily.sh into it,
+# and `sbatch run_verif.sh` from there. The config is the one in the submit
+# directory and everything is written beside it; the experiment list, the
+# cycle count, the per-experiment worker counts and the --cache list for
+# stage 2 are all read from the yaml at run time. Slurm sizing beyond the
+# header below goes on the command line: `sbatch --time=02:00:00 run_verif.sh`.
 #
 # `grid:` in experiments.yaml is expected to already exist next to it
 # (lv_grid.nc, resolved relative to the config file) -- this script slims
@@ -60,24 +62,46 @@ set -uo pipefail
 source /scratch3/NCEPDEV/da/Guillaume.Vernieres/venvs/gdas-marine-viz/bin/activate
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
 
-APP=/scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfs-dev/gdas-marine-viz/applications/letkf_verif
-OUT=/scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfs-dev/gdas-marine-viz/applications/letkf_verif/compare-exps
-CFG=$OUT/experiments.yaml
+# The application is wherever this script lives; the config is $CFG from the
+# environment (run_daily.sh sets it) or the one next to compare-exps below,
+# and everything is written beside the config. One copy of this script
+# therefore serves any experiments.yaml.
+# Where the application is. Slurm runs a COPY of this script from its spool,
+# so under sbatch BASH_SOURCE says nothing; the symlink named run_verif.sh in
+# the directory it was submitted from does -- it points back at the checkout.
+# (run_daily.sh exports APP outright; either way works.)
+if [ -z "${APP:-}" ]; then
+    self=$(readlink -f "${BASH_SOURCE[0]}")
+    case "$self" in
+        /var/spool/*|*/slurmd/*) self=$(readlink -f "${SLURM_SUBMIT_DIR:-$PWD}/run_verif.sh") ;;
+    esac
+    APP=$(cd "$(dirname "$self")" && pwd)
+fi
+if [ ! -f "$APP/build_comparison.py" ]; then
+    echo "!! cannot locate the verification application (looked in $APP);" \
+         "submit from a directory holding a run_verif.sh symlink to it, or export APP" >&2
+    exit 1
+fi
+# The config is the experiments.yaml in the directory this was submitted
+# from (or run from), unless CFG says otherwise; everything is written
+# beside it.
+CFG=${CFG:-${SLURM_SUBMIT_DIR:-$PWD}/experiments.yaml}
+OUT=$(dirname "$CFG")
 # UTC hours of the cycles to draw per-date state / background / gridded-
 # product / frontal figures for (the report puts a date menu over them); the
 # latest cycle is always included. "all" for every cycle.
-HOURS=00
+HOURS=${HOURS:-00}
 # Extra build_comparison.py options, e.g. "--force" (redo everything).
-BUILD_OPTS=""
+BUILD_OPTS=${BUILD_OPTS:-}
 # Extra precompute_experiment.py options: "--force" recomputes every cached
 # cycle (needed once after a change to what the cache holds -- e.g. a new
 # verification product or observation bins; otherwise old cycles keep the
 # old content and only new cycles get the new fields).
-PRECOMPUTE_OPTS="--force"
+PRECOMPUTE_OPTS=${PRECOMPUTE_OPTS:-}
 # Full soca_gridspec.nc (~190 MB) to slim down to $OUT/lv_grid.nc. Any
 # cycle's works -- lon/lat/area/mask2d are the static model grid, not a
 # per-cycle field. Point this at your own experiment's bmatrix output.
-GRIDSPEC=/scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfs-dev/cp06.torchbalance/COMROOT/cp06.torchbalance/gdas.20251219/06/bmatrix/ocean/soca_gridspec.nc
+GRIDSPEC=${GRIDSPEC:-/scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfs-dev/cp06.torchbalance/COMROOT/cp06.torchbalance/gdas.20251219/06/bmatrix/ocean/soca_gridspec.nc}
 
 cd "$APP"
 

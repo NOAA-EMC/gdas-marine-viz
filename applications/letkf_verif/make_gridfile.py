@@ -2,9 +2,11 @@
 """Write a small, portable grid file for the verification suite.
 
 The full soca gridspec is ~190 MB, but the suite only reads lon / lat / area /
-mask2d from it -- depth comes from each cycle's background. This extracts
-exactly that into a single small file, which is what you copy to another
-machine instead of the original.
+mask2d and the grid-to-north rotation (cos_rot / sin_rot, for the velocity
+components) from it -- depth comes from each cycle's background. This
+extracts exactly that into a single small file, which is what you copy to
+another machine instead of the original. An lv_grid.nc written before the
+rotation was added still works; rerun this to get rotated u/v maps.
 
 lon / lat / area keep their float64 precision: the gridspec stores them as
 float64, and every area-weighted number in the suite is built from `area`.
@@ -50,7 +52,11 @@ def main():
         for name, arr, kind, units in (('lon', g.lon, 'f8', 'degrees_east'),
                                        ('lat', g.lat, 'f8', 'degrees_north'),
                                        ('area', g.area, 'f8', 'm2'),
-                                       ('mask2d', g.mask, 'f4', '1')):
+                                       ('mask2d', g.mask, 'f4', '1'),
+                                       ('cos_rot', g.cos_rot, 'f8', '1'),
+                                       ('sin_rot', g.sin_rot, 'f8', '1')):
+            if arr is None:          # gridspec without the rotation angles
+                continue
             v = d.createVariable(name, kind, ('y', 'x'), zlib=True,
                                  complevel=4)
             v[:] = arr.astype(kind)

@@ -15,16 +15,13 @@ check rather than independent validation. The number is reported the same way;
 read it knowing that.
 
 OSTIA's analysed_sst is a FOUNDATION temperature -- below the diurnal warm
-layer, effectively a settled value rather than one tied to a specific hour,
-which this module treats as valid at 12Z for the day. The model side of the
-comparison is built to match: instead of the single background/analysis
-instant at the cycle, it is the per-cell mean of Temp level 0 over that
-day's four synoptic cycles (00/06/12/18Z) -- a 24h window centred on 12Z,
-using the cycle-frequency snapshots this suite has rather than reading
-separate sub-daily history output. PRODUCTS['sst']['only_hour'] then
-restricts the comparison itself to the 12Z cycle, since OSTIA is a once-daily
-product and the other three cycles would just repeat the same day's score.
-See _daily_mean() below.
+layer -- delivered once a day and nominally valid at 12Z. It is interpolated
+linearly in time between the two days bracketing each cycle
+(product_paths_in_time) and scored at every cycle against the model's own
+surface temperature at that time. The model's surface layer does carry a
+diurnal cycle, so the 06Z and 18Z scores include a few tenths of a degree of
+it in the tropics; the cycle-to-cycle series should be read with that in
+mind, and the daily march of the score is not a DA signal.
 
 Every product is a regular lat/lon grid on -180..180, which is what
 `Grid.lon180` already provides, so a model point is placed in a product by
@@ -70,10 +67,14 @@ PRODUCTS = {
         var='analysed_sst', lat='lat', lon='lon', idx=(0,),
         model_var='Temp', units='degC', label='SST (OSTIA)',
         offset=-273.15, mask='mask', err='analysis_error',
-        # foundation temperature: the model side is a 24h-centred daily mean
-        # (see _daily_mean and the module docstring), scored once a day at
-        # the 12Z cycle rather than at every cycle.
-        daily_mean=True, only_hour='12'),
+        # a daily field nominally at 12Z: interpolated in time between the
+        # two bracketing days to every cycle's hour, and scored at every
+        # cycle against the model's own surface temperature at that time.
+        # OSTIA is a FOUNDATION temperature (free of the diurnal warm
+        # layer); the model's surface layer is not, so the 06Z/18Z scores
+        # carry a diurnal component of a few tenths of a degree in the
+        # tropics -- read the daily march of the score with that in mind.
+        interp_time=True),
     # OSTIA's own sea-ice concentration, against the sea-ice background
     # (aice_h) -- the one product here on the ICE realm. Scored at every
     # cycle against the day's field: ice moves slowly enough that a daily
@@ -121,13 +122,68 @@ def configured(cfg):
 
 
 def product_path(cfg, name, cycle):
-    """The product file for this cycle, or None."""
+    """The product file for this cycle's day, or None."""
     e = configured(cfg).get(name)
     if e is None:
         return None
     pat = e['pattern'].format(Y=cycle[:4], m=cycle[4:6], Ymd=cycle[:8])
     hits = sorted(glob.glob(os.path.join(e['path'], pat)))
     return hits[0] if hits else None
+
+
+def product_paths_in_time(cfg, name, cycle):
+    """[(path, weight)] to interpolate a daily 12Z product to the cycle.
+
+    Linear in time between the day's file and the neighbouring day's on
+    the side of the cycle hour: 00Z takes the previous day with weight 1/2,
+    06Z with 1/4, 12Z the day itself alone, 18Z the next day with 1/4. A
+    missing neighbour leaves the day's file alone with weight 1, so a gap
+    in the archive degrades to the nearest-day score rather than to none.
+    """
+    day = product_path(cfg, name, cycle)
+    if day is None:
+        return []
+    hour = int(cycle[8:10])
+    dt = hour - 12
+    if dt == 0:
+        return [(day, 1.0)]
+    from datetime import datetime, timedelta
+    other_day = (datetime.strptime(cycle[:8], '%Y%m%d')
+                 + timedelta(days=1 if dt > 0 else -1)).strftime('%Y%m%d')
+    other = product_path(cfg, name, other_day + '12')
+    w_other = abs(dt) / 24.0
+    if other is None:
+        return [(day, 1.0)]
+    return [(day, 1.0 - w_other), (other, w_other)]
+
+
+def load_product_in_time(grid, cfg, name, cycle, spec):
+    """load_product() blended across product_paths_in_time(); where only
+    one file is valid at a point, that one is used unblended."""
+    parts = product_paths_in_time(cfg, name, cycle)
+    if not parts:
+        return None
+    acc = wsum = err_acc = None
+    keep = None
+    for path, w in parts:
+        val, err, k = load_product(grid, path, spec)
+        ok = np.isfinite(val) & k
+        if acc is None:
+            acc = np.zeros_like(val)
+            wsum = np.zeros_like(val)
+            err_acc = np.zeros_like(val) if err is not None else None
+            keep = np.zeros_like(k)
+        acc[ok] += w * val[ok]
+        wsum[ok] += w
+        if err is not None and err_acc is not None:
+            e_ok = ok & np.isfinite(err)
+            err_acc[e_ok] += w * err[e_ok]
+        keep |= k
+    with np.errstate(invalid='ignore', divide='ignore'):
+        val = np.where(wsum > 0, acc / wsum, np.nan)
+        err = (np.where(wsum > 0, err_acc / wsum, np.nan)
+               if err_acc is not None else None)
+    return val, err, keep & np.isfinite(val)
 
 
 def _axis(ds, name):
@@ -193,98 +249,6 @@ def _window(grid, lon):
 def _read(ds, name, idx):
     a = ds[name][idx + (slice(None), slice(None))]
     return np.ma.filled(a.astype('f8'), np.nan)
-
-
-# When an experiment archives no ocean history at all (3dvar-rt), CICE's
-# coupled history carries the ocean surface it was handed as sst_h/sss_h --
-# a stand-in for level-0 Temp/Salt only. Same table as lv_statespace's
-# ICE_OCEAN_FALLBACK_VARMAP; kept here too because of the import direction.
-ICE_FALLBACK = {'Temp': 'sst_h', 'Salt': 'sss_h'}
-
-
-def surface_bkg(exp, cycle, var, realm='ocean'):
-    """Level 0 of ``var`` from the realm's background, falling back to the
-    sea-ice history for Temp/Salt when the ocean history is absent."""
-    fld = _level0(exp.background(cycle, realm), var)
-    if fld is None and realm == 'ocean' and var in ICE_FALLBACK:
-        fld = _level0(exp.background(cycle, 'ice'), ICE_FALLBACK[var])
-    return fld
-
-
-def _level0(path, var):
-    """Level 0 (surface) of ``var`` from ``path``, or None.
-
-    Deliberately not lv_statespace.surface_state: lv_statespace imports this
-    module (compute() calls verify()), so importing it back here would be
-    circular. This is the same read _read_level does there, 2-D case only,
-    which is all _daily_mean needs.
-    """
-    if path is None:
-        return None
-    with Dataset(path) as ds:
-        if var not in ds.variables:
-            return None
-        v = ds[var]
-        a = v[0, 0] if v.ndim == 4 else v[0]
-        return np.ma.filled(a.astype('f8'), np.nan)
-
-
-def _daily_slot(exp, cfg, cycle, hour):
-    """Is this the cycle to score a once-a-day product at?
-
-    Normally the ``hour`` cycle (12Z for OSTIA SST). An experiment archived
-    at fewer hours -- 3dvar-rt keeps 00Z only -- would never be scored, so
-    when it has no background at ``hour`` on this day, the day's cycle
-    nearest to it that does have one stands in (later on a tie), and the
-    "daily mean" is then a mean over whatever cycles the day has.
-    """
-    if cycle[8:10] == hour:
-        return True
-    day = cycle[:8]
-    have = [str(c) for c in cfg['cycles'] if str(c)[:8] == day
-            and (exp.background(str(c), 'ocean') is not None
-                 or exp.background(str(c), 'ice') is not None)]
-    if not have or any(c[8:10] == hour for c in have):
-        return False
-    best = min(have, key=lambda c: (abs(int(c[8:10]) - int(hour)),
-                                    -int(c[8:10])))
-    return cycle == best
-
-
-def _daily_mean(exp, day, var, state):
-    """Per-cell mean of ``var`` level 0 over one calendar day's synoptic
-    cycles (00/06/12/18Z) -- a 24h window centred on the 12Z cycle.
-
-    Stands in for reading sub-daily history output, which this suite does
-    not keep: the day's own cycle-frequency snapshots are the finest time
-    resolution available. A cell is left out of a cycle's contribution only
-    where that cycle's field is itself NaN there (or the cycle has no
-    background/increment at all, e.g. a gap in the archive); it is NaN in
-    the result only where every cycle in the window was.
-
-    ``state`` is 'bkg' (the background alone) or 'ana' (background +
-    increment, matching surface_state's reconstruction of the analysis --
-    see its docstring for why that assumption is fine here too).
-    """
-    acc = cnt = None
-    for hh in ('00', '06', '12', '18'):
-        cycle = day + hh
-        fld = surface_bkg(exp, cycle, var)
-        if fld is not None and state == 'ana':
-            incr = _level0(exp.increment(cycle, 'ocean'), var)
-            fld = None if incr is None else fld + incr
-        if fld is None:
-            continue
-        if acc is None:
-            acc = np.zeros_like(fld)
-            cnt = np.zeros_like(fld)
-        ok = np.isfinite(fld)
-        acc[ok] += fld[ok]
-        cnt[ok] += 1
-    if acc is None or not np.any(cnt > 0):
-        return None
-    with np.errstate(invalid='ignore'):
-        return np.where(cnt > 0, acc / np.maximum(cnt, 1), np.nan)
 
 
 def load_product(grid, path, spec):
@@ -366,12 +330,6 @@ def verify(grid, exp, cycle, cfg, regions, model_level, realm='ocean'):
         spec = PRODUCTS.get(name)
         if spec is not None and spec.get('realm', 'ocean') != realm:
             continue
-        if spec is not None and spec.get('only_hour') \
-                and not _daily_slot(exp, cfg, cycle, spec['only_hour']):
-            # Restricted to one cycle hour by design (see PRODUCTS), not a
-            # missing file -- routine at every other cycle, so quiet rather
-            # than reported like an actual miss below.
-            continue
         path = product_path(cfg, name, cycle)
         if spec is None or path is None:
             # Say so. A configured product that resolves to nothing used to be
@@ -381,13 +339,13 @@ def verify(grid, exp, cycle, cfg, regions, model_level, realm='ocean'):
             print('  ! verification %s: no file for %s under %s (pattern %s)'
                   % (name, cycle, entry['path'], entry['pattern']))
             continue
-        obs, err, keep = load_product(grid, path, spec)
+        if spec.get('interp_time'):
+            obs, err, keep = load_product_in_time(grid, cfg, name, cycle, spec)
+        else:
+            obs, err, keep = load_product(grid, path, spec)
         per_state = {}
         for state in STATES:
-            if spec.get('daily_mean'):
-                fld = _daily_mean(exp, cycle[:8], spec['model_var'], state)
-            else:
-                fld = model_level(spec['model_var'], state)
+            fld = model_level(spec['model_var'], state)
             if fld is None:
                 continue
             sel = grid.mask & keep & np.isfinite(fld)

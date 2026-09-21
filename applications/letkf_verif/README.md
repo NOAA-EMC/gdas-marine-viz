@@ -1,5 +1,22 @@
 # LETKF Verification
 
+## TL;DR
+
+```bash
+# One directory per comparison: the config plus a symlink to the driver
+mkdir /my/verifs/realtime && cd /my/verifs/realtime
+cp /path/to/letkf_verif/experiments.yaml .                          # edit it
+ln -s /path/to/letkf_verif/run_verif.sh .
+
+# Precompute every experiment, then build the comparison page
+sbatch run_verif.sh                       # sbatch --time=02:00:00 run_verif.sh to resize
+#   -> precompute-<exp>/, page/letkf_verification.html, letkf_verification.tar, slurm-<jobid>.log
+```
+
+Env knobs: `PRECOMPUTE_OPTS=--force`, `BUILD_OPTS`, `HOURS`, `GRIDSPEC`, `VENV`.
+Details in [Running it](#running-it-one-directory-per-comparison); cron-driven
+updates in [Daily updates](#daily-updates).
+
 Scores any number of marine DA experiments — LETKF or 3DVar, in any mix —
 against a chosen reference, per 6-hourly cycle, and assembles a single
 self-contained HTML report. Three kinds of evidence go into it:
@@ -99,11 +116,52 @@ Everything lands under `--outdir`.
 | `grid:` | soca gridspec, or a ~7 MB slim copy made by `make_gridfile.py` |
 | `regions:` | Named lat/lon boxes for the regional profiles; `global` is always included |
 | `verification:` | One directory per gridded product — they come from unrelated archives, so each names its own. `adt`, `sss`, `sst` and `icec` (OSTIA sea-ice fraction against `aice_h`); an experiment with no ocean history is scored for SST/SSS from the `sst_h`/`sss_h` in its sea-ice history |
-| `obs_bins:` | `{deg: 1}` — bin spacing of the binned departures (section 09) |
+| `obs_bins:` | `deg` (bin spacing), `limits` (colour-scale bounds per obs type or prefix), `layers` (depth layers the profile types' maps are also binned in; default 0–10 m, 0–300 m, 300 m–bottom) for the binned departures (section 09) |
 | `frontal_analysis:` | Optional ADT-gradient diagnostic for the `--hours` cycles; configures current boxes and shared absolute speed thresholds. Each experiment also needs `analysis_pattern:` for its written ocean analysis state. |
 | `depth_max:` | Cut every depth panel at N metres; a view setting, so it needs no recompute |
 | `sections:` | `zonal` latitudes and `meridional` longitudes to cut vertical sections of the increment and background along. A zonal line is one grid row, a true latitude circle only to ~64&deg;N; anything above 65&deg;N is drawn but flagged by `preflight.py`, by `plot_statespace.py` and on the panel |
 | `map_limits:` | Fixed (vmin, vmax) per state variable/level, so a map figure's color scale holds across cycles and experiments instead of being recomputed per figure; optional, per-hemisphere override for ice thickness/snow depth |
+
+## Running it: one directory per comparison
+
+The code stays in this checkout; a comparison lives in a directory of its own
+holding the config, the grid and two symlinks:
+
+```bash
+mkdir /my/verifs/realtime && cd /my/verifs/realtime
+cp /path/to/letkf_verif/experiments.example.yaml experiments.yaml   # and edit it
+ln -s /path/to/letkf_verif/run_verif.sh /path/to/letkf_verif/run_daily.sh .
+sbatch run_verif.sh                       # one build; slurm-<jobid>.log lands here
+```
+
+`run_verif.sh` reads the `experiments.yaml` in the directory it was submitted
+from and writes everything beside it (`precompute-<exp>/`, `page/`, the
+tarball); it finds the application through the symlink, so no path needs
+editing. Slurm sizing beyond its header goes on the command line
+(`sbatch --time=02:00:00 run_verif.sh`). `PRECOMPUTE_OPTS=--force`,
+`BUILD_OPTS`, `HOURS`, `GRIDSPEC` and `VENV` are read from the environment.
+
+### Daily updates
+
+`./run_daily.sh` in that directory is the cron entry point. It advances the
+config's cycle window to the newest complete cycle on disk (`newest_cycle.py`:
+analysis directory, ocean increment and the following forecast all present, for
+any configured experiment; `cycles:` must be the `{start, stop, step}` form,
+`start` is yours, `stop` is what the script advances), submits `run_verif.sh`
+with `sbatch --wait`, and on success stamps `daily/LAST_SUCCESS` and runs
+`$RSYNC_HOOK` if set — the place for the rsync to the web server. A lock keeps
+two runs from overlapping; logs and the Slurm output land under `daily/`.
+`SBATCH_OPTS` carries per-comparison Slurm sizing; `SBATCH_CMD="echo sbatch"`
+dry-runs the driver.
+
+```
+30 2 * * * cd /my/verifs/realtime && ./run_daily.sh >> daily/cron.log 2>&1
+```
+
+Because every stage caches per cycle and per figure, a daily run costs the new
+cycles (about 4 min each in stage 1, in one parallel wave) plus a few minutes of
+stage 2; a cycle that arrives late (an archive fetched afterwards) is picked up
+by the next run, since absent cycles are never cached.
 
 ## Relationship to `statestats_ostia`
 

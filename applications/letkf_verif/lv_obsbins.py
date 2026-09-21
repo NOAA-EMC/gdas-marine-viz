@@ -26,6 +26,16 @@ from lv_obsspace import is_profile
 # Bin edge spacing in degrees; `obs_bins: {deg: 1}` in the config overrides.
 DEFAULT_DEG = 1.0
 
+# Depth layers the profile types' maps are also binned in (metres, [top,
+# bottom]); `obs_bins: {layers: [...]}` overrides. They may overlap: 0-10 m
+# is the surface the satellites see, 0-300 m the thermocline the DA is
+# tuned on, 300 m-bottom what should barely move.
+DEFAULT_LAYERS = [[0, 10], [0, 300], [300, 12000]]
+
+# Bumped whenever what goes into '<cycle>_obsbins.npz' changes; a cached
+# file with an older (or no) version is rebuilt by the rejoin.
+VERSION = 2
+
 # Fixed value ranges for the obs-vs-model histograms, per IODA variable, so
 # one cycle's histogram adds to the next. The fallback is deliberately wide.
 RANGES = {
@@ -46,6 +56,18 @@ SUMS = ('n', 's_y', 's_ombg', 's_ombg2', 's_oman', 's_oman2',
 
 def bin_deg(cfg):
     return float((cfg.get('obs_bins') or {}).get('deg', DEFAULT_DEG))
+
+
+def layers(cfg):
+    out = (cfg.get('obs_bins') or {}).get('layers') or DEFAULT_LAYERS
+    return [(float(lo), float(hi)) for lo, hi in out]
+
+
+def layer_slug(lo, hi):
+    """'0-10m', '0-300m', '300m-bottom' -- filenames and menu labels."""
+    if hi >= 10000:
+        return '%gm-bottom' % lo
+    return '%g-%gm' % (lo, hi)
 
 
 def grid_shape(deg):
@@ -130,6 +152,19 @@ def compute(obstype, aligned, common_pass, cfg):
         if is_profile(obstype) and 'depth' in s.meta:
             edges = np.asarray(cfg.get('depth_bins') or [0, 6000], dtype='f8')
             d = s.meta['depth'][sel]
+            # the same maps, per depth layer, so the surface, the
+            # thermocline and the deep column can be read apart
+            for lo, hi in layers(cfg):
+                inl = (d >= lo) & (d < hi)
+                if not inl.any():
+                    continue
+                lidx, lsize = _bin_index(lat[sel][inl], lon[sel][inl], deg)
+                sums = _sums(lidx, lsize, y[inl], ombg[inl], oman[inl],
+                             None if r is None else r[inl],
+                             None if reff is None else reff[inl])
+                for k, v in sums.items():
+                    arrays['%s/map_%s/%s' % (name, layer_slug(lo, hi), k)] = \
+                        v.reshape(ny, nx)
             kd = np.clip(np.searchsorted(edges, d, side='right') - 1,
                          0, len(edges) - 2)
             jl = np.clip(((lat[sel] + 90.0) / deg).astype(int), 0, ny - 1)
@@ -160,7 +195,7 @@ def compute(obstype, aligned, common_pass, cfg):
 def accumulate(total, arrays):
     """Add one cycle's bins into a running total (in place, returned)."""
     for k, v in arrays.items():
-        if k.endswith('/reg/edges'):
+        if k.endswith('/reg/edges') or k == 'obsbins/version':
             total.setdefault(k, v)
         elif k in total:
             total[k] = total[k] + v

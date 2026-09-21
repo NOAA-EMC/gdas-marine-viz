@@ -690,6 +690,13 @@ class Grid:
             self.lat = self._f2d(g, 'lat')
             self.area = self._f2d(g, 'area')
             self.mask = self._f2d(g, 'mask2d') > 0
+            # Rotation between the logical grid and geographic north, for
+            # putting velocity components into east/north (soca's
+            # rotate2north). Absent from an lv_grid.nc written before this
+            # was added: velocities are then left in the grid frame, which
+            # only matters north of ~65N on the tripolar grid.
+            self.cos_rot = self._f2d(g, 'cos_rot') if 'cos_rot' in g.variables else None
+            self.sin_rot = self._f2d(g, 'sin_rot') if 'sin_rot' in g.variables else None
         self.shape = self.mask.shape
         self.wgt = np.where(self.mask, self.area, 0.0)
         # This gridspec runs -300..60 deg; box selection and plotting both want
@@ -921,7 +928,18 @@ class ObsSet:
         return out
 
     def passed(self):
-        return self.qc == 0
+        """Observations the departures are scored on: those that passed QC
+        (0) and those the DA carried as PASSIVE (1) -- monitored, with a
+        full O-B and O-A, but given no weight. SMAP/SMOS SSS are configured
+        that way here (Domain Check, action passivate), and excluding them
+        left the two types in the report with no numbers at all."""
+        return (self.qc == 0) | (self.qc == 1)
+
+    def passive_only(self):
+        """True when nothing was assimilated: every scored obs is passive."""
+        if self.qc is None:
+            return False
+        return bool(np.any(self.qc == 1)) and not np.any(self.qc == 0)
 
     def qc_counts(self):
         if self.qc is None:

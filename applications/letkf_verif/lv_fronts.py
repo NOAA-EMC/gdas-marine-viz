@@ -155,15 +155,28 @@ def model_ssh(path, grid):
     return model_field(path, grid, 'ave_ssh')
 
 
-def ostia_sst(path):
-    """OSTIA foundation SST in degC with its 1-D axes, for the SST panels
-    beside each region's analysis SST. Missing when the product for the
-    day is not archived; the panels then show the experiments alone."""
-    with nc.Dataset(path) as dataset:
-        sst = np.ma.filled(dataset['analysed_sst'][0].astype('f8'), np.nan)
-        return (sst - 273.15,
-                np.asarray(dataset['lat'][:], float),
-                np.asarray(dataset['lon'][:], float))
+def ostia_sst(cfg, cycle):
+    """OSTIA foundation SST in degC with its 1-D axes, interpolated in time
+    to the cycle the way the verification does (lv_verif.product_paths_in_
+    time), for the SST panels beside each region's analysis SST. None when
+    no file for the day is archived; the panels then show the experiments
+    alone."""
+    parts = LV.product_paths_in_time(cfg, 'sst', cycle)
+    if not parts:
+        return None
+    acc = wsum = None
+    for path, w in parts:
+        with nc.Dataset(path) as dataset:
+            sst = np.ma.filled(dataset['analysed_sst'][0].astype('f8'), np.nan)
+            lat = np.asarray(dataset['lat'][:], float)
+            lon = np.asarray(dataset['lon'][:], float)
+        ok = np.isfinite(sst)
+        if acc is None:
+            acc, wsum = np.zeros_like(sst), np.zeros_like(sst)
+        acc[ok] += w * sst[ok]
+        wsum[ok] += w
+    with np.errstate(invalid='ignore', divide='ignore'):
+        return (np.where(wsum > 0, acc / wsum, np.nan) - 273.15, lat, lon)
 
 
 def copernicus_adt(path):
@@ -299,8 +312,7 @@ def run(cfg, regions, cycle, experiment_names=None):
                    if experiment_names is None
                    or experiment.name in experiment_names}
     adt, adt_lat, adt_lon = copernicus_adt(LV.product_path(cfg, 'adt', cycle))
-    sst_path = LV.product_path(cfg, 'sst', cycle)
-    ostia = ostia_sst(sst_path) if sst_path else None
+    ostia = ostia_sst(cfg, cycle) if 'sst' in LV.configured(cfg) else None
     model_sst = {key: model_field(experiment.analysis(cycle), grid, 'Temp')
                  for key, experiment in experiments.items()}
     results = {}
