@@ -727,7 +727,7 @@ def fig_increment_hovmoller(cycles, cfg, grid, reducer='rms', region='global'):
         cb = fig.colorbar(h, ax=list(axes[r]), fraction=0.02, pad=0.01)
         cb.outline.set_visible(False)
         cb.set_label('%s increment (%s)' % (reducer.upper() if reducer == 'rms'
-                                             else 'mean', var), fontsize=8.5)
+                                            else 'mean', var), fontsize=8.5)
         cb.ax.tick_params(labelsize=7.5)
     if not drawn:
         plt.close(fig)

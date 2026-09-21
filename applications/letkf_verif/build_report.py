@@ -479,7 +479,6 @@ def obstype_dropdown_widget(cycles, figs, base, label, cfg=None):
                          dropdown='obs type')
 
 
-
 def binned_widget(cycles, cfg, figs):
     """Obs type -> view -> date, over plot_obsbins.py's figures.
 
@@ -1625,7 +1624,7 @@ ${nav}
 # never has to guess what a panel is. Plain HTML; $-free so it can go through
 # Template.substitute as a value.
 METHODS = {
- '01': """
+    '01': """
 <p><b>Departures.</b> O&minus;B and O&minus;A are observation minus the
 background / analysis equivalent from the DA's own diagnostic files, with QC
 applied: only observations the DA accepted (EffectiveQC = 0, or <i>passive</i>
@@ -1647,13 +1646,13 @@ the profile figure draws RMS(O&minus;B) per bin against
 &sigma;<sub>b</sub> is the prior ensemble spread in observation space (zero
 for a deterministic system) and R the assigned observation error.</p>
 """,
- '02': """
+    '02': """
 <p><b>Counts</b> are observations per cycle and obs type with EffectiveQC = 0
 in that experiment's own diagnostic file (<i>n_pass_own</i>), after the DA's
 thinning and quality control; the grey line is the size of the common sample
 (<i>n_common_pass</i>). Nothing is area-weighted here.</p>
 """,
- '03': """
+    '03': """
 <p><b>Increment</b> is the analysis minus the background as the DA wrote it
 (the JEDI increment file; for MOM6 the same fields go into the IAU over the
 next 6 h). Every RMS and mean of a field is <b>area-weighted</b> over wet
@@ -1676,7 +1675,7 @@ box. Ensemble
 <b>&sigma;<sub>a</sub>/&sigma;<sub>b</sub></b> column is the RMS ratio of
 posterior to prior spread.</p>
 """,
- '04': """
+    '04': """
 <p><b>Background</b> is the model history valid at the analysis time (the
 6-h forecast from the previous analysis, f006), read as stored; ocean
 fields at the <code>map_levels:</code> listed, ice fields per hemisphere.
@@ -1687,7 +1686,7 @@ The <b>drift</b> panels are the area-weighted global mean of each field
 against cycle: a mean that trends is a system-wide bias building up, not
 a local feature.</p>
 """,
- '05': """
+    '05': """
 <p>The depth&ndash;cycle panels are the per-level, area-weighted <b>RMS</b>
 of the ocean increment (top) and its <b>signed mean</b> (below, per region)
 at every cached cycle; the colour of the mean panel is symmetric about
@@ -1700,7 +1699,7 @@ increment at one level per cycle on one colour scale per field (the 99th
 percentile of |increment| over the cycles shown), so the pattern can be
 followed from date to date without the scale moving.</p>
 """,
- '06': """
+    '06': """
 <p>Each product is a daily L4 field on a regular lat/lon grid, placed on
 the model grid by index arithmetic (no interpolation), scored against the
 background and against background&nbsp;+&nbsp;increment at every cycle
@@ -1722,7 +1721,7 @@ axis offset in km is reported only for regions marked
 <code>axis_diagnostic</code>, and front position converges over weeks of
 cycling, so read structure as real and position as provisional.</p>
 """,
- '07': """
+    '07': """
 <p><b>Per-obs-type series</b> are the section-01 metrics (RMS and bias of
 O&minus;B / O&minus;A, spread, consistency ratio, Desroziers ratio) at every
 cycle on the common sample, with no smoothing. The <b>SSH cycling</b> block
@@ -1755,7 +1754,7 @@ correlation).</li>
 low-pass tendency, and the low-pass tendency of the last four cycles
 (24 h) side by side, all on &plusmn;0.1 m except the background.</p>
 """,
- '08': """
+    '08': """
 <p>All on the common sample, per obs type and cycle. <b>Consistency
 ratio</b> = (RMS(&sigma;<sub>b</sub>)<sup>2</sup> + RMS(R)<sup>2</sup>) /
 RMS(O&minus;B)<sup>2</sup>: the variance the system claims against the
@@ -1772,7 +1771,7 @@ ratio is the mean of the two end bins over the flat expectation.
 <b>CRPS</b> is the continuous ranked probability score of the ensemble
 against the observation, lower is better.</p>
 """,
- '09': """
+    '09': """
 <p>Observations on the common sample are binned on a regular
 latitude&ndash;longitude grid (profile types on depth &times; latitude);
 each bin reports the count, the mean and RMS of O&minus;B and O&minus;A,
@@ -1783,7 +1782,7 @@ density of observation against background and against analysis at the
 observation points, with the least-squares line and its slope and
 correlation.</p>
 """,
- '10': """
+    '10': """
 <p>From the coupled atmosphere's surface history at the same f006 the ocean
 background is, on the atmosphere's Gaussian grid, placed on the ocean grid
 by nearest cell and restricted to ocean points. <b>wind10</b> =

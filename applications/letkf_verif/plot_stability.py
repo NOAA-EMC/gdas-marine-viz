@@ -339,7 +339,7 @@ def tendency_maps(maps, grid, exp_name, cfg, fname, vmax):
         cb.outline.set_visible(False)
         cb.ax.tick_params(labelsize=6.5)
     fig.suptitle('%s: SSH at %s-%s-%s %sZ' % (exp_name, cycle[:4], cycle[4:6],
-                                             cycle[6:8], cycle[8:10]),
+                                              cycle[6:8], cycle[8:10]),
                  fontsize=12, color=P.INK)
     fig.subplots_adjust(left=0.02, right=0.98, top=0.9, bottom=0.03,
                         wspace=0.1, hspace=0.18)
