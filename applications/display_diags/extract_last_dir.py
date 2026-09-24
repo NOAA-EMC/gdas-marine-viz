@@ -101,6 +101,7 @@ def extract_last_dir(HPSS_root, hsi_output=None, result_file=None):
             ["htar", "-xf", f"{HPSS_dir}/{cycle_str}/gdasocean_analysis.tar"],
             ["htar", "-xf", f"{HPSS_dir}/{cycle_str}/gdasocean.tar"],
             ["htar", "-xf", f"{HPSS_dir}/{cycle_str}/gdasice.tar"],
+            ["htar", "-xf", f"{HPSS_dir}/{cycle_str}/gdas.tar"],
         ]
 
         cycle_succeeded = True
