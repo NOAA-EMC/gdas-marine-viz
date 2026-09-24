@@ -356,6 +356,7 @@ def plot_climatology_fields(config):
         print(f"Error plotting {config.get('PDY', 'unknown')}: {e}")
         import traceback
         traceback.print_exc()
+        raise
 
 
 # Initialize list for all configurations
@@ -416,8 +417,17 @@ for config in configs:
     processes.append(process)
 
 # Wait for all processes to finish
+failed_processes = []
 for process in processes:
     process.join()
+    if process.exitcode != 0:
+        failed_processes.append(process.pid)
+
+if failed_processes:
+    raise RuntimeError(
+        f"Climatology plotting failed in {len(failed_processes)} process(es): "
+        + ", ".join(str(pid) for pid in failed_processes)
+    )
 
 print("\n==============================================")
 print("Climatology plotting completed!")
