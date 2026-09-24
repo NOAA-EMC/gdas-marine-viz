@@ -413,6 +413,7 @@ def plot_temp_salt_climatology(config):
         print(f"Error plotting {config.get('PDY', 'unknown')}: {error}")
         import traceback
         traceback.print_exc()
+        raise
 
 
 configs = []
@@ -466,8 +467,17 @@ for config in configs:
     process.start()
     processes.append(process)
 
+failed_processes = []
 for process in processes:
     process.join()
+    if process.exitcode != 0:
+        failed_processes.append(process.pid)
+
+if failed_processes:
+    raise RuntimeError(
+        f"Temp/Salt climatology plotting failed in {len(failed_processes)} process(es): "
+        + ", ".join(str(pid) for pid in failed_processes)
+    )
 
 
 print("\n==============================================")
