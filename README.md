@@ -1,7 +1,7 @@
 # Marine GDAS Verification Tools
 
 ## Unit Testing
-This `oceanview` application relies on older interactive tools and probably requires a different Python environment. Test it separately, from the root directory of the repository:
+The `oceanview` application uses wxPython and basemap for its interactive display, which are not part of the `EVA` environment, so it needs a separate conda environment. Test it separately, from the root directory of the repository:
 ```console
 conda activate oceanview  # Does not work on HPC yet
 pytest --disable-warnings -v tests/oceanview/test_oceanview.py
