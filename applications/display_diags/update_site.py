@@ -19,9 +19,10 @@ parser.add_argument('root', nargs='?', help='project root to operate on (default
 parser.add_argument('--out', help='optional output path to pass to generate_manifest.py', default=None)
 args = parser.parse_args()
 if args.root:
-  ROOT = Path(args.root).resolve()
+    ROOT = Path(args.root).resolve()
 
 print('Updating manifest and static gallery...')
+
 
 def run(cmd):
     print('>', ' '.join(cmd))
@@ -30,17 +31,18 @@ def run(cmd):
         print('Command failed with', res.returncode)
         sys.exit(res.returncode)
 
+
 if __name__ == '__main__':
-  gm = [sys.executable, str(ROOT / 'scripts' / 'generate_manifest.py')]
-  gs = [sys.executable, str(ROOT / 'scripts' / 'generate_static_gallery.py')]
-  # If a custom root was provided, pass it through
-  if args.root:
-    gm.append(str(ROOT))
-    gs.append(str(ROOT))
-  # If an out path was provided, forward to the manifest generator
-  if args.out:
-    gm.append('--out')
-    gm.append(str(args.out))
-  run(gm)
-  run(gs)
-  print('Update complete.')
+    gm = [sys.executable, str(ROOT / 'scripts' / 'generate_manifest.py')]
+    gs = [sys.executable, str(ROOT / 'scripts' / 'generate_static_gallery.py')]
+    # If a custom root was provided, pass it through
+    if args.root:
+        gm.append(str(ROOT))
+        gs.append(str(ROOT))
+    # If an out path was provided, forward to the manifest generator
+    if args.out:
+        gm.append('--out')
+        gm.append(str(args.out))
+    run(gm)
+    run(gs)
+    print('Update complete.')

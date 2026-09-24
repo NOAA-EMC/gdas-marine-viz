@@ -73,12 +73,12 @@ def marine_eva_post(inputyaml, outputdir, diagdir):
                             tmin = np.nanmin(vardata)
                             var_min = int(np.round(tmin, decimals=-1))
                         except ValueError:
-                            var_min =  np.nan
+                            var_min = np.nan
                         try:
                             tmax = np.nanmax(vardata)
                             var_max = int(np.round(tmax, decimals=-1))
                         except ValueError:
-                            var_max =  np.nan
+                            var_max = np.nan
                         # Close diag file
                         ds.close()
                         break

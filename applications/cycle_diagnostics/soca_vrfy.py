@@ -293,7 +293,7 @@ class statePlotter:
         #######################################
         # zonal slices
 
-        print("self.config: ",self.config)
+        print("self.config: ", self.config)
         for lat in self.config['lats']:
             self.config['lat'] = lat
 

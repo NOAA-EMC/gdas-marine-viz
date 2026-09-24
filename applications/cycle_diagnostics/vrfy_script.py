@@ -55,7 +55,7 @@ bcyc = str((int(cyc) - 3) % 24).zfill(2)
 gcyc = str((int(cyc) - 6) % 24).zfill(2)
 grid_file = os.path.join(comout, f'{RUN}.t' + bcyc + 'z.ocngrid.nc')
 
-layer_file=os.path.join(com_ocean_history, f'{RUN}.t' + gcyc + 'z.inst.f006.nc')
+layer_file = os.path.join(com_ocean_history, f'{RUN}.t' + gcyc + 'z.inst.f006.nc')
 
 # bkg_err grid file path based on the system's hostname
 hpcname = os.getenv('HPCname')

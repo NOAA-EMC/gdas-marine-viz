@@ -13,12 +13,12 @@ import argparse
 
 
 def get_root_from_args():
-  p = argparse.ArgumentParser(description='Generate static gallery embedding manifest')
-  p.add_argument('root', nargs='?', help='project root containing images_manifest.json (default: script parent)', default=None)
-  args = p.parse_args()
-  if args.root:
-    return Path(args.root).resolve()
-  return Path(__file__).resolve().parents[1]
+    p = argparse.ArgumentParser(description='Generate static gallery embedding manifest')
+    p.add_argument('root', nargs='?', help='project root containing images_manifest.json (default: script parent)', default=None)
+    args = p.parse_args()
+    if args.root:
+        return Path(args.root).resolve()
+    return Path(__file__).resolve().parents[1]
 
 
 ROOT = get_root_from_args()
@@ -27,9 +27,9 @@ OUT_PATH = ROOT / 'gallery_static.html'
 
 
 def build_html(manifest):
-  # keep manifest compact to reduce file size
-  manifest_json = json.dumps(manifest, separators=(',', ':'))
-  html = '''<!doctype html>
+    # keep manifest compact to reduce file size
+    manifest_json = json.dumps(manifest, separators=(',', ':'))
+    html = '''<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -42,7 +42,10 @@ def build_html(manifest):
     .controls { padding:12px }
     .note { font-size:0.9em; color:#ddd; margin-left:8px }
     .cycle-block { margin:20px 0; border-top:1px solid #444; padding-top:12px }
-    .image-pair { display:flex; gap:8px; align-items:flex-start; margin-bottom:12px; border:1px solid #666; padding:8px; background:#2a2a2a; }
+    .image-pair {
+      display:flex; gap:8px; align-items:flex-start; margin-bottom:12px;
+      border:1px solid #666; padding:8px; background:#2a2a2a;
+    }
     .image-pair-item { flex:1; text-align:center; }
     .image-pair-item img { width:100%; max-width:500px; height:auto; }
     .image-pair-label { font-size:0.85em; color:#aaa; margin-top:4px; font-weight:bold; }
@@ -66,7 +69,8 @@ def build_html(manifest):
     function addCycleBlock(root, cycle) {
       const cb = document.createElement('div');
       cb.className = 'cycle-block';
-      cb.innerHTML = `<h2>${cycle}</h2><div class="meta">Paths: <code>${cycle}/vrfy/histograms</code>, <code>${cycle}/vrfy/map_plots</code></div>`;
+      cb.innerHTML = `<h2>${cycle}</h2><div class="meta">Paths: <code>${cycle}/vrfy/histograms</code>, ` +
+        `<code>${cycle}/vrfy/map_plots</code></div>`;
       root.appendChild(cb);
       return cb;
     }
@@ -87,7 +91,7 @@ def build_html(manifest):
 
     // Helper: extract month from cycle name (e.g., "gdas.20250115.00" -> "01")
     function getMonthFromCycle(cycle) {
-      const match = cycle.match(/\\.(\d{4})(\d{2})\d{2}\\./);
+      const match = cycle.match(/\\.(\\d{4})(\\d{2})\\d{2}\\./);
       return match ? 'month_' + match[2] : null;
     }
 
@@ -96,20 +100,20 @@ def build_html(manifest):
       // Check if this is a background Salt/Temp plot (e.g., bkg/Temp/Tempmeridional_lon_20_5000m.png)
       const pathMatch = imagePath.match(/bkg\\/(Salt|Temp)\\/(.+\\.png)$/);
       if (!pathMatch) return null;
-      
+
       const varType = pathMatch[1]; // "Salt" or "Temp"
       const filename = pathMatch[2]; // e.g., "Tempmeridional_lon_20_5000m.png"
-      
+
       // Check if it's a Level_0, zonal, or meridional plot
       // Background files are like: TempLevel_0_Global.png, Tempzonal_lat_0_700m.png, Tempmeridional_lon_20_5000m.png
       // Climatology files are like: Temp_Level_0_Global.png, Temp_zonal_lat_0_700m.png, Temp_meridional_lon_20_5000m.png
       const levelMatch = filename.match(/^(Salt|Temp)Level_0_Global\\.png$/);
       const zonalMatch = filename.match(/^(Salt|Temp)zonal_lat_(.+\\.png)$/);
       const meridionalMatch = filename.match(/^(Salt|Temp)meridional_lon_(.+\\.png)$/);
-      
+
       const month = getMonthFromCycle(cycle);
       if (!month) return null;
-      
+
       if (levelMatch) {
         return `../climatology_woa/${month}/ocean/${varType}/${varType}_Level_0_Global.png`;
       } else if (zonalMatch) {
@@ -142,7 +146,9 @@ def build_html(manifest):
                     <div class="image-pair-label">Background</div>
                   </div>
                   <div class="image-pair-item">
-                    <a href="${climPath}" target="_blank"><img src="${climPath}" loading="lazy" alt="Climatology" title="${climPath}"/></a>
+                    <a href="${climPath}" target="_blank">
+                      <img src="${climPath}" loading="lazy" alt="Climatology" title="${climPath}"/>
+                    </a>
                     <div class="image-pair-label">Monthly Climatology</div>
                   </div>
                 `;
@@ -180,27 +186,59 @@ def build_html(manifest):
           return;
         }
         populateObsSelect(manifest, sel);
-        const root = document.getElementById('galleryRoot'); root.innerHTML = ''; const cb = addCycleBlock(root, sel); renderCycleFromManifest(cb, manifest[sel], sel);
+        const root = document.getElementById('galleryRoot');
+        root.innerHTML = '';
+        const cb = addCycleBlock(root, sel);
+        renderCycleFromManifest(cb, manifest[sel], sel);
       };
     }
     function populateObsSelect(manifest, cycle) {
       const obsSel = document.getElementById('obsSelect'); obsSel.innerHTML = '<option value="">(select)</option>';
       const top = manifest[cycle] || {}; const obsSet = new Set();
-      for (const topKey of Object.keys(top)) { const obj = top[topKey] || {}; for (const obs of Object.keys(obj || {})) obsSet.add(obs); }
-      const obs = Array.from(obsSet).sort(); for (const o of obs) { const opt = document.createElement('option'); opt.value = o; opt.textContent = o; obsSel.appendChild(opt); }
+      for (const topKey of Object.keys(top)) {
+        const obj = top[topKey] || {};
+        for (const obs of Object.keys(obj || {})) obsSet.add(obs);
+      }
+      const obs = Array.from(obsSet).sort();
+      for (const o of obs) {
+        const opt = document.createElement('option'); opt.value = o; opt.textContent = o; obsSel.appendChild(opt);
+      }
       clearSelect('varSelect');
       obsSel.onchange = () => {
-        const selObs = obsSel.value; if (!selObs) { const root = document.getElementById('galleryRoot'); root.innerHTML = ''; const cb = addCycleBlock(root, cycle); renderCycleFromManifest(cb, manifest[cycle], cycle); return; }
+        const selObs = obsSel.value;
+        if (!selObs) {
+          const root = document.getElementById('galleryRoot');
+          root.innerHTML = '';
+          const cb = addCycleBlock(root, cycle);
+          renderCycleFromManifest(cb, manifest[cycle], cycle);
+          return;
+        }
         populateVarSelect(manifest, cycle, selObs);
-        const root = document.getElementById('galleryRoot'); root.innerHTML = ''; const cb = addCycleBlock(root, cycle); renderFilteredCycle(manifest[cycle], cb, selObs, null, cycle);
+        const root = document.getElementById('galleryRoot');
+        root.innerHTML = '';
+        const cb = addCycleBlock(root, cycle);
+        renderFilteredCycle(manifest[cycle], cb, selObs, null, cycle);
       };
     }
     function populateVarSelect(manifest, cycle, obs) {
       const varSel = document.getElementById('varSelect'); varSel.innerHTML = '<option value="">(select)</option>';
       const top = manifest[cycle] || {}; const varSet = new Set();
-      for (const topKey of Object.keys(top)) { const obj = top[topKey] || {}; const obsObj = obj[obs]; if (obsObj) { for (const v of Object.keys(obsObj)) varSet.add(v); } }
-      const vars = Array.from(varSet).sort(); for (const v of vars) { const opt = document.createElement('option'); opt.value = v; opt.textContent = v; varSel.appendChild(opt); }
-      varSel.onchange = () => { const selVar = varSel.value; const root = document.getElementById('galleryRoot'); root.innerHTML = ''; const cb = addCycleBlock(root, cycle); renderFilteredCycle(manifest[cycle], cb, obs, selVar, cycle); };
+      for (const topKey of Object.keys(top)) {
+        const obj = top[topKey] || {};
+        const obsObj = obj[obs];
+        if (obsObj) { for (const v of Object.keys(obsObj)) varSet.add(v); }
+      }
+      const vars = Array.from(varSet).sort();
+      for (const v of vars) {
+        const opt = document.createElement('option'); opt.value = v; opt.textContent = v; varSel.appendChild(opt);
+      }
+      varSel.onchange = () => {
+        const selVar = varSel.value;
+        const root = document.getElementById('galleryRoot');
+        root.innerHTML = '';
+        const cb = addCycleBlock(root, cycle);
+        renderFilteredCycle(manifest[cycle], cb, obs, selVar, cycle);
+      };
     }
     function renderFilteredCycle(cycleObj, cycleBlock, obsFilter, varFilter, cycle) {
       for (const top of Object.keys(cycleObj).sort()) {
@@ -210,7 +248,7 @@ def build_html(manifest):
           for (const variable of Object.keys(obsObj).sort()) {
             if (varFilter && variable !== varFilter) continue; const pngs = obsObj[variable]; if (!pngs || pngs.length === 0) continue;
             const thumbContainer = addVariableBlock(obsContainer, obs + (variable !== '_' ? (' / ' + variable) : ''));
-            pngs.forEach(p => { 
+            pngs.forEach(p => {
               const climPath = getClimatologyPath(p, cycle);
               if (climPath) {
                 // Create paired display for background + climatology
@@ -222,14 +260,20 @@ def build_html(manifest):
                     <div class="image-pair-label">Background</div>
                   </div>
                   <div class="image-pair-item">
-                    <a href="${climPath}" target="_blank"><img src="${climPath}" loading="lazy" alt="Climatology" title="${climPath}"/></a>
+                    <a href="${climPath}" target="_blank">
+                      <img src="${climPath}" loading="lazy" alt="Climatology" title="${climPath}"/>
+                    </a>
                     <div class="image-pair-label">Monthly Climatology</div>
                   </div>
                 `;
                 thumbContainer.appendChild(pairDiv);
               } else {
                 // Regular single image display
-                const a = document.createElement('a'); a.href = p; a.target = '_blank'; a.innerHTML = `<img src="${p}" class="gallery-image" loading="lazy" alt="" title="${p}"/>`; thumbContainer.appendChild(a);
+                const a = document.createElement('a');
+                a.href = p;
+                a.target = '_blank';
+                a.innerHTML = `<img src="${p}" class="gallery-image" loading="lazy" alt="" title="${p}"/>`;
+                thumbContainer.appendChild(a);
               }
             });
           }
@@ -250,9 +294,9 @@ def build_html(manifest):
 </body>
 </html>
 '''
-  # inject manifest JSON safely (avoid f-string brace conflicts)
-  html = html.replace('__MANIFEST_JSON__', manifest_json)
-  return html
+    # inject manifest JSON safely (avoid f-string brace conflicts)
+    html = html.replace('__MANIFEST_JSON__', manifest_json)
+    return html
 
 
 def main():

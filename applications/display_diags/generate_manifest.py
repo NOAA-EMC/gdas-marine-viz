@@ -15,14 +15,14 @@ Paths in the manifest are relative to the webroot (script directory's parent).
 """
 import json
 from pathlib import Path
-import sys
 import argparse
 
 
 def get_args():
     p = argparse.ArgumentParser(description='Generate images_manifest.json from gdas.* directories')
     p.add_argument('root', nargs='?', help='project root containing gdas.* directories (default: script parent)', default=None)
-    p.add_argument('--out', help='output path for manifest file (file or directory). Defaults to <root>/images_manifest.json', default=None)
+    p.add_argument('--out', default=None,
+                   help='output path for manifest file (file or directory). Defaults to <root>/images_manifest.json')
     return p.parse_args()
 
 
@@ -90,7 +90,6 @@ def build_manifest():
                         var = '/'.join(rel_parts[1:])
                     else:
                         var = '_'
-                 # Always treat vrfy/ana/... as obs 'analysis' and variable = remaining path
                 elif top == 'bkg':
                     obs = 'background'
                     if len(rel_parts) >= 2:
