@@ -100,8 +100,7 @@ def draw_cycle(cfg, grid, cycle, files, names, levels, lines, stride):
                         f = (srcs[n].level(var, k) if n in srcs
                              and srcs[n].levels(var) else None)
                         if f is not None:
-                            f = np.where(grid.mask, f, np.nan)[::stride,
-                                                              ::stride]
+                            f = np.where(grid.mask, f, np.nan)[::stride, ::stride]
                         fields.append(f)
                     key = '%s_k%d' % (var, k)
                     rows.append((key, fields))

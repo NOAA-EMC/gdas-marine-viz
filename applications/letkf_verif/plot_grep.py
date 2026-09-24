@@ -285,7 +285,6 @@ def _load_npz(path):
 
 def fig_content(cfg, entry, grid, rows, band, region, fname, note=''):
     """Heat and salt content through time: model per cycle, GREP per month."""
-    dz = band[1] - band[0]
     k = G.band_key(band)
     sel = [r for r in rows if r['band'] == k and r['region'] == region]
     if not sel:

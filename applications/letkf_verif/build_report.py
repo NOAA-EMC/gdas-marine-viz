@@ -688,6 +688,7 @@ def grep_content_widget(group, cfg, figs, entry):
         for r in regions)]
     if not have:
         return ''
+
     def panel(b):
         rs = [r for r in regions if os.path.exists(os.path.join(
             figs, 'grep_content_%s_region_%s.png' % (b, P.slug(r))))]
