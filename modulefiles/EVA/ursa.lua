@@ -11,6 +11,7 @@ conflict(pkgName)
 -- Derive the repo root from this modulefile's own location so PYTHONPATH
 -- follows wherever "module use" points, instead of a hardcoded path.
 local vizhome = myFileName():match("(.*)/modulefiles/")
+local wxflow_path = os.getenv("GDAS_MARINE_VIZ_WXFLOW_PATH")
 
 -- prepend_path("MODULEPATH", "/contrib/spack-stack//spack-stack-1.6.0/envs/unified-env-rocky8/install/modulefiles/Core")
 prepend_path("MODULEPATH", '/contrib/spack-stack/spack-stack-1.9.2/envs/ue-oneapi-2024.2.1/install/modulefiles/Core')
@@ -18,7 +19,9 @@ prepend_path("MODULEPATH", '/contrib/spack-stack/spack-stack-1.9.2/envs/ue-oneap
 -- load("python/3.10.13")
 -- load("python/3.11")
 -- load("proj/9.2.1")
-append_path("PYTHONPATH", "/scratch3/NCEPDEV/da/Andrew.Eichmann/global-workflow/develop/global-workflow/sorc/wxflow/src")
+if wxflow_path and wxflow_path ~= "" then
+  append_path("PYTHONPATH", wxflow_path)
+end
 append_path("PYTHONPATH", pathJoin(vizhome, "applications"))
 append_path("PYTHONPATH", vizhome)
 
