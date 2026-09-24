@@ -69,24 +69,66 @@ def build_html(manifest):
     function addCycleBlock(root, cycle) {
       const cb = document.createElement('div');
       cb.className = 'cycle-block';
-      cb.innerHTML = `<h2>${cycle}</h2><div class="meta">Paths: <code>${cycle}/vrfy/histograms</code>, ` +
-        `<code>${cycle}/vrfy/map_plots</code></div>`;
+      const heading = document.createElement('h2');
+      heading.textContent = cycle;
+      cb.appendChild(heading);
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.appendChild(document.createTextNode('Paths: '));
+      const histogramsPath = document.createElement('code');
+      histogramsPath.textContent = `${cycle}/vrfy/histograms`;
+      meta.appendChild(histogramsPath);
+      meta.appendChild(document.createTextNode(', '));
+      const mapPlotsPath = document.createElement('code');
+      mapPlotsPath.textContent = `${cycle}/vrfy/map_plots`;
+      meta.appendChild(mapPlotsPath);
+      cb.appendChild(meta);
       root.appendChild(cb);
       return cb;
     }
     function addObsBlock(cycleBlock, obsName) {
       const ob = document.createElement('div');
       ob.className = 'obs-block';
-      ob.innerHTML = `<h3>${obsName}</h3>`;
+      const heading = document.createElement('h3');
+      heading.textContent = obsName;
+      ob.appendChild(heading);
       cycleBlock.appendChild(ob);
       return ob;
     }
     function addVariableBlock(obsBlock, varName) {
       const vb = document.createElement('div');
       vb.className = 'variable-block';
-      vb.innerHTML = `<h4>${varName}</h4><div class="thumb"></div>`;
+      const heading = document.createElement('h4');
+      heading.textContent = varName;
+      vb.appendChild(heading);
+      const thumb = document.createElement('div');
+      thumb.className = 'thumb';
+      vb.appendChild(thumb);
       obsBlock.appendChild(vb);
-      return vb.querySelector('.thumb');
+      return thumb;
+    }
+    function createImageLink(path, altText, className) {
+      const link = document.createElement('a');
+      link.href = path;
+      link.target = '_blank';
+      const image = document.createElement('img');
+      image.src = path;
+      image.loading = 'lazy';
+      image.alt = altText;
+      image.title = path;
+      if (className) image.className = className;
+      link.appendChild(image);
+      return link;
+    }
+    function createLabeledImage(path, altText, labelText) {
+      const item = document.createElement('div');
+      item.className = 'image-pair-item';
+      item.appendChild(createImageLink(path, altText));
+      const label = document.createElement('div');
+      label.className = 'image-pair-label';
+      label.textContent = labelText;
+      item.appendChild(label);
+      return item;
     }
 
     // Helper: extract month from cycle name (e.g., "gdas.20250115.00" -> "01")
@@ -140,26 +182,12 @@ def build_html(manifest):
                 // Create paired display for background + climatology
                 const pairDiv = document.createElement('div');
                 pairDiv.className = 'image-pair';
-                pairDiv.innerHTML = `
-                  <div class="image-pair-item">
-                    <a href="${p}" target="_blank"><img src="${p}" loading="lazy" alt="Background" title="${p}"/></a>
-                    <div class="image-pair-label">Background</div>
-                  </div>
-                  <div class="image-pair-item">
-                    <a href="${climPath}" target="_blank">
-                      <img src="${climPath}" loading="lazy" alt="Climatology" title="${climPath}"/>
-                    </a>
-                    <div class="image-pair-label">Monthly Climatology</div>
-                  </div>
-                `;
+                pairDiv.appendChild(createLabeledImage(p, 'Background', 'Background'));
+                pairDiv.appendChild(createLabeledImage(climPath, 'Climatology', 'Monthly Climatology'));
                 thumbContainer.appendChild(pairDiv);
               } else {
                 // Regular single image display
-                const a = document.createElement('a');
-                a.href = p;
-                a.target = '_blank';
-                a.innerHTML = `<img src="${p}" class="gallery-image" loading="lazy" alt="" title="${p}"/>`;
-                thumbContainer.appendChild(a);
+                thumbContainer.appendChild(createImageLink(p, '', 'gallery-image'));
               }
             });
           }
@@ -254,26 +282,12 @@ def build_html(manifest):
                 // Create paired display for background + climatology
                 const pairDiv = document.createElement('div');
                 pairDiv.className = 'image-pair';
-                pairDiv.innerHTML = `
-                  <div class="image-pair-item">
-                    <a href="${p}" target="_blank"><img src="${p}" loading="lazy" alt="Background" title="${p}"/></a>
-                    <div class="image-pair-label">Background</div>
-                  </div>
-                  <div class="image-pair-item">
-                    <a href="${climPath}" target="_blank">
-                      <img src="${climPath}" loading="lazy" alt="Climatology" title="${climPath}"/>
-                    </a>
-                    <div class="image-pair-label">Monthly Climatology</div>
-                  </div>
-                `;
+                pairDiv.appendChild(createLabeledImage(p, 'Background', 'Background'));
+                pairDiv.appendChild(createLabeledImage(climPath, 'Climatology', 'Monthly Climatology'));
                 thumbContainer.appendChild(pairDiv);
               } else {
                 // Regular single image display
-                const a = document.createElement('a');
-                a.href = p;
-                a.target = '_blank';
-                a.innerHTML = `<img src="${p}" class="gallery-image" loading="lazy" alt="" title="${p}"/>`;
-                thumbContainer.appendChild(a);
+                thumbContainer.appendChild(createImageLink(p, '', 'gallery-image'));
               }
             });
           }
