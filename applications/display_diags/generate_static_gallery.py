@@ -18,7 +18,7 @@ def get_root_from_args():
     args = p.parse_args()
     if args.root:
         return Path(args.root).resolve()
-    return Path(__file__).resolve().parents[1]
+    return Path(__file__).resolve().parents[2]
 
 
 ROOT = get_root_from_args()
