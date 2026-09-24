@@ -2,7 +2,7 @@
 
 import argparse
 import os
-from applications.display_diags.extract_last_dir import extract_last_dir
+from extract_last_dir import extract_last_dir
 from wxflow import parse_yaml
 
 
