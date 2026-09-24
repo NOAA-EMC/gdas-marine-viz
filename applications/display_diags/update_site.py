@@ -33,8 +33,8 @@ def run(cmd):
 
 
 if __name__ == '__main__':
-    gm = [sys.executable, str(ROOT / 'scripts' / 'generate_manifest.py')]
-    gs = [sys.executable, str(ROOT / 'scripts' / 'generate_static_gallery.py')]
+    gm = [sys.executable, str(ROOT / 'generate_manifest.py')]
+    gs = [sys.executable, str(ROOT / 'generate_static_gallery.py')]
     # If a custom root was provided, pass it through
     if args.root:
         gm.append(str(ROOT))
