@@ -12,7 +12,7 @@ from pathlib import Path
 
 import argparse
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parent
 
 parser = argparse.ArgumentParser(description='Update manifest and static gallery')
 parser.add_argument('root', nargs='?', help='project root to operate on (default: script parent)', default=None)
