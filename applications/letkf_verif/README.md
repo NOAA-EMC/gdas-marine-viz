@@ -30,6 +30,11 @@ self-contained HTML report. Three kinds of evidence go into it:
   post-inflation).
 - **Gridded analyses** — the surface state against three daily L4 products
   produced outside the system: CMEMS ADT, CMEMS SSS and OSTIA SST.
+- **Monthly means against GREP** — optional. Three independent ocean
+  reanalyses of the *same month*, full depth: heat and salt content through
+  time, monthly-mean T/S/u/v sections and difference maps. The spread between
+  the members is the yardstick a model&minus;GREP difference is read against.
+  2020&ndash;2024 only.
 - **Frontal-current placement** — optional, single-cycle regional maps of
   geostrophic speed against Copernicus ADT. A common absolute speed threshold
   within each box shows broad and branching-current footprints without forcing
@@ -89,7 +94,7 @@ Everything lands under `--outdir`.
 
 | File | Description |
 |---|---|
-| `letkf_verification.html` | The report, eight linked pages (`_02_usage` … `_08_calibration`); figures are linked from `figs/`, not embedded (`build_report.py --embed` inlines them) |
+| `letkf_verification.html` | The report, eleven linked pages (`_02_usage` … `_11_grep`); figures are linked from `figs/`, not embedded (`build_report.py --embed` inlines them) |
 | `letkf_verification.tar` | The pages plus every figure they link, laid out so the links hold once unpacked; written on every run |
 | `scorecard.md` | Every experiment against the reference, with a paired Wilcoxon test over cycles |
 | `figs/obs_*.png` | Departures, consistency, rank histograms, spread&ndash;skill, profiles by region |
@@ -101,6 +106,9 @@ Everything lands under `--outdir`.
 | `figs/front_strong_<region>_<cycle>.png` | Optional geostrophic-speed footprint for one configured current box, one per rendered cycle (`--hours`) |
 | `figs/seq_<realm>_incr_<field>_<cycle\|all>.png` | One increment map per field and cached cycle, all dates of a field on one colour scale; `_all` is the mean increment over every cached cycle (the systematic correction) on its own scale, the default in the report's date menu |
 | `figs/cycle_*.png` | Everything against cycle: obs fit, obs counts, gridded-analysis scores, background drift |
+| `figs/grep_content_<band>_region_<region>.png` | Heat and salt content through time over a depth band: the model at every cycle against each GREP reanalysis member's monthly mean, as the equivalent band-mean temperature and salinity (section 11) |
+| `figs/grep_sections_<var>[_0-Nm]_<YYYYMM>.png`, `figs/grep_bias_{heat,salt}_<band>_<YYYYMM>.png` | Monthly-mean T/S/u/v sections with one column per GREP member beside each experiment, and the model-minus-member band-mean difference maps |
+| `grep_content_<exp>.csv`, `grep_content_grep.csv`, `grep/*.npz` | The content series behind those figures, and the cached monthly reductions |
 | `figs/cycle_ssh_stability_<exp>.png`, `ssh_stability_<exp>.{csv,json}` | SSH cycling-stability metrics per cycle and region (increment size, persistence, rejection, small/grid-scale variance, shock, on-track index) with fitted trends and a flagged verdict (section 07) |
 | `cache/` | The per-cycle reductions (`<cycle>.json`, `_maps.npz`, `_obsbins.npz`); the report never re-reads model output |
 | `figs/.fresh-<stage>.json` | What each plot stage drew from which inputs; a rerun skips units whose inputs have not changed (`--force` redraws) |
@@ -120,6 +128,7 @@ Everything lands under `--outdir`.
 | `frontal_analysis:` | Optional ADT-gradient diagnostic for the `--hours` cycles; configures current boxes and shared absolute speed thresholds. Each experiment also needs `analysis_pattern:` for its written ocean analysis state. |
 | `depth_max:` | Cut every depth panel at N metres; a view setting, so it needs no recompute |
 | `sections:` | `zonal` latitudes and `meridional` longitudes to cut vertical sections of the increment and background along. A zonal line is one grid row, a true latitude circle only to ~64&deg;N; anything above 65&deg;N is drawn but flagged by `preflight.py`, by `plot_statespace.py` and on the panel |
+| `grep:` | Optional. Monthly means against the GREP multi-reanalysis ensemble (section 11). Presence of the block turns it on; GREP covers **2020&ndash;2024 only**, and a run outside that window is skipped silently. The field averaged is the ocean background valid at each cycle (`Experiment.background()`, f006 of cycle&minus;6 for `kind: var`), so a per-experiment `background:` override is honoured. `bands` (default 0&ndash;300 m and 300&ndash;1000 m), `members`, `section_hour` (cycles entering the section means, default one a day), `min_cycles`/`min_coverage` (what counts as a month). Velocity panels need `cos_rot`/`sin_rot` in the grid file &mdash; without them they are limited to transects south of the tripolar fold |
 | `map_limits:` | Fixed (vmin, vmax) per state variable/level, so a map figure's color scale holds across cycles and experiments instead of being recomputed per figure; optional, per-hemisphere override for ice thickness/snow depth |
 
 ## Running it: one directory per comparison

@@ -122,6 +122,34 @@ woa:
   # potential_temperature: true
   # sections: true      # the expensive half; false halves the WOA runtime
 
+# GREP, the Copernicus multi-reanalysis ensemble: MONTHLY means of the full
+# 3-D state from three independent reanalyses (cglo, glor, oras). Section 11
+# compares the model's own monthly mean against each member -- heat and salt
+# content through time, monthly-mean T/S/u/v sections, and difference maps.
+#
+# The field averaged is the ocean background valid at each cycle -- the same
+# one every other state-space diagnostic scores -- so a per-experiment
+# `background:` override is honoured and there is no forecast-hour knob here.
+#
+# Commented out because GREP covers 2020-2024 ONLY: uncomment it for a run
+# inside that window (the GFSv17 reanalysis streams), and leave it off for a
+# realtime config, where it would find nothing to compare. With the block
+# present but out of range the stage still exits cleanly and the section says
+# so -- the comment is to save the reader the question, not the suite the work.
+#
+# grep:
+#   path: /scratch3/NCEPDEV/da/common/validation/GREP
+#   # pattern: 'GREP_{year}.nc'        # defaults, shown for reference
+#   # members: [cglo, glor, oras]
+#   # years: [2020, 2024]
+#   # hour: null           # null = every cycle; '00' subsamples to daily
+#   # section_hour: '00'   # cycles entering the SECTION means; null = all (slow)
+#   # min_cycles: 20       # fewer than this in a month is not a monthly mean
+#   # min_coverage: 0.5    # ... nor is less than this fraction of the month
+#   # bands: [[0, 300], [300, 1000]]
+#   # variables: [Temp, Salt, u, v]
+#   # sections: true       # the expensive half
+
 ocean_basin_mask: /scratch3/NCEPDEV/da/Guillaume.Vernieres/common/monitor_rt/sfc-verif/R2-shared-resources/data/regions/RECCAP2_region_masks_all.nc
 
 # Fixed color-scale bounds for the state maps

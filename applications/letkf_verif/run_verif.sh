@@ -189,7 +189,7 @@ fi
 # note -- that is about the invocation, not the run: the rejoin happened in
 # 2a, and the scorecard and report read the joined sample from the cache.)
 # ---------------------------------------------------------------------------
-ALL_STAGES="rejoin obsspace obsbins statespace timeseries fronts stability scorecard report"
+ALL_STAGES="rejoin obsspace obsbins statespace timeseries fronts stability grep bkgerr scorecard report"
 stage() {
     # stage <name>: run only that sub-stage of build_comparison.py
     local only=$1 skips=()
@@ -210,7 +210,7 @@ echo "rejoin exit code: $?"
 echo
 echo "== stage 2b: figures + scorecard, concurrently =="
 declare -A SPIDS
-for s in obsspace obsbins statespace timeseries fronts stability scorecard; do
+for s in obsspace obsbins statespace timeseries fronts stability grep bkgerr scorecard; do
     stage "$s" > "$OUT/page/stage-$s.log" 2>&1 &
     SPIDS[$s]=$!
     echo "-- launched $s (pid ${SPIDS[$s]}, log: $OUT/page/stage-$s.log)"

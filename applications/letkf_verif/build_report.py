@@ -25,6 +25,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import lv_grep as LG  # noqa: E402
 import lv_plot as P  # noqa: E402
 import lv_verif as LV  # noqa: E402
 import plot_statespace as PS  # noqa: E402
@@ -635,6 +636,189 @@ def rendered_cycles(figs, stem_re, cycles):
     return have
 
 
+_MONTH_TAGGED = re.compile(r'^(.*)_(\d{6})\.png$')
+
+
+def rendered_months(figs, stem_re):
+    """Months that have a figure whose stem matches ``stem_re``, oldest first.
+
+    The GREP section is the one family tagged by MONTH rather than by cycle,
+    so it needs its own discovery: _TAGGED wants ten digits and would read
+    '202407' as no tag at all. Read off the files for the same reason
+    rendered_cycles() is -- the stage skips any month outside GREP's range,
+    and the menu should show exactly what was drawn.
+    """
+    pat = re.compile(stem_re)
+    out = set()
+    if not os.path.isdir(figs):
+        return []
+    for f in os.listdir(figs):
+        m = _MONTH_TAGGED.match(f)
+        if m and pat.fullmatch(m.group(1)):
+            out.add(m.group(2))
+    return sorted(out)
+
+
+def _month_label(month):
+    import calendar
+    return '%s %s' % (calendar.month_abbr[int(month[4:6])], month[:4])
+
+
+def month_menu(group, months, panel_fn):
+    """A month <select> over month-tagged figure blocks, newest open."""
+    entries = [(m, panel_fn(m)) for m in months]
+    entries = [(m, h) for m, h in entries if h]
+    if not entries:
+        return ''
+    if len(entries) == 1:
+        return entries[0][1]
+    by_month = dict(entries)
+    return picker_widget(group, [m for m, _h in entries],
+                         label_fn=_month_label,
+                         panel_fn=lambda m: by_month[m],
+                         dropdown='month', default=entries[-1][0])
+
+
+def grep_content_widget(group, cfg, figs, entry):
+    """Band picker over region pickers for the content time series."""
+    bands = [_band_key(b) for b in (entry.get('bands') or [])]
+    regions = ['global'] + region_list(cfg)
+    have = [b for b in bands if any(os.path.exists(os.path.join(
+        figs, 'grep_content_%s_region_%s.png' % (b, P.slug(r))))
+        for r in regions)]
+    if not have:
+        return ''
+    def panel(b):
+        rs = [r for r in regions if os.path.exists(os.path.join(
+            figs, 'grep_content_%s_region_%s.png' % (b, P.slug(r))))]
+        if not rs:
+            return ''
+        basin_color = basin_colors(cfg)
+        return picker_widget(
+            '%s-%s' % (group, b.replace('-', '')), rs,
+            label_fn=lambda r: r.replace('_', ' '),
+            panel_fn=lambda r: img(
+                os.path.join(figs, 'grep_content_%s_region_%s.png'
+                             % (b, P.slug(r))),
+                '%s: %s m heat and salt content, model against the GREP '
+                'members' % (r.replace('_', ' '), b), optional=True),
+            style_fn=lambda r: _basin_chip_style(basin_color, r))
+    return figure_menu('%sband' % group, 'depth band',
+                       [('%s m' % b, panel(b)) for b in have])
+
+
+def grep_sections_widget(group, cfg, figs, month, entry):
+    """Field x depth-view picker over the monthly-mean GREP sections."""
+    order = entry.get('variables') or ['Temp', 'Salt', 'u', 'v']
+    label = {'Temp': 'temperature', 'Salt': 'salinity',
+             'u': 'eastward velocity', 'v': 'northward velocity'}
+    items, paths = [], {}
+    for var in order:
+        for _cut, suffix, view in PS.section_depth_views(cfg):
+            p = os.path.join(figs, 'grep_sections_%s%s_%s.png'
+                             % (var, suffix, month))
+            if not os.path.exists(p):
+                continue
+            name = '%s, %s' % (label.get(var, var), view)
+            items.append(name)
+            paths[name] = (p, var)
+    if not items:
+        return ''
+    return picker_widget(
+        group, items, label_fn=lambda t: t,
+        panel_fn=lambda t: img(paths[t][0],
+                               'monthly-mean %s sections, GREP members and '
+                               'the experiments' % paths[t][1], optional=True),
+        dropdown='field')
+
+
+def grep_bias_widget(group, figs, month, entry):
+    """The band-mean difference maps, one entry per quantity and band."""
+    items = []
+    for field, what in (('heat', 'temperature'), ('salt', 'salinity')):
+        for b in (entry.get('bands') or []):
+            key = _band_key(b)
+            p = os.path.join(figs, 'grep_bias_%s_%s_%s.png'
+                             % (field, key, month))
+            if os.path.exists(p):
+                items.append(('%s m band-mean %s' % (key, what),
+                              img(p, 'model minus each GREP member, %s m '
+                                  'band-mean %s' % (key, what),
+                                  optional=True)))
+    return figure_menu(group, 'quantity', items)
+
+
+_BKGERR_MAP = re.compile(r'^bkgerr_maps_(ocean|ice)_(.+?)(?:_nh|_sh)?_\d{10}\.png$')
+_BKGERR_SEC = re.compile(r'^bkgerr_sections_(.+?)(?:_0-[\d.]+m)?_\d{10}\.png$')
+
+
+def bkgerr_widgets(figs, dates, dated, dated_hemi):
+    """{'m_bkgerr', 'bkgerr_note'} for section 12.
+
+    One menu entry per control variable and slice: 'Temp maps', 'Temp
+    sections' (itself a depth-view picker), 'aice_h maps' (both
+    hemispheres). Each entry carries its own date menu, like the other
+    per-date families.
+    """
+    import lv_bkgerr as LB
+    maps, secs = {}, set()
+    for f in (os.listdir(figs) if os.path.isdir(figs) else []):
+        m = _BKGERR_MAP.match(f)
+        if m:
+            maps[m.group(2)] = m.group(1)
+            continue
+        m = _BKGERR_SEC.match(f)
+        if m:
+            secs.add(m.group(1))
+    entries = []
+    for var in LB.sort_vars(set(maps) | secs):
+        unit = LB.UNITS.get(var, '')
+        if var in maps:
+            base = 'bkgerr_maps_%s_%s' % (maps[var], var)
+            alt = 'background-error std dev D, %s (%s)' % (var, unit)
+            widget = (dated_hemi('bkgerrmap-%s' % P.slug(var), base, alt,
+                                 optional=True)
+                      if maps[var] == 'ice' else
+                      dated('bkgerrmap-%s' % P.slug(var), base, alt,
+                            optional=True))
+            entries.append(('%s: horizontal slices' % var, widget))
+        if var in secs:
+            views = []
+            for _cut, suffix, label in PS.section_depth_views(
+                    {'sections': {'depth_views': _bkgerr_views(figs, var)}}):
+                base = 'bkgerr_sections_%s%s' % (var, suffix)
+                views.append((label, dated(
+                    'bkgerrsec-%s%s' % (P.slug(var), suffix.replace('.', '')),
+                    base, 'background-error std dev D along the transects, '
+                    '%s, %s' % (var, label), optional=True)))
+            entries.append(('%s: vertical sections' % var,
+                            figure_menu('bkgerrsecv-%s' % P.slug(var),
+                                        'depth view', views)))
+    out = {'m_bkgerr': figure_menu('bkgerrview', 'D view', entries)}
+    out['bkgerr_note'] = ('' if entries else
+                          'Nothing to show: no experiment archives a '
+                          '<code>*bkgerr_parametric_stddev.nc</code> for the '
+                          'drawn dates.')
+    return out
+
+
+def _bkgerr_views(figs, var):
+    """The depth views drawn for ``var``, full column first."""
+    cuts = set()
+    pat = re.compile(r'^bkgerr_sections_%s(?:_0-([\d.]+)m)?_\d{10}\.png$'
+                     % re.escape(var))
+    for f in os.listdir(figs):
+        m = pat.match(f)
+        if m:
+            cuts.add(m.group(1))
+    return (['full'] if None in cuts else []) + sorted(
+        (c for c in cuts if c), key=float)
+
+
+def _band_key(band):
+    return '%g-%g' % (float(band[0]), float(band[1]))
+
+
 def cycle_menu(group, dates, panel_fn):
     """A date <select> over per-cycle figure blocks, opening on the latest.
 
@@ -831,6 +1015,8 @@ SECTIONS = [
     ('08', 'calibration', 'Ensemble calibration'),
     ('09', 'binned', 'Binned departures'),
     ('10', 'forcing', 'Atmospheric forcing'),
+    ('11', 'grep', 'Monthly mean vs GREP'),
+    ('12', 'bkgerr', 'Background error (D)'),
 ]
 
 
@@ -1290,6 +1476,47 @@ def build(cfg, cycles, out):
             lambda c: sections_widget('woasec-%s' % c, cfg, figs, c,
                                       'woa_bias')),
         drift=drift)
+
+    # -- GREP (section 11) ------------------------------------------------
+    # Every figure is optional: an out-of-range period draws none of them and
+    # the section must still build rather than count ten missing files.
+    grep_entry = LG.configured(cfg) or {}
+    grep_months_have = rendered_months(figs, r'grep_(sections|bias)_.*')
+    subs['f_grepcontent'] = grep_content_widget('grepcont', cfg, figs,
+                                                grep_entry)
+    subs['f_grepsec'] = month_menu(
+        'grepsec', grep_months_have,
+        lambda m: grep_sections_widget('grepsec-%s' % m, cfg, figs, m,
+                                       grep_entry))
+    subs['f_grepbias'] = month_menu(
+        'grepbias', grep_months_have,
+        lambda m: grep_bias_widget('grepbias-%s' % m, figs, m, grep_entry))
+    if not grep_entry:
+        subs['grep_note'] = ('No <code>grep:</code> block in the config, so '
+                             'nothing was computed for this section.')
+    elif not (subs['f_grepcontent'] or grep_months_have):
+        subs['grep_note'] = (
+            'Nothing to show: GREP covers 2020&ndash;2024 and this run does '
+            'not overlap it, or no month is covered well enough.')
+    else:
+        subs['grep_note'] = ('Months compared: %s.'
+                             % ', '.join(_month_label(m)
+                                         for m in grep_months_have)
+                             if grep_months_have else '')
+    subs['f_grepsl'] = img(
+        os.path.join(figs, 'grep_sealevel_global.png'),
+        'global-mean sea level, its mass (SSH) and thermo/halosteric parts, '
+        'model against the GREP members', optional=True)
+    # -- background error D (section 12) ---------------------------------
+    # Variables are read off the figure names, so the menus show exactly
+    # what plot_bkgerr.py drew (u/v only where the archive carries them).
+    subs.update(bkgerr_widgets(figs, dates, dated, dated_hemi))
+
+    subs['m_grep'] = figure_menu('grepview', 'GREP view', [
+        ('Heat and salt content through time', subs['f_grepcontent']),
+        ('Global sea level and its parts', subs['f_grepsl']),
+        ('Monthly-mean sections', subs['f_grepsec']),
+        ('Difference maps', subs['f_grepbias'])])
 
     # Group the tall blocks behind dropdowns. Stacked flat, sections 03 and
     # 04 are a dozen full-width map grids between them -- minutes of
@@ -1804,6 +2031,69 @@ are on fixed &plusmn; scales per field (wind 4 m/s, stress 0.1 N/m&sup2;,
 heat flux 100 W/m&sup2;, precipitation 10 mm/day, temperature 3 &deg;C,
 overridable under <code>map_limits.atmos_diff</code>).</p>
 """,
+    '11': """
+<p><b>GREP</b> is the Copernicus multi-reanalysis ensemble: monthly means from
+three independent ocean reanalyses (<code>cglo</code>, <code>glor</code>,
+<code>oras</code>) on a 1/4&deg; grid, 2020&ndash;2024 only. Months outside
+that range, and months the run does not cover well enough, are skipped and
+this section is then empty.</p>
+<p>The model's monthly mean is built from the ocean <b>background</b> valid at
+every cycle in the month &mdash; the same field every other state-space
+diagnostic here scores, which for <code>kind: var</code> is f006 of the
+previous cycle, the forecast valid at the centre of the DA window. Sampling
+it at every 6-h cycle lands on four different times of day, so the mean
+carries no diurnal alias. The sections subsample to one cycle a day.</p>
+<p><b>Heat and salt content</b> are
+&rho;<sub>0</sub>c<sub>p</sub>&int;T&nbsp;dz and
+&rho;<sub>0</sub>&int;S&nbsp;dz over each configured band
+(&rho;<sub>0</sub>&nbsp;=&nbsp;1026&nbsp;kg/m&sup3;,
+c<sub>p</sub>&nbsp;=&nbsp;3996&nbsp;J/kg/K), reported as the equivalent
+band-mean temperature and salinity, which carry the same information and can
+be read. Each side is integrated on its OWN vertical axis &mdash; the model
+with its layer thickness <code>h</code>, so partial bottom cells and vanished
+layers are the model's own bookkeeping; GREP with its level interfaces &mdash;
+and cells are clipped to the band, so a band edge that falls inside a layer
+counts only its share. The integral is evaluated only where BOTH columns reach
+the bottom of the band, otherwise a shelf deep on one side and shallow on the
+other would difference two integrals over different volumes and ring every
+shelf edge.</p>
+<p>GREP is brought onto the model grid by the same nearest-cell gather the L4
+products use, and onto the model's level depths by the same non-clamping
+interpolation the WOA comparison uses, so the model levels below GREP's
+deepest (5902&nbsp;m) are left empty rather than filled with a fabricated
+constant. <b>Velocities</b>: GREP's <code>uo</code>/<code>vo</code> are
+eastward/northward, and the model's are face-normal in the logical grid frame,
+so the model pair is averaged onto the tracer point and rotated
+(soca's <code>rotate2north</code>). Where <code>lv_grid.nc</code> carries no
+<code>cos_rot</code>/<code>sin_rot</code> the rotation cannot be done and the
+velocity sections keep only transects south of the tripolar fold.</p>
+<p>The three members are drawn separately rather than averaged: the spread
+between them is the only uncertainty estimate here, and a model&minus;GREP
+difference is worth attention once it is larger than the difference between
+two reanalyses of the same month.</p>
+""",
+    '12': """
+<p>The 3DVar background-error covariance is factored as
+<b>B&nbsp;=&nbsp;K&nbsp;D&nbsp;C&nbsp;D&nbsp;K<sup>T</sup></b>: K the balance
+operator, C the (NICAS/diffusion) correlation, and D the diagonal of
+<b>standard deviations</b> in control-variable space. This section draws D as
+soca's <code>diagb</code> writes it each cycle,
+<code>*bkgerr_parametric_stddev.nc</code>, one file per realm, one field per
+control variable. Fields that are identically zero are left out: SSH enters
+through K, not D, and <code>h</code> carries only a placeholder.</p>
+<p>D is written on the B-matrix geometry, which is the model grid subsampled
+every second point in each direction; it is expanded back onto the model grid
+by repetition, not interpolated. Like an increment, the file has only a level
+index, so the level depths in the map labels and the section depth axis come
+from the ocean background's layer thickness at the same cycle. A zero standard
+deviation is masked: it is land, a vanished layer below the sea floor, or, for
+the ice fields, open water.</p>
+<p>Scales start at zero and run to the 99th percentile, shared across the
+experiments in a map row and across every transect of a section, so the
+columns compare directly. Drawn for the same dates as the other per-date
+figures (<code>--hours</code> plus the latest cycle). Where an archive keeps no
+D file the section is empty.</p>
+""",
 }
 
 
@@ -2077,9 +2367,36 @@ SEC_FORCING = r"""
 </section>
 """
 
+SEC_GREP = r"""
+<section>
+  <div class="sec-head"><span class="sec-n">11</span>
+    <h2>Monthly mean vs GREP</h2></div>
+  ${m_11}
+  <p class="lede">${grep_note} Every other reference in this report is either
+  same-day and surface-only, or full-depth and climatological. GREP is
+  neither: three independent reanalyses of the <i>same month</i>, full depth.
+  That makes the spread between the members a usable yardstick &mdash; read a
+  model&minus;GREP difference against it, not against zero.</p>
+  ${m_grep}
+</section>
+"""
+
+SEC_BKGERR = r"""
+<section>
+  <div class="sec-head"><span class="sec-n">12</span>
+    <h2>Background error (D)</h2></div>
+  ${m_12}
+  <p class="lede">${bkgerr_note} The parametric standard deviations the 3DVar
+  <b>B</b> is built on: horizontal slices at the configured map levels and
+  vertical slices along the configured transects, for every control
+  variable.</p>
+  ${m_bkgerr}
+</section>
+"""
+
 SECTION_TEMPLATES = [SEC_FIT, SEC_USAGE, SEC_STATE, SEC_BACKGROUND, SEC_DATES,
                      SEC_VERIF, SEC_CYCLING, SEC_CALIBRATION, SEC_BINNED,
-                     SEC_FORCING]
+                     SEC_FORCING, SEC_GREP, SEC_BKGERR]
 
 TAIL = r"""
 <section>

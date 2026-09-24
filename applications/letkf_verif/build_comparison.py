@@ -37,7 +37,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import build_report  # noqa: E402
 import compute_cycle  # noqa: E402
+import plot_bkgerr  # noqa: E402
 import plot_fronts  # noqa: E402
+import plot_grep  # noqa: E402
 import plot_obsbins  # noqa: E402
 import plot_stability  # noqa: E402
 import plot_obsspace  # noqa: E402
@@ -82,8 +84,9 @@ def main(argv=None):
                          'joined or drawn is skipped')
     ap.add_argument('--skip', action='append', default=None,
                     choices=['rejoin', 'obsspace', 'obsbins', 'statespace',
-                             'timeseries', 'fronts', 'stability', 'scorecard',
-                             'report'],
+                             'timeseries', 'fronts', 'stability', 'grep',
+                             'bkgerr',
+                             'scorecard', 'report'],
                     help='skip a stage (repeatable)')
     a = ap.parse_args(argv)
     cfg_path = a.config or a.config_opt
@@ -132,6 +135,14 @@ def main(argv=None):
          lambda: plot_fronts.main(common + ['--hours', a.hours] + force)),
         ('stability', 'SSH cycling-stability diagnostics',
          lambda: plot_stability.main(common + force)),
+        # No-ops without a `grep:` block, and skips any month outside GREP's
+        # 2020-2024 range, so it costs nothing on a realtime config.
+        ('grep', 'monthly means against the GREP reanalysis ensemble',
+         lambda: plot_grep.main(common + force)),
+        # Reads the D files directly, not the cache; nothing to draw (and no
+        # error) where an archive keeps no *bkgerr_parametric_stddev.nc.
+        ('bkgerr', 'parametric background-error (D) figures',
+         lambda: plot_bkgerr.main(common + ['--hours', a.hours] + force)),
         ('scorecard', 'scorecard', lambda: scorecard.main(common)),
         ('report', 'HTML report', lambda: build_report.main(common)),
     ]

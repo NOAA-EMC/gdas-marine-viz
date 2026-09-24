@@ -366,6 +366,15 @@ def load_config(path=None, root_override=None, outdir_override=None,
         if w.get('path'):
             w['path'] = _abs(w['path'])
         cfg['woa'] = w
+    # GREP monthly reanalysis-ensemble directory. Same rule again, and again
+    # not nested in `verification:`: GREP is a monthly mean of the full 3-D
+    # state from three reanalyses, not a same-day surface L4 field.
+    if cfg.get('grep'):
+        g = cfg['grep']
+        g = {'path': g} if isinstance(g, str) else dict(g or {})
+        if g.get('path'):
+            g['path'] = _abs(g['path'])
+        cfg['grep'] = g
     names = [e.name for e in cfg['experiments']]
     if len(set(names)) != len(names):
         raise ValueError('duplicate experiment names: %s' % names)
@@ -394,7 +403,7 @@ def load_config(path=None, root_override=None, outdir_override=None,
 # cycle's figures, which is the whole point of caching them.
 VIEW_KEYS = ('map_limits', 'sections', 'map_levels', 'map_stride',
              'state_vars', 'background_vars', 'regions', 'corr_regions',
-             'depth_bins', 'depth_max', 'verification', 'woa',
+             'depth_bins', 'depth_max', 'verification', 'woa', 'grep',
              'frontal_analysis', 'ocean_basin_mask', 'reference', 'obs_bins',
              'atmos_vars')
 

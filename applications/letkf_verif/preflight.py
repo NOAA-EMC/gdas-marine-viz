@@ -120,6 +120,39 @@ def check_config(args):
                 '%d files for %s under %s'
                 % (13 * len(wvars), '+'.join(wvars), woa['path']))
 
+    import lv_grep
+    grep = lv_grep.configured(cfg)
+    if grep is None:
+        say(OK, 'GREP ensemble', 'no `grep:` in the config; skipped')
+    else:
+        missing = lv_grep.missing_files(cfg, grep)
+        months = lv_grep.months_for(cfg, grep)
+        if missing:
+            say(BAD, 'GREP ensemble',
+                '%d year file(s) absent under %s: %s'
+                % (len(missing), grep['path'],
+                   ', '.join(os.path.basename(m) for m in missing)))
+        elif not months:
+            # Not an error: GREP simply does not reach this period, and the
+            # stage is built to disappear rather than fail. The reason is
+            # per experiment -- a missing archive is not a short month -- so
+            # report it that way rather than with a config-only answer.
+            for e in cfg['experiments']:
+                say(OK, 'GREP ensemble',
+                    '%s: nothing to compare (%s)'
+                    % (e.name, lv_grep.skip_reason(cfg, grep, e)))
+        else:
+            # months_for() without an experiment answers for the config; the
+            # per-experiment count can be smaller where history is missing.
+            for e in cfg['experiments']:
+                got = lv_grep.months_for(cfg, grep, e)
+                say(OK if got else WARN, 'GREP ensemble',
+                    '%s: %s' % (e.name,
+                                '%d month(s) %s, members %s'
+                                % (len(got), '/'.join(m for m, _c in got),
+                                   '+'.join(grep['members'])) if got
+                                else lv_grep.skip_reason(cfg, grep, e)))
+
     sec = cfg.get('sections') or {}
     if sec.get('zonal') or sec.get('meridional'):
         from lv_statespace import section_warnings
