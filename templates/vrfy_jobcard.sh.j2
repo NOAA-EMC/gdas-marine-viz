@@ -28,7 +28,9 @@ module load {{ eva_module | default("EVA/hera") }}
 export PYTHONPATH="${HOMEgdasmv}:$PYTHONPATH"
 
 # on Ursa
+{% if HPC == "ursa" %}
 export CARTOPY_DATA_DIR=/scratch3/NCEPDEV/da/common/cartopy
+{% endif %}
 
 # Set flags to control plotConfig in the Python script
 export PLOT_ENSEMBLE_B={{ plot_ensemble_b | default("OFF") }}
