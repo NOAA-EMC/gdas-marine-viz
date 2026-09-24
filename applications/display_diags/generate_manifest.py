@@ -27,7 +27,7 @@ def get_args():
 
 
 args = get_args()
-ROOT = Path(args.root).resolve() if args.root else Path(__file__).resolve().parents[1]
+ROOT = Path(args.root).resolve() if args.root else Path(__file__).resolve().parents[2]
 # Determine output path
 if args.out:
     outpath = Path(args.out)
