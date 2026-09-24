@@ -2,6 +2,7 @@
 
 import argparse
 import subprocess
+import yaml
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -13,7 +14,7 @@ def extract_last_dir(HPSS_root, hsi_output=None, result_file=None):
     Args:
         HPSS_root: Root path in HPSS to search for cycle directories
         hsi_output: Path to temporary file for hsi output (default: "hsi_ls_out.txt")
-        result_file: Path to file containing first cycle info (default: "cycles.txt")
+        result_file: Path to YAML file tracking the last extracted cycle (default: "cycles.yaml")
     """
     # Set defaults for optional parameters
     if hsi_output is None:
@@ -22,7 +23,7 @@ def extract_last_dir(HPSS_root, hsi_output=None, result_file=None):
         hsi_output = Path(hsi_output)
 
     if result_file is None:
-        result_file = Path("cycles.txt")
+        result_file = Path("cycles.yaml")
     else:
         result_file = Path(result_file)
 
@@ -31,20 +32,21 @@ def extract_last_dir(HPSS_root, hsi_output=None, result_file=None):
 
     # Verify result_file exists before reading
     if not result_file.exists():
-        raise FileNotFoundError(f"{result_file} not found - this file should contain the first cycle information")
+        raise FileNotFoundError(f"{result_file} not found - this file should contain the last extracted cycle")
 
     with result_file.open("r", encoding="utf-8") as f:
-        f.readline()  # Skip first line
-        first_cycle_str = f.readline().strip()
+        cycles_data = yaml.safe_load(f)
+
+    last_extracted_cycle_str = str(cycles_data["last_extracted_cycle"])
 
     # Validate
-    if len(first_cycle_str) != 10 or not first_cycle_str.isdigit():
+    if len(last_extracted_cycle_str) != 10 or not last_extracted_cycle_str.isdigit():
         raise ValueError(
-            f"Invalid cycle string '{first_cycle_str}'; expected YYYYMMDDHH"
+            f"Invalid cycle string '{last_extracted_cycle_str}'; expected YYYYMMDDHH"
         )
 
     # Parse into datetime (UTC assumed) and start on the next cycle
-    first_cycle = datetime.strptime(first_cycle_str, "%Y%m%d%H") + timedelta(hours=6)
+    first_cycle = datetime.strptime(last_extracted_cycle_str, "%Y%m%d%H") + timedelta(hours=6)
 
     print(f"Parsed cycle datetime: {first_cycle} (UTC assumed)")
 
@@ -101,18 +103,25 @@ def extract_last_dir(HPSS_root, hsi_output=None, result_file=None):
             ["htar", "-xf", f"{HPSS_dir}/{cycle_str}/gdasice.tar"],
         ]
 
+        cycle_succeeded = True
         for cmd in commands:
             try:
                 subprocess.run(cmd, check=True)
             except subprocess.CalledProcessError as e:
                 print(f"Error while executing command: {cmd}. Error: {e}")
                 print("Breaking out of the loop without incrementing the cycle.")
-                return  # Exit the function early if the error occurs
+                cycle_succeeded = False
+                break
+
+        if not cycle_succeeded:
+            return  # Exit the function early if the error occurs, leaving result_file at the last success
+
+        # Record progress immediately so a later failure doesn't lose completed work
+        result_file.write_text(
+            yaml.dump({"last_extracted_cycle": cycle_str}, default_flow_style=False)
+        )
 
         cycle += timedelta(hours=6)
-
-    # Write result for later use
-    result_file.write_text(f"{first_cycle_str}\n{last_cycle_str}\n")
 
 
 if __name__ == "__main__":
@@ -134,7 +143,7 @@ if __name__ == "__main__":
         "--result-file",
         type=str,
         default=None,
-        help="Path to file containing first cycle info (default: cycles.txt)"
+        help="Path to YAML file tracking the last extracted cycle (default: cycles.yaml)"
     )
 
     args = parser.parse_args()

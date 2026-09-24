@@ -21,7 +21,7 @@ def main(yaml_file):
 
         HPSS_root = experiment['HPSS root']
         hpss_dir = os.path.join(HPSS_root, pslot)
-        extract_last_dir(hpss_dir, hsi_output='out.txt', result_file='cycles.txt')
+        extract_last_dir(hpss_dir, hsi_output='out.txt', result_file='cycles.yaml')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process HPSS archive.")
