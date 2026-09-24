@@ -1,33 +1,17 @@
-certifi==2025.1.31
-charset-normalizer==3.4.1
-contourpy==1.3.0
-cycler==0.12.1
-exceptiongroup==1.2.2
-flake8==7.1.2
-fonttools==4.56.0
-idna==3.10
-iniconfig==2.0.0
-Jinja2==3.1.6
-kiwisolver==1.4.7
-MarkupSafe==3.0.2
+# Python environment for testing/CI (see .github/workflows/pytest.yaml).
+#
+# The applications themselves run under the EVA module environment on HPC
+# (see README.md), which supplies the heavier plotting/analysis stack:
+# cartopy, scipy, xarray and tqdm. The `oceanview` application additionally
+# needs wxPython and basemap, which come from its own conda environment,
+# and `letkf_obsstats` needs wxflow from the global-workflow.
+#
+# Only direct dependencies are listed here; pip resolves the rest.
+flake8
+Jinja2
 matplotlib
-mccabe==0.7.0
 netCDF4
 numpy
-packaging==24.2
-panda==0.3.1
-pandas==2.2.3
-pillow==11.1.0
-pluggy==1.5.0
-pycodestyle==2.12.1
-pyflakes==3.2.0
-pyparsing==3.2.1
-pytest==8.3.5
-python-dateutil==2.9.0.post0
-pytz==2025.1
-PyYAML==6.0.2
-requests==2.32.3
-six==1.17.0
-tomli==2.2.1
-tzdata==2025.1
-urllib3==2.3.0
+pandas
+pytest
+PyYAML

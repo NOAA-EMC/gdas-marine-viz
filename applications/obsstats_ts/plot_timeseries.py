@@ -68,7 +68,7 @@ def process_observation_spaces_sequentially(obs_spaces_config, exp_name=None):
 
             # Memory management for large configs
             if i % 20 == 0:
-                print(f"    Progress: {processed_count}/{total_spaces} spaces completed ({100*processed_count/total_spaces:.1f}%)")
+                print(f"    Progress: {processed_count}/{total_spaces} spaces completed ({100 * processed_count / total_spaces:.1f}%)")
 
         except Exception as e:
             print(f"ERROR processing space {i}: {e}")
@@ -1070,7 +1070,7 @@ def process_observation_space_groups(grouped_obs_spaces, output_dir, title, enab
             if i % 10 == 0:
                 print(
                     f"    Progress: {processed_count}/{total_groups} groups completed "
-                    f"({100*processed_count/total_groups:.1f}%)"
+                    f"({100 * processed_count / total_groups:.1f}%)"
                 )
 
         except Exception as e:

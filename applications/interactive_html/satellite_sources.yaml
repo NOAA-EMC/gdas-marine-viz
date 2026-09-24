@@ -1,0 +1,159 @@
+# Satellite data sources configuration
+# Each entry defines a satellite dataset with its properties
+# File names no longer include dates to support any cycle/date
+
+# Sea Surface Temperature (SST) Observations
+GOES-16 ABI:
+  filename: sst_abi_g16_l3c.nc
+  description: GOES-16 Advanced Baseline Imager
+  color: '#FF6B6B'  # Red
+  variable_name: seaSurfaceTemperature
+  vmin: -1.0
+  vmax: 1.0
+
+GOES-17 ABI:
+  filename: sst_abi_g17_l3c.nc
+  description: GOES-17 Advanced Baseline Imager
+  color: '#FF8C42'  # Orange
+  variable_name: seaSurfaceTemperature
+  vmin: -1.0
+  vmax: 1.0
+
+Himawari-8 AHI:
+  filename: sst_ahi_h08_l3c.nc
+  description: Himawari-8 Advanced Himawari Imager
+  color: '#FFA07A'  # Light Salmon
+  variable_name: seaSurfaceTemperature
+  vmin: -1.0
+  vmax: 1.0
+
+VIIRS NPP:
+  filename: sst_viirs_npp_l3u.nc
+  description: Suomi-NPP VIIRS
+  color: '#4ECDC4'  # Turquoise
+  variable_name: seaSurfaceTemperature
+  vmin: -1.0
+  vmax: 1.0
+
+VIIRS N20:
+  filename: sst_viirs_n20_l3u.nc
+  description: NOAA-20 VIIRS
+  color: '#45B7D1'  # Sky Blue
+  variable_name: seaSurfaceTemperature
+  vmin: -1.0
+  vmax: 1.0
+
+VIIRS N21:
+  filename: sst_viirs_n21_l3u.nc
+  description: NOAA-21 VIIRS
+  color: '#5BC0EB'  # Light Blue
+  variable_name: seaSurfaceTemperature
+  vmin: -1.0
+  vmax: 1.0
+
+AVHRR MetOp-B:
+  filename: sst_avhrrf_mb_l3u.nc
+  description: MetOp-B AVHRR
+  color: '#88D8B0'  # Mint Green
+  variable_name: seaSurfaceTemperature
+  vmin: -1.0
+  vmax: 1.0
+
+AVHRR MetOp-C:
+  filename: sst_avhrrf_mc_l3u.nc
+  description: MetOp-C AVHRR
+  color: '#A8E6CF'  # Light Mint
+  variable_name: seaSurfaceTemperature
+  vmin: -1.0
+  vmax: 1.0
+
+# Sea Ice Concentration
+AMSR2 North:
+  filename: icec_amsr2_north.nc
+  description: AMSR2 Sea Ice Concentration - Northern Hemisphere
+  color: '#00CED1'  # Dark Turquoise
+  variable_name: seaIceFraction
+  vmin: -0.2
+  vmax: 0.2
+
+AMSR2 South:
+  filename: icec_amsr2_south.nc
+  description: AMSR2 Sea Ice Concentration - Southern Hemisphere
+  color: '#4682B4'  # Steel Blue
+  variable_name: seaIceFraction
+  vmin: -0.2
+  vmax: 0.2
+
+# Sea Surface Salinity (SSS) Observations
+SMAP:
+  filename: sss_smap_l2.nc
+  description: SMAP Sea Surface Salinity
+  color: '#9B59B6'  # Purple
+  variable_name: seaSurfaceSalinity
+  vmin: -0.5
+  vmax: 0.5
+
+SMOS:
+  filename: sss_smos_l2.nc
+  description: SMOS Sea Surface Salinity
+  color: '#8E44AD'  # Dark Purple
+  variable_name: seaSurfaceSalinity
+  vmin: -0.5
+  vmax: 0.5
+
+# Satellite Altimetry - Absolute Dynamic Topography (ADT)
+Jason-3:
+  filename: rads_adt_j3.nc
+  description: Jason-3 Altimeter
+  color: '#E74C3C'  # Bright Red
+  variable_name: absoluteDynamicTopography
+  vmin: -0.2
+  vmax: 0.2
+
+Sentinel-3A:
+  filename: rads_adt_3a.nc
+  description: Sentinel-3A Altimeter
+  color: '#E67E22'  # Orange Red
+  variable_name: absoluteDynamicTopography
+  vmin: -0.2
+  vmax: 0.2
+
+Sentinel-3B:
+  filename: rads_adt_3b.nc
+  description: Sentinel-3B Altimeter
+  color: '#F39C12'  # Yellow Orange
+  variable_name: absoluteDynamicTopography
+  vmin: -0.2
+  vmax: 0.2
+
+Sentinel-6A:
+  filename: rads_adt_6a.nc
+  description: Sentinel-6A Michael Freilich Altimeter
+  color: '#F1C40F'  # Yellow
+  variable_name: absoluteDynamicTopography
+  vmin: -0.2
+  vmax: 0.2
+
+SARAL:
+  filename: rads_adt_sa.nc
+  description: SARAL/AltiKa Altimeter
+  color: '#D35400'  # Dark Orange
+  variable_name: absoluteDynamicTopography
+  vmin: -0.2
+  vmax: 0.2
+
+SWOT:
+  filename: rads_adt_sw.nc
+  description: SWOT Surface Water and Ocean Topography
+  color: '#CA6F1E'  # Brown Orange
+  variable_name: absoluteDynamicTopography
+  vmin: -0.2
+  vmax: 0.2
+
+CryoSat-2:
+  filename: rads_adt_c2.nc
+  description: CryoSat-2 Altimeter
+  color: '#BA4A00'  # Dark Brown
+  variable_name: absoluteDynamicTopography
+  vmin: -0.2
+  vmax: 0.2

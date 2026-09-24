@@ -31,7 +31,21 @@ A diagnostic application for generating figures related to state-space and obs-s
   - `gen_eva_obs_yaml.py` (generates configuration file for EVA)
   - `marine_eva_post.py` (run EVA)
 
-### 5. Obs Maps
+### 5. Obs Stats Deep
+Bins observation minus background (OMB) and observation minus analysis (OMA) statistics for in situ vertical profiles (Argo temperature and salinity), stratified by ocean basin and depth layer.
+
+- **Directory:** `obsstats_deep/`
+- **Main Components:**
+  - `plot_ts.py` (density plots, mean/RMSE profiles, and spatial maps)
+
+### 6. State Stats OSTIA
+Compares GFS background SST and sea-ice concentration against OSTIA L4 analyses, supporting multiple experiment runs side-by-side.
+
+- **Directory:** `statestats_ostia/`
+- **Main Components:**
+  - `compare_sfc_ostia.py` (per-basin time series, spatial maps, ice extent, and IIEE)
+
+### 7. Obs Maps
 Creates multiple frames containing maps of obs values for now.
 
 - **Directory:** `obsstats_maps/`
@@ -52,3 +66,16 @@ save_dir: './test-frames'
 varname: 'sst'
 bounds: [-2, 35]
 ```
+
+### 8. LETKF Verification
+Scores any number of marine DA experiments — LETKF or 3DVar, in any mix — against a chosen reference, and assembles a single self-contained HTML report covering observation space (common-sample O-B/O-A, Desroziers, rank histograms, CRPS), state space (increment and ensemble-spread profiles and maps, applied inflation), and the surface state against CMEMS ADT, CMEMS SSS and OSTIA SST.
+
+Work is split in two: an expensive per-experiment precompute that can run as independent parallel jobs, and a cheap step that builds the comparison page from those caches.
+
+- **Directory:** `letkf_verif/`
+- **Main Components:**
+  - `preflight.py` (check the environment and inputs before a long job)
+  - `precompute_experiment.py` (per-experiment cache; the expensive step)
+  - `build_comparison.py` (rejoins the observations, then builds the page)
+
+Overlaps `statestats_ostia` on SST only, and on a different grid — see `letkf_verif/README.md`.

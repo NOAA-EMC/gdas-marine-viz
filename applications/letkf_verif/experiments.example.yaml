@@ -1,0 +1,159 @@
+# Experiment registry for the marine LETKF verification suite.
+#
+# Copy this somewhere of your own, edit it, and pass it to every script. There
+# is no default name: the config is always given explicitly, so a shared
+# checkout of the code is never read from or written into.
+#
+# Add a candidate configuration by appending to `experiments`. Paths are
+# relative to THIS FILE unless absolute. `stem` is a template in {Ymd}
+# (YYYYMMDD) and {HH}; the suite globs for the actual filenames beneath it, so
+# the t{HH}z / i006 tags in the file names do not need to be spelled out.
+#
+#   kind: var    -> deterministic (3DVar). Reads hofx0/hofx1, ombg, oman.
+#   kind: letkf  -> ensemble. Additionally reads hofx0_*/hofx1_* members and
+#                   the ensvar_prior / ensvar_post / ensmean_incr files.
+
+# lon / lat / area / mask2d. Point this at your soca_gridspec.nc, or slim that
+# ~190 MB file down to the ~7 MB the suite actually reads:
+#
+#   python3 make_gridfile.py --grid /path/to/soca_gridspec.nc --out lv_grid.nc
+#
+grid:  lv_grid.nc
+reference: 3dvar_ctl    # baseline column of the scorecard
+
+# Where output goes. `outdir` moves all four together; each can also be pinned
+# individually, and --outdir / $LETKF_VERIF_OUTDIR override the lot.
+# Defaults to the directory holding THIS FILE -- never the code's.
+#
+# outdir:    /scratch/me/letkf_verif
+# cache:     {outdir}/cache
+# figs:      {outdir}/figs
+# report:    {outdir}/letkf_verification.html
+# scorecard: {outdir}/scorecard.md
+
+# Either an explicit list, or a {start, stop, step} range -- stop is inclusive
+# and step is in hours. A week of 6-hourly cycles is:
+#
+# cycles:
+#   start: 2026042200
+#   stop:  2026042818
+#   step:  6
+#
+cycles:                 # <- replace with your own cycle(s)
+  - 2026042206
+
+# `root` is the experiment directory; `stem` is the path beneath it holding
+# one cycle's diag files. Both experiments may share a root.
+experiments:
+  - name:  3dvar_ctl
+    label: 3DVar (tuned)
+    kind:  var
+    root:  /scratch/me/expts
+    stem:  "gdas.{Ymd}/{HH}/analysis"
+
+  - name:  letkf_v1
+    label: LETKF v1
+    kind:  letkf
+    root:  /scratch/me/expts
+    stem:  "enkfgdas.{Ymd}/{HH}/ensstat/analysis"
+    # Ensemble variance at the three stages of the analysis. These are the
+    # defaults; override only the ones your run names differently. Omitting
+    # `an` (or having no such file) simply drops the inflation diagnostics.
+    #
+    # ensvar_patterns:
+    #   prior: "*ensvar_prior.nc"     # sigma_b, background
+    #   post:  "*ensvar_post.nc"      # sigma_a, analysis before inflation
+    #   an:    "*an_ensvar.nc"        # sigma_an, analysis after inflation
+
+# State variables to score. The current components u and v exist only in the
+# LETKF increment and ensemble variance, so adding them gives LETKF-only
+# panels -- the 3DVar column is dropped rather than left blank. ~30s of extra
+# I/O per variable.
+state_vars:
+  ocean: [Temp, Salt, ave_ssh]
+  # ocean: [Temp, Salt, ave_ssh, u, v]
+  ice:   [aice_h, hi_div_aice_h, hs_div_aice_h]
+
+# Fields read from the background; h is always read, for the depth axis. MLD
+# exists only in the 3DVar history and is skipped where absent.
+#
+# The currents come in two forms:
+#
+#   speed   |(u, v)|, the magnitude   -- sequential scale
+#   u, v    the components, signed    -- diverging scale, centred on zero
+#
+# u and v are plotted exactly as the file stores them, with no interpolation.
+# Note that MOM6 history keeps them on their native faces (u on xq, v on yq)
+# while soca output is at tracer points, so those columns sit half a cell
+# apart -- ~14 km at the equator, below what a global map resolves. `speed`
+# does collocate internally, since |(u, v)| needs both components in the same
+# place to mean anything.
+#
+# Each costs one extra pass over u and v (~1 min per experiment per cycle);
+# `speed` and the components share no work, so listing all three costs three
+# passes. Drop them here if you only want the tracers.
+background_vars:
+  ocean: [Temp, Salt, ave_ssh, MLD, speed]
+  # ocean: [Temp, Salt, ave_ssh, MLD, speed, u, v]
+  ice:   [aice_h, hi_div_aice_h, hs_div_aice_h]
+
+# Cut every depth panel at this many metres, surface at the top. Purely a view
+# setting applied when plotting, so changing it needs no recompute -- the cache
+# always holds the full column. Most of the signal is in the top few hundred
+# metres and a linear 6000 m axis squeezes that into a sliver; this trades the
+# abyss for the part you are tuning. Comment out for the full column.
+#
+# depth_max: 1000
+
+# Verification against independent gridded analyses. Each product names the
+# directory holding it -- everything above the YYYY/MM/file layout -- because
+# these come from unrelated archives and share no common root. Relative paths
+# resolve against this file. Omit the section, or give no products, to switch
+# it off.
+#
+# A product can instead give {path: ..., pattern: ...} to override the built-in
+# filename glob in lv_verif.PRODUCTS, for an archive that names files
+# differently:
+#
+#   sst: {path: /scratch/me/OSTIA, pattern: "{Y}/{m}/{Ymd}*-OSTIA-*.nc"}
+#
+# Note ADT and SSS are independent of this system -- no altimetry and no
+# satellite salinity are assimilated. OSTIA is built from the same AVHRR and
+# VIIRS radiances the system does assimilate, so SST is a consistency check
+# rather than independent validation.
+verification:
+  products:
+    adt: /scratch/me/copernicus_adt
+    sss: /scratch/me/copernicus_sss
+    sst: /scratch/me/ostia
+
+# Levels used for increment / spread maps and correlation-length fits.
+map_levels: [0, 10, 30]
+
+# Every other grid point is kept for the cached maps (1440x1080 -> 720x540).
+map_stride: 2
+
+# Regions. ONE list, used everywhere: state-space profiles, the fit to the
+# gridded products, and the stratification of profile and surface observations.
+# `global` is always included and never needs listing.
+#
+# Boxes take lat0/lat1 and optionally lon0/lon1, in conventional -180..180
+# longitude; a box may straddle the dateline (lon0 > lon1). A region without
+# longitude bounds is a latitude band. Observations are selected in longitude
+# too wherever a region carries it.
+regions:
+  - {name: SH_extratropics, lat0: -90, lat1: -30}
+  - {name: tropics,         lat0: -30, lat1:  30}
+  - {name: NH_extratropics, lat0:  30, lat1:  90}
+  - {name: N_Atlantic, lat0:  30, lat1:  60, lon0: -70,  lon1: -10}
+  - {name: E_Pacific,  lat0: -10, lat1:  10, lon0: -140, lon1: -100}
+  - {name: S_Ocean,    lat0: -60, lat1: -40, lon0:   0,  lon1:  40}
+  - {name: Kuroshio,   lat0:  25, lat1:  45, lon0: 140,  lon1: 180}
+
+# Which of those regions get an increment correlation-length fit. Opt-in by
+# name, because the fit is per-box and means nothing globally; a region with no
+# longitude bounds is not a box and is skipped.
+corr_regions: [N_Atlantic, E_Pacific, S_Ocean, Kuroshio]
+
+# Depth bins (m) for stratifying profile-observation statistics.
+depth_bins: [0, 10, 50, 100, 300, 700, 2000, 6000]
