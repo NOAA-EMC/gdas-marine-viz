@@ -15,6 +15,13 @@ pytest --disable-warnings -v tests/test_coding_style.py
 pytest --disable-warnings -v tests/obsstats_ts/
 ```
 
+On Ursa, scripts that import `wxflow` require an explicit path to a compatible
+`global-workflow` checkout before loading `EVA/ursa`:
+```console
+export GDAS_MARINE_VIZ_WXFLOW_PATH=/path/to/global-workflow/sorc/wxflow/src
+module load EVA/ursa
+```
+
 ## Simple Observation Space Statistics
 A quick way to generate o-b stats and compare experiments
 ```

@@ -8,6 +8,10 @@ import subprocess
 import glob
 
 comout = os.getenv('COM_OCEAN_ANALYSIS')
+com_ocean_analysis = os.getenv('COM_OCEAN_ANALYSIS')
+com_ice_analysis = os.getenv('COM_ICE_ANALYSIS')
+print("comout: ", comout)
+comconf = os.getenv('COM_CONF')
 # resolve the comout path since it may contain wild cards
 matching_paths = glob.glob(comout)
 if matching_paths:
@@ -50,12 +54,15 @@ RUN = os.getenv('RUN')
 bcyc = str((int(cyc) - 3) % 24).zfill(2)
 gcyc = str((int(cyc) - 6) % 24).zfill(2)
 grid_file = os.path.join(comout, f'{RUN}.t' + bcyc + 'z.ocngrid.nc')
-layer_file = os.path.join(comout, f'{RUN}.t' + cyc + 'z.ocninc.nc')
+
+layer_file = os.path.join(com_ocean_history, f'{RUN}.t' + gcyc + 'z.inst.f006.nc')
 
 # bkg_err grid file path based on the system's hostname
 hpcname = os.getenv('HPCname')
 if hpcname.startswith("hera"):
     grid_file_bkgerr = '/scratch1/NCEPDEV/da/common/validation/vrfy/soca_gridspec.bkgerr.nc'
+elif hpcname in ["ursa"]:
+    grid_file_bkgerr = '/scratch3/NCEPDEV/da/common/validation/vrfy/soca_gridspec.bkgerr.nc'
 elif hpcname in ["hercules", "orion"]:
     grid_file_bkgerr = '/work/noaa/da/marineda/validation/vrfy/soca_gridspec.bkgerr.nc'
 else:
@@ -65,7 +72,7 @@ else:
 # Check if the file exists, then decide on grid_file
 if not os.path.exists(grid_file):
     # TODO: Make this work on other HPC
-    grid_file = '/scratch1/NCEPDEV/da/common/validation/vrfy/gdas.t21z.ocngrid.nc'
+    grid_file = '/scratch3/NCEPDEV/da/common/validation/vrfy/gdas.t21z.ocngrid.nc'
 
 # for eva
 diagdir = os.path.join(comout, 'diags')
@@ -92,7 +99,7 @@ configs = []
 if plot_analysis:
     print('Plotting analysis')
     configs_ana = [plotConfig(grid_file=grid_file,
-                              data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.ocnana.nc'),
+                              data_file=os.path.join(com_ocean_analysis, f'{RUN}.t' + cyc + 'z.jedi_analysis.a006.nc'),
                               variables_horiz={
                                   'ave_ssh': [-1.8, 1.3],
                                   'Temp': [-1.8, 34.0],
@@ -100,7 +107,7 @@ if plot_analysis:
                               colormap='nipy_spectral',
                               vrfyout=os.path.join(vrfyout, 'vrfy', 'ana')),   # ocean surface analysis
                    plotConfig(grid_file=grid_file,
-                              data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.iceana.nc'),
+                              data_file=os.path.join(com_ice_analysis, f'{RUN}.t' + cyc + 'z.jedi_analysis.a006.nc'),
                               variables_horiz={'aice_h': [0.0, 1.0],
                                                'hi_h': [0.0, 4.0],
                                                'hs_h': [0.0, 0.5]},
@@ -314,7 +321,7 @@ if plot_letkf_ensemble:
 if plot_background:
     print('Plotting background')
     config_bkg = [plotConfig(grid_file=grid_file,
-                             data_file=os.path.join(com_ice_history, f'{RUN}.ice.t{gcyc}z.inst.f006.nc'),
+                             data_file=os.path.join(com_ice_history, f'{RUN}.t{gcyc}z.inst.f006.nc'),
                              variables_horiz={'aice_h': [0.0, 1.0],
                                               'hi_h': [0.0, 4.0],
                                               'hs_h': [0.0, 0.5]},
@@ -323,7 +330,7 @@ if plot_background:
                              vrfyout=os.path.join(vrfyout, 'vrfy', 'bkg')),   # sea ice background
                   plotConfig(grid_file=grid_file,
                              layer_file=layer_file,
-                             data_file=os.path.join(com_ocean_history, f'{RUN}.ocean.t{gcyc}z.inst.f006.nc'),
+                             data_file=os.path.join(com_ocean_history, f'{RUN}.t{gcyc}z.inst.f006.nc'),
                              lats=np.arange(-60, 60, 10),
                              lons=np.arange(-280, 80, 30),
                              variables_zonal={'Temp': [-1.8, 34.0],
@@ -348,7 +355,7 @@ if plot_increment:
     print('Plotting increment')
     config_incr = [plotConfig(grid_file=grid_file,
                               layer_file=layer_file,
-                              data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.ocninc.nc'),
+                              data_file=os.path.join(com_ocean_analysis, f'{RUN}.t' + cyc + 'z.jedi_increment.i006.nc'),
                               lats=np.arange(-60, 60, 10),
                               lons=np.arange(-280, 80, 30),
                               variables_zonal={'Temp': [-0.5, 0.5],
@@ -361,24 +368,24 @@ if plot_increment:
                               colormap='seismic',
                               vrfyout=os.path.join(vrfyout, 'vrfy', 'incr')),   # ocean increment
                    plotConfig(grid_file=grid_file,
-                              data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.ice.incr.nc'),
+                              data_file=os.path.join(com_ice_analysis, f'{RUN}.t' + cyc + 'z.jedi_increment.i006.nc'),
                               lats=np.arange(-60, 60, 10),
                               variables_horiz={'aice_h': [-0.2, 0.2],
                                                'hi_h': [-0.5, 0.5],
                                                'hs_h': [-0.1, 0.1]},
                               colormap='seismic',
                               projs=['North', 'South'],
-                              vrfyout=os.path.join(vrfyout, 'vrfy', 'incr')),   # sea ice increment
-                   plotConfig(grid_file=grid_file,
-                              data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.ice.incr.postproc.nc'),
-                              lats=np.arange(-60, 60, 10),
-                              variables_horiz={'aice_h': [-0.2, 0.2],
-                                               'hi_h': [-0.5, 0.5],
-                                               'hs_h': [-0.1, 0.1]},
-                              colormap='seismic',
-                              projs=['North', 'South'],
-                              vrfyout=os.path.join(vrfyout,
-                                                   'vrfy', 'incr.postproc'))]   # sea ice increment after postprocessing
+                              vrfyout=os.path.join(vrfyout, 'vrfy', 'incr'))]   # sea ice increment
+#                   plotConfig(grid_file=grid_file,
+#                              data_file=os.path.join(comout, f'{RUN}.t' + cyc + 'z.ice.incr.postproc.nc'),
+#                              lats=np.arange(-60, 60, 10),
+#                              variables_horiz={'aice_h': [-0.2, 0.2],
+#                                               'hi_h': [-0.5, 0.5],
+#                                               'hs_h': [-0.1, 0.1]},
+#                              colormap='seismic',
+#                              projs=['North', 'South'],
+#                              vrfyout=os.path.join(vrfyout,
+#                                                   'vrfy', 'incr.postproc'))]   # sea ice increment after postprocessing
     configs.extend(config_incr)
 
 
@@ -408,11 +415,14 @@ for process in processes:
 if eva_plots:
     evadir = os.path.join(HOMEgdasmv)
     marinetemplate = os.path.join(evadir, 'configs', 'marine_gdas_plots.yaml')
-    varyaml = os.path.join(comout, 'yaml', 'var.yaml')
+    varyaml = os.path.join(comconf, 'var.yaml')
 
     # it would be better to refrence the dirs explicitly with the comout path
     # but eva doesn't allow for specifying output directories
-    os.chdir(os.path.join(vrfyout, 'vrfy'))
+    vrfydir = os.path.join(vrfyout, 'vrfy')
+    if not os.path.exists(vrfydir):
+        os.makedirs(vrfydir)
+    os.chdir(vrfydir)
     if not os.path.exists('preevayamls'):
         os.makedirs('preevayamls')
     if not os.path.exists('evayamls'):

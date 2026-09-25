@@ -27,6 +27,11 @@ module load {{ eva_module | default("EVA/hera") }}
 # Set PYTHONPATH using HOMEgdasmv
 export PYTHONPATH="${HOMEgdasmv}:$PYTHONPATH"
 
+# on Ursa
+{% if HPC == "ursa" %}
+export CARTOPY_DATA_DIR=/scratch3/NCEPDEV/da/common/cartopy
+{% endif %}
+
 # Set flags to control plotConfig in the Python script
 export PLOT_ENSEMBLE_B={{ plot_ensemble_b | default("OFF") }}
 export PLOT_PARAMETRIC_B={{ plot_parametric_b | default("ON") }}
@@ -56,6 +61,8 @@ PREV_CYC_HOUR=$(echo $PREV_CYC | cut -d' ' -f2)
 
 # Define and export environment variables with paths
 export COM_OCEAN_ANALYSIS="${BASE_EXP_PATH}/gdas.{{ pdy }}/{{ cyc }}/analysis/ocean"
+export COM_ICE_ANALYSIS="${BASE_EXP_PATH}/gdas.{{ pdy }}/{{ cyc }}/analysis/ice"
+export COM_CONF="${BASE_EXP_PATH}/gdas.{{ pdy }}/{{ cyc }}/conf"
 export COM_ICE_HISTORY_PREV="${BASE_EXP_PATH}/gdas.${PREV_PDY}/${PREV_CYC_HOUR}/model/ice/history"
 export COM_OCEAN_HISTORY_PREV="${BASE_EXP_PATH}/gdas.${PREV_PDY}/${PREV_CYC_HOUR}/model/ocean/history"
 

@@ -360,7 +360,9 @@ graphics:
     figure:
       layout: [1,1]
       title: 'Observations vs. JEDI h(x) | @NAME@ @CYCLE@ | ${variable_title}'
-      output name: observation_scatter_plots/jedi_hofx_vs_obs_@CYCLE@_@NAME@_${variable}@CHANNELVAR@.png
+        #      output name: observation_scatter_plots/jedi_hofx_vs_obs_@CYCLE@_@NAME@_${variable}@CHANNELVAR@.png
+        #output name: observation_scatter_plots/@NAME@/${variable}/hofx_vs_obs_${variable}@CHANNELVAR@.png
+      output name: observation_scatter_plots/@NAME@/${variable}/@NAME@_${variable}_hofx_vs_obs.png
     plots:
       - add_xlabel: 'Observation Value'
         add_ylabel: 'JEDI h(x)'
