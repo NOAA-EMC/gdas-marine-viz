@@ -10,7 +10,7 @@ observations.
 
 import numpy as np
 
-from lv_common import in_region, mean, rms, signed_sqrt
+from lv_common import basin_at, basin_regions, in_region, mean, rms, signed_sqrt
 
 # obs types whose statistics are meaningful per depth bin rather than per
 # latitude band
@@ -153,6 +153,11 @@ def strata(s, obstype, cfg):
         bands = [('', np.ones(s.n, dtype=bool))]
         if lat is not None:
             lon = s.meta.get('longitude')
+            mask_path = cfg.get('ocean_basin_mask')
+            if mask_path:
+                codes = basin_at(mask_path, lat, lon)
+                bands += [(name + '/', codes == code)
+                          for code, name in basin_regions(mask_path)]
             bands += [(r['name'] + '/', in_region(r, lat, lon))
                       for r in cfg.get('regions', [])]
         for prefix, bsel in bands:
@@ -167,6 +172,11 @@ def strata(s, obstype, cfg):
         yield 'SH', lat <= 0
     elif 'latitude' in s.meta:
         lat, lon = s.meta['latitude'], s.meta.get('longitude')
+        mask_path = cfg.get('ocean_basin_mask')
+        if mask_path:
+            codes = basin_at(mask_path, lat, lon)
+            for code, name in basin_regions(mask_path):
+                yield name, codes == code
         for r in cfg.get('regions', []):
             yield r['name'], in_region(r, lat, lon)
 
@@ -184,6 +194,9 @@ def compute(obstype, aligned, counts, common_pass, own, cfg):
         'is_ice': is_ice(obstype),
         'counts': counts,
         'qc': {n: s.qc_counts() for n, s in own.items()},
+        # monitored, not assimilated (every scored obs carries QC 'passive'):
+        # the report labels these so a fit is not read as a DA result
+        'passive': {n: s.passive_only() for n, s in own.items()},
         'nens': {n: int(s.nens) for n, s in own.items()},
         # the experiments actually joined for the common sample; a merge of
         # separately-computed caches uses this to tell whether 'common' is

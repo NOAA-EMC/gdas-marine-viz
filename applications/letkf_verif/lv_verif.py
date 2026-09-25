@@ -14,6 +14,15 @@ AVHRR and VIIRS radiances the system assimilates, so SST is a consistency
 check rather than independent validation. The number is reported the same way;
 read it knowing that.
 
+OSTIA's analysed_sst is a FOUNDATION temperature -- below the diurnal warm
+layer -- delivered once a day and nominally valid at 12Z. It is interpolated
+linearly in time between the two days bracketing each cycle
+(product_paths_in_time) and scored at every cycle against the model's own
+surface temperature at that time. The model's surface layer does carry a
+diurnal cycle, so the 06Z and 18Z scores include a few tenths of a degree of
+it in the tropics; the cycle-to-cycle series should be read with that in
+mind, and the daily march of the score is not a DA signal.
+
 Every product is a regular lat/lon grid on -180..180, which is what
 `Grid.lon180` already provides, so a model point is placed in a product by
 index arithmetic rather than by interpolation: no KD-tree and no scipy (which
@@ -57,8 +66,32 @@ PRODUCTS = {
         pattern='{Y}/{m}/{Ymd}*-UKMO-L4_GHRSST-SSTfnd-OSTIA-GLOB-*.nc',
         var='analysed_sst', lat='lat', lon='lon', idx=(0,),
         model_var='Temp', units='degC', label='SST (OSTIA)',
-        offset=-273.15, mask='mask', err='analysis_error'),
+        offset=-273.15, mask='mask', err='analysis_error',
+        # a daily field nominally at 12Z: interpolated in time between the
+        # two bracketing days to every cycle's hour, and scored at every
+        # cycle against the model's own surface temperature at that time.
+        # OSTIA is a FOUNDATION temperature (free of the diurnal warm
+        # layer); the model's surface layer is not, so the 06Z/18Z scores
+        # carry a diurnal component of a few tenths of a degree in the
+        # tropics -- read the daily march of the score with that in mind.
+        interp_time=True),
+    # OSTIA's own sea-ice concentration, against the sea-ice background
+    # (aice_h) -- the one product here on the ICE realm. Scored at every
+    # cycle against the day's field: ice moves slowly enough that a daily
+    # analysis is a fair reference at any hour. Both water and ice points
+    # are kept (keep_ice): open water is a real zero, not a missing value.
+    'icec': dict(
+        pattern='{Y}/{m}/{Ymd}*-UKMO-L4_GHRSST-SSTfnd-OSTIA-GLOB-*.nc',
+        var='sea_ice_fraction', lat='lat', lon='lon', idx=(0,),
+        model_var='aice_h', units='fraction',
+        label='Sea-ice concentration (OSTIA)', mask='mask', keep_ice=True,
+        realm='ice'),
 }
+
+
+def product_realm(name):
+    return PRODUCTS.get(name, {}).get('realm', 'ocean')
+
 
 STATES = ('bkg', 'ana')
 
@@ -89,13 +122,68 @@ def configured(cfg):
 
 
 def product_path(cfg, name, cycle):
-    """The product file for this cycle, or None."""
+    """The product file for this cycle's day, or None."""
     e = configured(cfg).get(name)
     if e is None:
         return None
     pat = e['pattern'].format(Y=cycle[:4], m=cycle[4:6], Ymd=cycle[:8])
     hits = sorted(glob.glob(os.path.join(e['path'], pat)))
     return hits[0] if hits else None
+
+
+def product_paths_in_time(cfg, name, cycle):
+    """[(path, weight)] to interpolate a daily 12Z product to the cycle.
+
+    Linear in time between the day's file and the neighbouring day's on
+    the side of the cycle hour: 00Z takes the previous day with weight 1/2,
+    06Z with 1/4, 12Z the day itself alone, 18Z the next day with 1/4. A
+    missing neighbour leaves the day's file alone with weight 1, so a gap
+    in the archive degrades to the nearest-day score rather than to none.
+    """
+    day = product_path(cfg, name, cycle)
+    if day is None:
+        return []
+    hour = int(cycle[8:10])
+    dt = hour - 12
+    if dt == 0:
+        return [(day, 1.0)]
+    from datetime import datetime, timedelta
+    other_day = (datetime.strptime(cycle[:8], '%Y%m%d')
+                 + timedelta(days=1 if dt > 0 else -1)).strftime('%Y%m%d')
+    other = product_path(cfg, name, other_day + '12')
+    w_other = abs(dt) / 24.0
+    if other is None:
+        return [(day, 1.0)]
+    return [(day, 1.0 - w_other), (other, w_other)]
+
+
+def load_product_in_time(grid, cfg, name, cycle, spec):
+    """load_product() blended across product_paths_in_time(); where only
+    one file is valid at a point, that one is used unblended."""
+    parts = product_paths_in_time(cfg, name, cycle)
+    if not parts:
+        return None
+    acc = wsum = err_acc = None
+    keep = None
+    for path, w in parts:
+        val, err, k = load_product(grid, path, spec)
+        ok = np.isfinite(val) & k
+        if acc is None:
+            acc = np.zeros_like(val)
+            wsum = np.zeros_like(val)
+            err_acc = np.zeros_like(val) if err is not None else None
+            keep = np.zeros_like(k)
+        acc[ok] += w * val[ok]
+        wsum[ok] += w
+        if err is not None and err_acc is not None:
+            e_ok = ok & np.isfinite(err)
+            err_acc[e_ok] += w * err[e_ok]
+        keep |= k
+    with np.errstate(invalid='ignore', divide='ignore'):
+        val = np.where(wsum > 0, acc / wsum, np.nan)
+        err = (np.where(wsum > 0, err_acc / wsum, np.nan)
+               if err_acc is not None else None)
+    return val, err, keep & np.isfinite(val)
 
 
 def _axis(ds, name):
@@ -188,7 +276,10 @@ def load_product(grid, path, spec):
             m = sample_to_grid(grid, _read(ds, spec['mask'], spec['idx']),
                                lat, lon, 0)
             mi = np.where(np.isfinite(m), m, 0).astype(int)
-            keep &= ((mi & 1) > 0) & ((mi & 8) == 0)
+            if spec.get('keep_ice'):
+                keep &= ((mi & 1) > 0) | ((mi & 8) > 0)
+            else:
+                keep &= ((mi & 1) > 0) & ((mi & 8) == 0)
     return val + spec.get('offset', 0.0), err, keep
 
 
@@ -212,8 +303,9 @@ def _stats(grid, diff, sel, err=None):
     return out
 
 
-def verify(grid, exp, cycle, cfg, regions, model_level):
-    """Score this experiment's background and analysis against each product.
+def verify(grid, exp, cycle, cfg, regions, model_level, realm='ocean'):
+    """Score this experiment's background and analysis against each product
+    on ``realm`` (PRODUCTS[...]['realm'], ocean unless said otherwise).
 
     ``model_level`` is a callable (variable, state) -> 2-D field or None, so
     this module does not need to know how a state is assembled.
@@ -236,6 +328,8 @@ def verify(grid, exp, cycle, cfg, regions, model_level):
     scores, maps = {}, {}
     for name, entry in configured(cfg).items():
         spec = PRODUCTS.get(name)
+        if spec is not None and spec.get('realm', 'ocean') != realm:
+            continue
         path = product_path(cfg, name, cycle)
         if spec is None or path is None:
             # Say so. A configured product that resolves to nothing used to be
@@ -245,7 +339,10 @@ def verify(grid, exp, cycle, cfg, regions, model_level):
             print('  ! verification %s: no file for %s under %s (pattern %s)'
                   % (name, cycle, entry['path'], entry['pattern']))
             continue
-        obs, err, keep = load_product(grid, path, spec)
+        if spec.get('interp_time'):
+            obs, err, keep = load_product_in_time(grid, cfg, name, cycle, spec)
+        else:
+            obs, err, keep = load_product(grid, path, spec)
         per_state = {}
         for state in STATES:
             fld = model_level(spec['model_var'], state)

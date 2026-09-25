@@ -37,6 +37,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import build_report  # noqa: E402
 import compute_cycle  # noqa: E402
+import plot_bkgerr  # noqa: E402
+import plot_fronts  # noqa: E402
+import plot_grep  # noqa: E402
+import plot_obsbins  # noqa: E402
+import plot_stability  # noqa: E402
 import plot_obsspace  # noqa: E402
 import plot_statespace  # noqa: E402
 import plot_timeseries  # noqa: E402
@@ -61,8 +66,26 @@ def main(argv=None):
                     help='do not rebuild the cross-experiment observation '
                          'join; scores fall back to each experiment\'s own '
                          'sample and are confounded by thinning and QC')
+    ap.add_argument('--jobs', type=int, default=1,
+                    help='cycles to rejoin in parallel (passed through to '
+                         'compute_cycle.py --rejoin, which already supports '
+                         'this for a full compute; the figure/scorecard/'
+                         'report stages after it have no --jobs option)')
+    ap.add_argument('--hours', default='00',
+                    help='UTC hours of the cycles to draw per-date state, '
+                         'background, gridded-product and frontal-current '
+                         'figures for (the '
+                         'report puts a date menu over them); the latest '
+                         'cycle is always included. Default "00"; "all" for '
+                         'every cached cycle')
+    ap.add_argument('--force', action='store_true',
+                    help='redo the rejoin and redraw every figure; by default '
+                         'a cycle whose cache has not changed since it was '
+                         'joined or drawn is skipped')
     ap.add_argument('--skip', action='append', default=None,
-                    choices=['rejoin', 'obsspace', 'statespace', 'timeseries',
+                    choices=['rejoin', 'obsspace', 'obsbins', 'statespace',
+                             'timeseries', 'fronts', 'stability', 'grep',
+                             'bkgerr',
                              'scorecard', 'report'],
                     help='skip a stage (repeatable)')
     a = ap.parse_args(argv)
@@ -74,6 +97,7 @@ def main(argv=None):
     common = []
     if cfg_path:
         common.append(cfg_path)
+    force = ['--force'] if a.force else []
     for flag, val in (('--outdir', a.outdir), ('--root', a.root)):
         if val:
             common += [flag, val]
@@ -88,13 +112,37 @@ def main(argv=None):
 
     stages = [
         ('rejoin', 'rejoining observations across experiments',
-         lambda: compute_cycle.main(common + ['--rejoin'])),
+         lambda: compute_cycle.main(
+             common + ['--rejoin', '--jobs', str(a.jobs)] + force)),
         ('obsspace', 'observation-space figures',
-         lambda: plot_obsspace.main(common)),
+         lambda: plot_obsspace.main(common + ['--hours', a.hours] + force)),
+        # --hours: the per-cycle state-space figures (cartopy maps, the most
+        # expensive of the figure stages, about a minute per cycle) are drawn
+        # for one cycle a day by default plus the latest; build_report.py
+        # puts a date menu over the background-state and gridded-product
+        # views and shows the latest cycle in section 03. The across-date
+        # sequence figures (seq_*, hovmoller, 2-D increment) are unaffected:
+        # that block reads the cache directly for every cycle regardless.
+        ('obsbins', 'binned-departure and regression figures',
+         lambda: plot_obsbins.main(
+             common + ['--hours', a.hours, '--jobs', str(a.jobs)] + force)),
         ('statespace', 'state-space figures',
-         lambda: plot_statespace.main(common)),
+         lambda: plot_statespace.main(
+             common + ['--hours', a.hours, '--jobs', str(a.jobs)] + force)),
         ('timeseries', 'cycling figures',
-         lambda: plot_timeseries.main(common)),
+         lambda: plot_timeseries.main(common + force)),
+        ('fronts', 'frontal-current figures',
+         lambda: plot_fronts.main(common + ['--hours', a.hours] + force)),
+        ('stability', 'SSH cycling-stability diagnostics',
+         lambda: plot_stability.main(common + force)),
+        # No-ops without a `grep:` block, and skips any month outside GREP's
+        # 2020-2024 range, so it costs nothing on a realtime config.
+        ('grep', 'monthly means against the GREP reanalysis ensemble',
+         lambda: plot_grep.main(common + force)),
+        # Reads the D files directly, not the cache; nothing to draw (and no
+        # error) where an archive keeps no *bkgerr_parametric_stddev.nc.
+        ('bkgerr', 'parametric background-error (D) figures',
+         lambda: plot_bkgerr.main(common + ['--hours', a.hours] + force)),
         ('scorecard', 'scorecard', lambda: scorecard.main(common)),
         ('report', 'HTML report', lambda: build_report.main(common)),
     ]

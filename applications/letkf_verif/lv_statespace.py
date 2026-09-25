@@ -5,6 +5,7 @@ time (12 MB per read) and reduced immediately. Nothing here ever holds a whole
 3-D field in memory.
 """
 
+import contextlib
 import os
 
 import numpy as np
@@ -12,6 +13,7 @@ from netCDF4 import Dataset
 
 import lv_common
 import lv_verif
+import lv_woa
 
 EARTH_R = 6371.0e3
 
@@ -169,20 +171,79 @@ def _speed_level(ds, k):
     return np.hypot(u, v)
 
 
+# (cos_rot, sin_rot) of the grid in use, set by set_rotation() from the Grid
+# before any velocity is read. The level readers only see a Dataset, so the
+# rotation rides on the module rather than through every reducer signature.
+_ROT = None
+
+
+def set_rotation(grid):
+    """Register the grid's rotation angles for `u`/`v`; None leaves the
+    components in the grid frame (an lv_grid.nc without cos_rot/sin_rot)."""
+    global _ROT
+    cos = getattr(grid, 'cos_rot', None)
+    sin = getattr(grid, 'sin_rot', None)
+    _ROT = None if cos is None or sin is None else (cos, sin)
+
+
+def _uv_east_north(ds, k):
+    """Both components at tracer points, rotated to geographic east/north.
+
+    MOM6 stores the logical-grid components (face-normal in the history,
+    tracer-point in soca's files); north of the tripolar seam (~65N) the
+    logical axes turn away from east/north, and u alone is meaningless
+    there. This is soca's State::rotate2north.
+    """
+    u, v = _uv_at_centre(ds, k)
+    if _ROT is None:
+        return u, v
+    cos, sin = _ROT
+    return u * cos + v * sin, -u * sin + v * cos
+
+
+def _u_east_level(ds, k):
+    return _uv_east_north(ds, k)[0]
+
+
+def _v_north_level(ds, k):
+    return _uv_east_north(ds, k)[1]
+
+
+def _u_raw_level(ds, k):
+    return _read_level(ds, 'u', k)
+
+
+def _v_raw_level(ds, k):
+    return _read_level(ds, 'v', k)
+
+
 # Fields the files do not store directly.
 #
-# `u` and `v` are deliberately NOT here: asked for by name they are read
-# straight off the file, exactly as stored, with no interpolation. That means
-# MOM6 history plots them on their native faces (u on xq, v on yq) rather than
-# at the tracer point -- a half-cell offset against a collocated file, ~14 km
-# at the equator, which is below what a global map resolves. `speed` still
-# collocates internally because |(u, v)| is meaningless with the two
-# components taken half a cell apart.
+# `u` and `v` are the eastward / northward components at the tracer point:
+# faces averaged to the centre where the file is on the C-grid (MOM6
+# history), then rotated with the grid's cos_rot/sin_rot (set_rotation).
+# `u_raw` / `v_raw` are the components exactly as stored -- logical-grid
+# frame, on their native faces -- for looking at what the model actually
+# holds. `speed` collocates internally because |(u, v)| is meaningless with
+# the two components taken half a cell apart (and is rotation-invariant).
 #   canonical name -> (variable to take the level count from,
 #                      variables that must be present, level reader)
 DERIVED = {
     'speed': ('u', ('u', 'v'), _speed_level),
+    'u': ('u', ('u', 'v'), _u_east_level),
+    'v': ('v', ('u', 'v'), _v_north_level),
+    'u_raw': ('u', ('u',), _u_raw_level),
+    'v_raw': ('v', ('v',), _v_raw_level),
 }
+
+# Fallback for the ocean background when no ocean/history was archived at
+# all: CICE's own history mirrors the ocean surface state it received from
+# the coupler as sst_h (degC) / sss_h (ppt), which stand in for level-0
+# Temp/Salt on the same grid. Same (src, divisor) shape as BKG_VARMAP in
+# lv_common, so _resolve/_mapped_level need no change to read it. See
+# compute()'s background block for where this is actually used -- only
+# when the real ocean background is absent, and only for these two vars.
+ICE_OCEAN_FALLBACK_VARMAP = {'Temp': ('sst_h', None), 'Salt': ('sss_h', None)}
 
 
 def _resolve(ds, varmap, var):
@@ -257,7 +318,104 @@ def _wet_level(ds, k, nk):
     return np.isfinite(h) & (h > H_MIN)
 
 
-def regional_profiles(grid, path, variables, regions, varmap=None,
+# --------------------------------------------------------------------------
+# level sources
+#
+# The reducers below used to take a file path and open it themselves, which is
+# why a field held in memory -- the WOA climatology -- could not go through
+# them. They take a source instead, and open_source() turns a path back into
+# one, so every existing caller is unchanged. The point of the indirection is
+# DiffSource: a model-minus-climatology field then needs no reducer of its own.
+# --------------------------------------------------------------------------
+
+class LevelSource:
+    """A field seen one level at a time, plus a vanished-layer test."""
+
+    def levels(self, var):
+        """How many levels ``var`` has here, or None if it has none."""
+        raise NotImplementedError
+
+    def level(self, var, k):
+        """Level ``k`` of ``var`` as a 2-D array, or None."""
+        raise NotImplementedError
+
+    def wet(self, k, nk):
+        """Cells holding water at level ``k``, or None when unknowable."""
+        return None
+
+
+class FileSource(LevelSource):
+    """One open Dataset, with the experiment kind's variable mapping.
+
+    Exactly what the reducers did inline: _resolve to size a variable,
+    _mapped_level to read it, _wet_level for the vanished-layer test.
+    """
+
+    def __init__(self, ds, varmap=None):
+        self.ds = ds
+        self.varmap = varmap
+
+    def levels(self, var):
+        src = _resolve(self.ds, self.varmap, var)
+        return None if src is None else _levels(self.ds, src)
+
+    def level(self, var, k):
+        return _mapped_level(self.ds, self.varmap, var, k)
+
+    def wet(self, k, nk):
+        return _wet_level(self.ds, k, nk)
+
+
+class DiffSource(LevelSource):
+    """``a`` minus ``b``, level by level, carrying ``a``'s wetness.
+
+    This is the reason the reducers take a source rather than a path. A
+    model-minus-climatology field goes through the very same profile, map and
+    section reducers the model itself does, so a bias profile is guaranteed to
+    be the difference of the two profiles beside it rather than a separately
+    coded near-miss.
+    """
+
+    def __init__(self, a, b):
+        self.a, self.b = a, b
+
+    def levels(self, var):
+        na, nb = self.a.levels(var), self.b.levels(var)
+        return None if na is None or nb is None else min(na, nb)
+
+    def level(self, var, k):
+        fa = self.a.level(var, k)
+        if fa is None:
+            return None
+        fb = self.b.level(var, k)
+        return None if fb is None else fa - fb
+
+    def wet(self, k, nk):
+        return self.a.wet(k, nk)
+
+
+@contextlib.contextmanager
+def open_source(src, varmap=None):
+    """A path, or an already-built LevelSource, as a LevelSource.
+
+    A path is opened and closed here; a source is passed straight through,
+    since its lifetime belongs to whoever built it.
+
+    Tested by shape rather than isinstance so that lv_woa.WoaSource need not
+    subclass LevelSource: this module imports lv_woa, so lv_woa importing this
+    one back would be a cycle. Nothing else reaching these reducers carries a
+    `level` attribute -- a path is a string and an absent field is None.
+    """
+    if src is None:
+        yield None
+    elif hasattr(src, 'level'):
+        yield src
+    else:
+        with Dataset(src) as ds:
+            yield FileSource(ds, varmap)
+
+
+def regional_profiles(grid, src, variables, regions, varmap=None,
                       reducer='mean', wet_mask=False):
     """Per-region profiles of a field, with the spatial spread in each region.
 
@@ -265,25 +423,25 @@ def regional_profiles(grid, path, variables, regions, varmap=None,
     reproduces the whole-domain profile, so callers take it from here rather
     than reading the file a second time.
 
+    ``src`` is a path or a LevelSource (see open_source).
+
     ``wet_mask`` drops vanished layers using h and must be set ONLY for
     background files. An increment file's 'h' is an increment of thickness,
     not a thickness, and using it as a wetness test silently masks most of the
     ocean.
     """
     out = {r: {} for r in regions}
-    if path is None:
+    if src is None:
         return out
-    varmap = varmap or {}
-    with Dataset(path) as ds:
+    with open_source(src, varmap) as s:
         for var in variables:
-            src = _resolve(ds, varmap, var)
-            if src is None:
+            nk = s.levels(var)
+            if nk is None:
                 continue
-            nk = _levels(ds, src)
             acc = {r: {'mean': [], 'sd': []} for r in regions}
             for k in range(nk):
-                f = _mapped_level(ds, varmap, var, k)
-                wet = _wet_level(ds, k, nk) if wet_mask else None
+                f = s.level(var, k)
+                wet = s.wet(k, nk) if wet_mask else None
                 base = np.isfinite(f) if f is not None else None
                 if base is not None and wet is not None:
                     base = base & wet
@@ -308,23 +466,22 @@ def regional_profiles(grid, path, variables, regions, varmap=None,
     return out
 
 
-def background_maps(grid, path, variables, levels, varmap, stride=2):
+def background_maps(grid, src, variables, levels, varmap, stride=2):
     """Subsampled background slices for plotting, keyed '<var>_k<level>'."""
     out = {}
-    if path is None:
+    if src is None:
         return out
-    with Dataset(path) as ds:
+    with open_source(src, varmap) as s:
         for var in variables:
-            src = _resolve(ds, varmap, var)
-            if src is None:
+            nk = s.levels(var)
+            if nk is None:
                 continue
-            nk = _levels(ds, src)
             ks = [k for k in levels if k < nk] if nk > 1 else [0]
             for k in ks:
-                f = _mapped_level(ds, varmap, var, k)
+                f = s.level(var, k)
                 if f is None:
                     continue
-                wet = _wet_level(ds, k, nk)
+                wet = s.wet(k, nk)
                 keep = grid.mask if wet is None else (grid.mask & wet)
                 f = np.where(keep, f, np.nan)
                 out['%s_k%d' % (var, k)] = f[::stride, ::stride].astype('f4')
@@ -363,19 +520,21 @@ def ice_totals(grid, path, varmap, thresh=0.15):
 # maps
 # --------------------------------------------------------------------------
 
-def map_fields(grid, path, variables, levels, stride=2):
+def map_fields(grid, src, variables, levels, stride=2):
     """Subsampled 2-D slices for plotting, keyed '<var>_k<level>'."""
     out = {}
-    if path is None:
+    if src is None:
         return out
-    with Dataset(path) as ds:
+    with open_source(src) as s:
         for var in variables:
-            if var not in ds.variables:
+            nk = s.levels(var)
+            if nk is None:
                 continue
-            nk = _levels(ds, var)
             ks = [k for k in levels if k < nk] if nk > 1 else [0]
             for k in ks:
-                f = _read_level(ds, var, k)
+                f = s.level(var, k)
+                if f is None:
+                    continue
                 f = np.where(grid.mask, f, np.nan)
                 out['%s_k%d' % (var, k)] = f[::stride, ::stride].astype('f4')
     return out
@@ -432,6 +591,170 @@ def inflation_maps(grid, post, an, variables, levels, stride=2):
                     r = np.sqrt(s / q)
                 r = np.where(grid.mask & (q > 0) & np.isfinite(r), r, np.nan)
                 out['%s_k%d' % (var, k)] = r[::stride, ::stride].astype('f4')
+    return out
+
+
+# --------------------------------------------------------------------------
+# vertical sections
+# --------------------------------------------------------------------------
+
+# A zonal transect is a single grid row, which is an honest constant-latitude
+# line only where the tripolar rows are themselves constant latitude. Measured
+# on the 1440x1080 gridspec: the latitude spread across a row is exactly zero
+# from 78.6S to 64.4N, then grows fast as the rows bend around the two northern
+# poles -- 0.6 deg at 64.5N, 6.5 deg by 68.8N, 13 deg by 73.5N. A "zonal
+# section at 70N" is therefore not a latitude circle at all. Such a line is
+# still extracted and drawn, but flagged by preflight.py, by the plot layer,
+# and on the figure panel itself.
+TRIPOLAR_LAT = 65.0
+
+
+def section_warnings(cfg):
+    """Configured zonal transects the tripolar grid cannot honour.
+
+    Lives here rather than in the plot layer so preflight.py can report it
+    before a long precompute, without importing matplotlib and cartopy.
+    """
+    out = []
+    for t in ((cfg.get('sections') or {}).get('zonal') or []):
+        if float(t) > TRIPOLAR_LAT:
+            out.append(
+                'zonal section at %g N is north of the tripolar seam (%g N): '
+                'the grid rows bend there, so this transect is not a latitude '
+                'circle. It is still drawn, and the panel says so.'
+                % (float(t), TRIPOLAR_LAT))
+    return out
+
+
+def _cut(f, axis, idx, stride):
+    """One grid row (zonal) or column (meridional), subsampled along it."""
+    return f[idx, ::stride] if axis == 'lat' else f[::stride, idx]
+
+
+def section_lines(grid, cfg, stride=2):
+    """Resolve `sections:` to grid rows and columns.
+
+    Returns [(key, axis, index, x, warn)] in config order. ``axis`` is 'lat'
+    for a zonal transect (a grid row; x is longitude) or 'lon' for a
+    meridional one (a grid column; x is latitude). ``warn`` marks a zonal
+    line north of TRIPOLAR_LAT.
+
+    The row/column is picked from the row-median latitude and column-median
+    longitude rather than an argmin over the whole 2-D coordinate, which on a
+    curvilinear grid can land on a neighbouring row entirely.
+    """
+    spec = cfg.get('sections') or {}
+    rowlat = np.median(grid.lat, axis=1)
+    collon = np.median(grid.lon, axis=0)
+    out = []
+    for target in (spec.get('zonal') or []):
+        t = float(target)
+        j = int(np.argmin(np.abs(rowlat - t)))
+        out.append(('lat%+04d' % round(t), 'lat', j,
+                    np.asarray(grid.lon[j, ::stride], dtype='f4'),
+                    t > TRIPOLAR_LAT))
+    for target in (spec.get('meridional') or []):
+        t = float(target)
+        # The gridspec longitude runs -300..60 and is monotonic along i, so a
+        # target given in the conventional -180..180 may need a turn added or
+        # removed to land inside it. Picking the nearest of the three
+        # representations rather than the first one INSIDE the range matters
+        # at the wrap boundary: 60E is the grid's own last column, and a
+        # strict range test rejected both 60 and -300 (the column medians stop
+        # just short of either end), silently dropping the line.
+        cand = min((t, t - 360.0, t + 360.0),
+                   key=lambda c: float(np.min(np.abs(collon - c))))
+        i = int(np.argmin(np.abs(collon - cand)))
+        out.append(('lon%+04d' % round(t), 'lon', i,
+                    np.asarray(grid.lat[::stride, i], dtype='f4'), False))
+    return out
+
+
+def section_geometry(grid, hpath, lines, stride=2):
+    """(axes, wet) for each transect, from the BACKGROUND layer thickness.
+
+    ``axes`` is cached: {'x_<line>': 1-D, 'depth_<line>': (nk, nx)} -- the
+    mid-depth of each cell along the transect. ``wet`` is not cached; it is
+    the wetness mask the caller applies to an increment's own planes.
+
+    Depth always comes from the background: an increment file's 'h' is an
+    increment of thickness, not a thickness, so the increment sections borrow
+    the background's depth axis. The two are the same grid at the same
+    validity time.
+
+    The depth plane is finite EVERYWHERE, including below the sea floor, where
+    it advances by H_MIN per level instead of the vanished layer's zero. Two
+    reasons: matplotlib refuses non-finite pcolormesh coordinates outright,
+    and a coordinate that stops advancing produces degenerate quads. The
+    bathymetry silhouette is drawn by the field planes being masked over those
+    same cells, not by holes in the coordinate -- so the sub-floor rows
+    collapse into a hair's breadth at the true floor depth and never show.
+    """
+    axes, wet = {}, {}
+    if not lines:
+        return axes, wet
+    for key, _axis, _idx, x, _warn in lines:
+        axes['x_%s' % key] = x
+    if hpath is None:
+        return axes, wet
+    with Dataset(hpath) as ds:
+        if 'h' not in ds.variables:
+            return axes, wet
+        nk = _levels(ds, 'h')
+        if nk <= 1:
+            return axes, wet
+        planes, masks, run = {}, {}, {}
+        for key, _a, _i, x, _w in lines:
+            planes[key] = np.full((nk, x.size), np.nan, 'f4')
+            masks[key] = np.zeros((nk, x.size), bool)
+            run[key] = np.zeros(x.size)
+        for k in range(nk):
+            h = _read_level(ds, 'h', k)
+            for key, axis, idx, _x, _w in lines:
+                hl = _cut(h, axis, idx, stride)
+                ok = np.isfinite(hl) & (hl > H_MIN)
+                thick = np.where(ok, hl, H_MIN)
+                planes[key][k] = run[key] + thick / 2.0
+                run[key] = run[key] + thick
+                masks[key][k] = ok
+        for key in planes:
+            axes['depth_%s' % key] = planes[key]
+            wet[key] = masks[key]
+    return axes, wet
+
+
+def section_planes(grid, src, variables, lines, varmap=None, stride=2,
+                   wet_mask=False):
+    """Depth-vs-distance planes along each transect, keyed '<var>_<line>'.
+
+    2-D fields (ave_ssh, MLD, every ice field) have no vertical section and
+    are skipped. ``wet_mask`` drops vanished layers using h and must be set
+    ONLY for background files, for the same reason regional_profiles() gives.
+    """
+    out = {}
+    if src is None or not lines:
+        return out
+    with open_source(src, varmap) as s:
+        for var in variables:
+            nk = s.levels(var)
+            if nk is None or nk <= 1:
+                continue
+            planes = {key: np.full((nk, x.size), np.nan, 'f4')
+                      for key, _a, _i, x, _w in lines}
+            for k in range(nk):
+                f = s.level(var, k)
+                if f is None:
+                    break
+                keep = grid.mask
+                if wet_mask:
+                    wet = s.wet(k, nk)
+                    if wet is not None:
+                        keep = keep & wet
+                f = np.where(keep, f, np.nan)
+                for key, axis, idx, _x, _w in lines:
+                    planes[key][k] = _cut(f, axis, idx, stride)
+            for key, plane in planes.items():
+                out['%s_%s' % (var, key)] = plane
     return out
 
 
@@ -534,8 +857,12 @@ def correlation_lengths(grid, path, variables, levels, boxes):
     return out
 
 
-def surface_state(bkg, incr):
+def surface_state(bkg, incr, ice_bkg=None):
     """Reader for one surface field of the background and of the analysis.
+
+    ``ice_bkg`` is the sea-ice history to fall back to for Temp/Salt (as
+    sst_h/sss_h) when there is no ocean background at all -- see
+    ICE_OCEAN_FALLBACK_VARMAP; never consulted when ``bkg`` has the field.
 
     Returns a callable (variable, 'bkg'|'ana') -> 2-D field or None. The
     analysis is reconstructed as background + increment: the DA writes an
@@ -561,6 +888,8 @@ def surface_state(bkg, incr):
 
     def get(var, state):
         b = read(bkg, var)
+        if b is None and ice_bkg is not None and var in ICE_OCEAN_FALLBACK_VARMAP:
+            b = read(ice_bkg, ICE_OCEAN_FALLBACK_VARMAP[var][0])
         if b is None or state == 'bkg':
             return b
         i = read(incr, var)
@@ -590,8 +919,69 @@ def ice_area_increment(grid, path, var='aice_h'):
     return out
 
 
+def woa_block(grid, cfg, cycle, bkg, exp, model_depth, regions, blevels,
+              lines, stride, maps):
+    """WOA climatology and the model-minus-WOA bias for the ocean background.
+
+    Returns the JSON fragment and writes its maps and section planes straight
+    into ``maps``. Every quantity here goes through the SAME reducers the model
+    itself goes through -- see DiffSource -- so the bias profile is the
+    difference of the two profiles beside it by construction, not by a second
+    implementation that happens to agree.
+
+    Needs the model depth axis, so it is called after depth_from_h. An
+    experiment with no ocean background (or only the ice/history stand-in) has
+    no axis and no 3-D field, and is skipped.
+    """
+    entry = lv_woa.configured(cfg)
+    if entry is None or not model_depth:
+        return {}
+    wvars = [v for v in (cfg.get('background_vars') or {}).get('ocean', [])
+             if v in lv_woa.VARS]
+    if not wvars:
+        return {}
+    missing = lv_woa.missing_files(entry, wvars)
+    if missing:
+        print('\n  ! woa: %d expected file(s) absent, first %s -- skipped'
+              % (len(missing), missing[0]), flush=True)
+        return {}
+
+    fields, wlat, wlon, info = lv_woa.build(entry, cycle, model_depth, wvars)
+    out = {'has_woa': True, 'woa': info}
+    with Dataset(bkg) as ds:
+        bsrc = FileSource(ds, exp.varmap)
+        # wetness always from the MODEL's own layer thickness: below the sea
+        # floor MOM6 writes zeros while WOA still has a climatological value,
+        # and differencing those fabricates a bias under the bathymetry.
+        wsrc = lv_woa.WoaSource(fields, wlat, wlon, grid, wet_from=bsrc)
+        dsrc = DiffSource(bsrc, wsrc)
+
+        out['woa_region'] = regional_profiles(grid, wsrc, wvars, regions,
+                                              wet_mask=True)
+        out['woa_mean'] = {v: d['mean'] for v, d
+                           in out['woa_region'].get('global', {}).items()}
+        out['woa_bias_region'] = regional_profiles(grid, dsrc, wvars, regions,
+                                                   wet_mask=True)
+        out['woa_bias_mean'] = {
+            v: d['mean']
+            for v, d in out['woa_bias_region'].get('global', {}).items()}
+
+        for pre, src in (('woa', wsrc), ('woa_bias', dsrc)):
+            for k, v in background_maps(grid, src, wvars, blevels, None,
+                                        stride).items():
+                maps['ocean/%s/%s' % (pre, k)] = v
+        if lines and entry.get('sections'):
+            for pre, src in (('woa_sec', wsrc), ('woa_bias_sec', dsrc)):
+                for k, v in section_planes(grid, src, wvars, lines,
+                                           stride=stride,
+                                           wet_mask=True).items():
+                    maps['ocean/%s/%s' % (pre, k)] = v
+    return out
+
+
 def compute(grid, exp, cycle, cfg):
     """All state-space diagnostics for one experiment at one cycle."""
+    set_rotation(grid)
     svars = cfg.get('state_vars', {})
     levels = cfg.get('map_levels', [0])
     boxes = lv_common.corr_regions(cfg)
@@ -600,8 +990,12 @@ def compute(grid, exp, cycle, cfg):
     bvars = cfg.get('background_vars', {})
     blevels = cfg.get('background_levels', levels)
     regions = grid.regions(cfg)
+    # Transects are ocean-only (an ice field has no vertical section) and are
+    # resolved once: every configured line is cut out of the same level read.
+    lines = section_lines(grid, cfg, stride)
 
     res, maps = {'map_stride': stride}, {}
+    verif_scores = {}
     for realm in ('ocean', 'ice'):
         variables = svars.get(realm, [])
         if not variables:
@@ -623,6 +1017,15 @@ def compute(grid, exp, cycle, cfg):
         # -- background --------------------------------------------------
         bv = bvars.get(realm, [])
         if bkg is not None and bv:
+            # Hoisted above the reducers: the WOA climatology is placed on
+            # this axis, so it has to exist before anything below runs. It is
+            # a pure read of h and depends on nothing here.
+            if realm == 'ocean':
+                d = depth_from_h(grid, bkg)
+                if d is not None:
+                    res['depth'] = d
+                    res['depth_source'] = 'background h (%s)' % (
+                        os.path.basename(bkg))
             r['bkg_region'] = regional_profiles(grid, bkg, bv, regions,
                                                 exp.varmap, wet_mask=True)
             r['bkg_mean'] = {v: d['mean']
@@ -631,19 +1034,46 @@ def compute(grid, exp, cycle, cfg):
             r['bkg_cycle'] = exp.background_cycle(cycle)
             if realm == 'ice':
                 r['ice_totals'] = ice_totals(grid, bkg, exp.varmap)
-            if realm == 'ocean':
-                d = depth_from_h(grid, bkg)
-                if d is not None:
-                    res['depth'] = d
-                    res['depth_source'] = 'background h (%s)' % (
-                        os.path.basename(bkg))
             for k, v in background_maps(grid, bkg, bv, blevels, exp.varmap,
                                         stride).items():
                 maps['%s/bkg/%s' % (realm, k)] = v
+            if realm == 'ocean':
+                r.update(woa_block(grid, cfg, cycle, bkg, exp, res.get('depth'),
+                                   regions, blevels, lines, stride, maps))
+        elif realm == 'ocean' and bv:
+            # No ocean/history to read Temp/Salt from at all (e.g. 3dvar-rt,
+            # which only archives ice/history) -- CICE's coupled history
+            # mirrors the ocean surface state it received from the coupler
+            # as sst_h/sss_h, a usable stand-in for level-0 Temp/Salt only.
+            # Never used when a real ocean background exists above; MLD,
+            # speed and every level below the surface still need the real
+            # file and stay absent.
+            fb_vars = [v for v in bv if v in ICE_OCEAN_FALLBACK_VARMAP]
+            ice_bkg = exp.background(cycle, 'ice') if fb_vars else None
+            if ice_bkg is not None:
+                r['bkg_region'] = regional_profiles(
+                    grid, ice_bkg, fb_vars, regions,
+                    ICE_OCEAN_FALLBACK_VARMAP, wet_mask=False)
+                r['bkg_mean'] = {v: d['mean'] for v, d in
+                                 r['bkg_region'].get('global', {}).items()}
+                r['bkg_file'] = os.path.basename(ice_bkg)
+                r['bkg_cycle'] = exp.background_cycle(cycle)
+                r['bkg_fallback'] = 'ice_history_sst_sss'
+                for k, v in background_maps(grid, ice_bkg, fb_vars, [0],
+                                            ICE_OCEAN_FALLBACK_VARMAP,
+                                            stride).items():
+                    maps['%s/bkg/%s' % (realm, k)] = v
         r['incr_region'] = regional_profiles(grid, incr, variables, regions,
                                              reducer='rms')
         r['incr_rms'] = {v: d['mean']
                          for v, d in r['incr_region'].get('global', {}).items()}
+        # The signed mean beside the RMS: an increment that is the same sign
+        # cycle after cycle is a bias the model keeps rejecting, and the RMS
+        # cannot tell that from scatter.
+        r['incr_mean_region'] = regional_profiles(grid, incr, variables, regions,
+                                                  reducer='mean')
+        r['incr_mean'] = {v: d['mean']
+                          for v, d in r['incr_mean_region'].get('global', {}).items()}
         if prior is not None:
             # One pass over the variance files serves every region; the global
             # profiles are read straight back out of it.
@@ -669,6 +1099,29 @@ def compute(grid, exp, cycle, cfg):
 
         for k, v in map_fields(grid, incr, variables, levels, stride).items():
             maps['%s/incr/%s' % (realm, k)] = v
+
+        # -- vertical sections ---------------------------------------------
+        # Ocean only, and only for the 3-D fields; the depth axis for BOTH the
+        # increment and the background sections comes from the background h
+        # (see section_geometry). With no background there is no honest depth
+        # axis, so only the x coordinate is written and the plot layer falls
+        # back to the level index.
+        if realm == 'ocean' and lines:
+            axes, wet = section_geometry(grid, bkg, lines, stride)
+            for k, v in axes.items():
+                maps['ocean/sec/%s' % k] = v
+            # The increment carries no usable thickness of its own, so it is
+            # masked with the background's wetness -- without this the file's
+            # zeros below the sea floor paint straight over the bathymetry.
+            for k, v in section_planes(grid, incr, variables, lines,
+                                       stride=stride).items():
+                m = wet.get(k.rpartition('_')[2])
+                maps['ocean/incr_sec/%s' % k] = (
+                    v if m is None else np.where(m, v, np.nan).astype('f4'))
+            if bkg is not None and bv:
+                for k, v in section_planes(grid, bkg, bv, lines, exp.varmap,
+                                           stride, wet_mask=True).items():
+                    maps['ocean/bkg_sec/%s' % k] = v
         for k, v in spread_reduction_maps(grid, prior, post, variables,
                                           levels, stride).items():
             maps['%s/sprred/%s' % (realm, k)] = v
@@ -677,11 +1130,20 @@ def compute(grid, exp, cycle, cfg):
             maps['%s/infl/%s' % (realm, k)] = v
 
         # -- against independent gridded analyses --------------------------
-        if realm == 'ocean' and (cfg.get('verification') or {}).get('products'):
+        # Every product's scores land under the OCEAN block's 'verif', the
+        # ice-realm product (OSTIA ice concentration) included: the time
+        # series, scorecard and report read one place. Only the maps are
+        # keyed by realm, because that is what decides the projection.
+        if (cfg.get('verification') or {}).get('products'):
+            ice_bkg = (exp.background(cycle, 'ice')
+                       if realm == 'ocean' and bkg is None else None)
             scores, vmaps = lv_verif.verify(
-                grid, exp, cycle, cfg, regions, surface_state(bkg, incr))
+                grid, exp, cycle, cfg, regions,
+                surface_state(bkg, incr, ice_bkg), realm=realm)
             if scores:
-                r['verif'] = scores
+                verif_scores.update(scores)
             for k, v in vmaps.items():
                 maps['%s/verif/%s' % (realm, k)] = v[::stride, ::stride].astype('f4')
+    if verif_scores:
+        res.setdefault('ocean', {})['verif'] = verif_scores
     return res, maps

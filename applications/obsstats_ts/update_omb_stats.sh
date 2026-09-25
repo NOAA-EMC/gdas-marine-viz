@@ -7,14 +7,12 @@
 #SBATCH --time=00:05:00
 
 source /scratch3/NCEPDEV/da/Guillaume.Vernieres/venvs/gdas-marine-viz/bin/activate
+mkdir -p stats-comparisons
 
 # Link experiments
 # Link experiments (skip if the links already exist)
 for src in \
-    "/scratch4/NCEPDEV/global/John.Steffen/hpss_arch/cp4.02d-parallel-obsforge" \
-    "/scratch3/NCEPDEV/global/Katherine.Lukens/expts/hpss/retrotestgfs16_17_realtime" \
-    "/scratch4/NCEPDEV/global/John.Steffen/hpss_arch/cp4.03-parallel-hybrid" \
-    "/scratch4/NCEPDEV/global/John.Steffen/hpss_arch/cp4.03-parallel-3dvar"
+    "/scratch3/NCEPDEV/da/Guillaume.Vernieres/runs/gfs-dev/cp06.torchbalance/COMROOT/cp06.torchbalance"
 do
     name=$(basename "$src")
     if [ -e "$name" ] || [ -L "$name" ]; then
@@ -25,13 +23,13 @@ do
 done
 
 # set END_DATE to today (can be overridden by env var END_DATE)
-END_DATE=${END_DATE:-$(date +%Y%m%d)}
+END_DATE=20251212  #${END_DATE:-$(date +%Y%m%d)}
 
 # number of days before END_DATE for START_DATE (can be overridden by env var N_DAYS)
 N_DAYS=${N_DAYS:-2}
 
 # compute START_DATE N_DAYS before END_DATE (can be overridden by env var START_DATE)
-START_DATE=${START_DATE:-$(date -d "$END_DATE -${N_DAYS} days" +%Y%m%d)}
+START_DATE=20251217  #${START_DATE:-$(date -d "$END_DATE -${N_DAYS} days" +%Y%m%d)}
 
 current="$START_DATE"
 while [ "$current" -le "$END_DATE" ]; do

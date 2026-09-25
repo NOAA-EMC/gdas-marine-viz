@@ -7,6 +7,7 @@ matter which subset is being plotted.
 
 import json
 import os
+import re
 
 import matplotlib
 matplotlib.use('Agg')
@@ -35,9 +36,28 @@ ALERT = '#e34948'
 DIVERGING = LinearSegmentedColormap.from_list(
     'lv_div', ['#12395f', '#2a78d6', '#a9c9ec', '#e8e8e6',
                '#f5b79b', '#eb6834', '#8a3416'])
-# Sequential: one hue, light to dark.
-SEQUENTIAL = LinearSegmentedColormap.from_list(
-    'lv_seq', ['#f2f6fc', '#a9c9ec', '#5b9ae0', '#2a78d6', '#12395f'])
+# Sequential ramps, one per kind of state so different physical quantities
+# don't all render as shades of a single hue. Each of these is a full
+# multi-hue perceptually-uniform matplotlib colormap -- hue changes across
+# the range, not just lightness/saturation of one colour -- and each is
+# individually colorblind-safe by construction (that is what "perceptually
+# uniform" buys here), unlike a hand-picked single hue.
+SEQUENTIAL = plt.get_cmap('YlGnBu')     # default: ssh, MLD, speed
+SEQ_WARM = plt.get_cmap('inferno')      # temperature
+SEQ_TEAL = plt.get_cmap('viridis')      # salinity
+# Every ice field (concentration, thickness, snow depth): match aquaslice's
+# own default ('gist_ncar', the --cmap default throughout aquaslice.py)
+# rather than a perceptually-uniform map, so ice fields read the same way in
+# both tools.
+SEQ_ICE = plt.get_cmap('gist_ncar')
+
+# The ramp every BACKGROUND/state field is drawn on (background maps and
+# sections, and the verif figures that must match them). jet is deliberately
+# not one of the perceptually-uniform maps above -- it has false luminance
+# banding and is not colorblind-safe -- but it is the convention these fields
+# are read against in ocean work, and it is what was asked for. Ratio fields
+# keep SEQUENTIAL and the increment keeps DIVERGING; neither is a state.
+SEQ_BKG = plt.get_cmap('jet')
 
 plt.rcParams.update({
     'figure.facecolor': SURFACE,
@@ -120,6 +140,16 @@ def short(obstype):
     return (obstype.replace('insitu_', '').replace('_l3u', '')
             .replace('icec_', 'ice ').replace('profile_', '')
             .replace('surface_', '').replace('sst_', ''))
+
+
+def slug(name):
+    """Filesystem/HTML-id-safe version of a region name.
+
+    Shared between plot_timeseries.py (writes verif_region_<slug>.png) and
+    build_report.py (embeds it and links #tab-<slug>/#panel-<slug> to it) so
+    both agree on the same name without either hardcoding the other's list.
+    """
+    return re.sub(r'[^a-z0-9]+', '_', name.lower()).strip('_') or 'region'
 
 
 # Per-experiment obs blocks: independent between runs, so they merge exactly.
@@ -206,6 +236,28 @@ def mark_common_validity(data):
     return ok
 
 
+def type_sample(cycles, obstype):
+    """'common' if this one obs type's join spans every registered
+    experiment in every cycle it appears in, else 'own'.
+
+    mark_common_validity() flags this per obs-type block already; picking the
+    sample per type here (rather than the single flag computed over ALL obs
+    types in the cycle) matters now that an obs type not shared by every
+    experiment still gets cached instead of being dropped -- section 1 of a
+    report would otherwise fall back to 'own' for every type just because one
+    straggler type couldn't be jointly sampled.
+    """
+    seen = False
+    for c in cycles.values():
+        blk = c.get('obs', {}).get(obstype)
+        if blk is None:
+            continue
+        seen = True
+        if not blk.get('common_valid', True):
+            return 'own'
+    return 'common' if seen else 'own'
+
+
 def load_cycles(cfg, cycles=None):
     """Read cached JSON for the requested cycles, merging every cache source."""
     out = {}
@@ -244,9 +296,38 @@ def load_maps(cfg, cycle):
     return out or None
 
 
+def load_obsbins(cfg, cycle):
+    """The cycle's binned departures ('<cycle>_obsbins.npz'), merged across
+    caches the way load_maps() merges the map files: the first cache that
+    has a key wins, and the page cache comes first, so a rejoined common
+    sample overrides a per-experiment own sample."""
+    out = _Maps()
+    for root in cfg.get('caches', [cfg['cache']]):
+        p = os.path.join(root, '%s_obsbins.npz' % cycle)
+        if os.path.exists(p):
+            with np.load(p) as z:
+                for k in z.files:
+                    out.setdefault(k, z[k])
+    return out or None
+
+
 def exp_names(data):
     """Experiment names in registry order, as stored in the cache."""
     return list(data['experiments'].keys())
+
+
+def all_exp_names(cfg, cycles):
+    """Every experiment that appears in ANY cached cycle, in registry order.
+
+    exp_names() on a single cycle only lists whoever has data at THAT cycle --
+    fine for a figure genuinely scoped to one cycle, wrong for anything meant
+    to span the whole run. A config whose experiments cover disjoint cycle
+    windows (see the caveat in experiments.yaml) has no cycle where everyone
+    is present, so picking one cycle's own list (even the latest) silently
+    drops whichever experiments do not happen to reach that particular date.
+    """
+    present = {n for c in cycles.values() for n in exp_names(c)}
+    return [e.name for e in cfg['experiments'] if e.name in present]
 
 
 def save(fig, cfg, name, dpi=None, quiet=False):

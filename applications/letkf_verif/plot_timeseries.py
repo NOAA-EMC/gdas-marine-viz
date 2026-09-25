@@ -17,17 +17,28 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import matplotlib.pyplot as plt  # noqa: E402
 import lv_plot as P  # noqa: E402
+import lv_atmos as LA  # noqa: E402
 import lv_verif as LV  # noqa: E402
-from lv_common import Grid, load_config  # noqa: E402
+from lv_common import Fresh, Grid, load_config, region_list  # noqa: E402
 
+# (cache key, panel title, reference line or None). Each mean sits next to
+# the RMS it belongs with: the pair separates a run that is merely scattered
+# from one that is systematically offset, and only the second is a bias the
+# system can be asked to correct.
 PANELS = [
     ('ombg_rms', 'RMS(O$-$B)', None),
+    ('ombg_mean', 'mean(O$-$B), bias', 0.0),
     ('oman_rms', 'RMS(O$-$A)', None),
+    ('oman_mean', 'mean(O$-$A), bias', 0.0),
     ('spread_b', 'prior ensemble spread', None),
     ('consistency_ratio', 'consistency ratio', 1.0),
     ('spread_skill', 'spread / skill', 1.0),
     ('desroziers_R_ratio', 'Desroziers $R$ / assigned $R$', 1.0),
 ]
+
+# Columns in the fig_timeseries grid. The row count follows from len(PANELS),
+# so adding a metric above does not also mean editing the subplot call.
+PANEL_NCOL = 4
 
 
 def _finite(t, v):
@@ -51,23 +62,45 @@ def _times(cycles):
     return [dt.datetime.strptime(c, '%Y%m%d%H') for c in sorted(cycles)]
 
 
-def _series(cycles, obstype, name, key):
+def _series(cycles, obstype, name, key, sample='common', stratum='all'):
+    """Metric per cycle for one experiment and one stratum ('all', a basin
+    or `regions:` box name, NH/SH for ice -- see lv_obsspace.strata)."""
     return np.array([P.get(cycles[c].get('obs', {}).get(obstype, {}),
-                           'common', name, 'all', key)
+                           sample, name, stratum, key)
                      for c in sorted(cycles)], dtype='f8')
 
 
-def fig_timeseries(cycles, cfg, obstype):
-    names = P.exp_names(cycles[sorted(cycles)[-1]])
+def region_strata(cycles, obstype, sample):
+    """The region strata cached for this obs type: every stratum name that is
+    not 'all' and not a depth bin, in the order they were first seen. Basins
+    and `regions:` boxes for surface types, NH/SH for ice, the same names
+    (without their depth bins) for profiles."""
+    seen = []
+    for c in sorted(cycles):
+        blk = cycles[c].get('obs', {}).get(obstype, {}).get(sample, {})
+        for per_exp in blk.values():
+            for st in (per_exp or {}):
+                if st != 'all' and 'depth_' not in st and st not in seen:
+                    seen.append(st)
+    return seen
+
+
+def fig_timeseries(cycles, cfg, obstype, sample='common'):
+    names = P.all_exp_names(cfg, cycles)
     col = P.color_map(names)
     t = _times(cycles)
     single = len(t) == 1
-    fig, axes = plt.subplots(2, 3, figsize=(13.5, 6.4), squeeze=False)
+    nc = PANEL_NCOL
+    nr = int(np.ceil(len(PANELS) / nc))
+    fig, axes = plt.subplots(nr, nc, figsize=(4.5 * nc, 3.2 * nr),
+                             squeeze=False)
+    for a in axes.ravel()[len(PANELS):]:
+        a.set_visible(False)
     drawn = False
     for i, (key, label, target) in enumerate(PANELS):
-        ax = axes[i // 3][i % 3]
+        ax = axes[i // nc][i % nc]
         for n in names:
-            v = _series(cycles, obstype, n, key)
+            v = _series(cycles, obstype, n, key, sample)
             if not np.any(np.isfinite(v)):
                 continue
             tt, vv = _finite(t, v)
@@ -97,32 +130,36 @@ def fig_timeseries(cycles, cfg, obstype):
 
 
 def fig_obs_counts(cycles, cfg):
-    """Assimilated observation counts against cycle, one panel per obs type.
+    """Assimilated observation counts against cycle, one figure per obs type.
 
-    Thinning and QC both move this number, and a count that steps or collapses
-    mid-run is usually the first sign that something upstream broke. The common
-    sample is drawn alongside so the size of the comparable subset is visible
-    at the same time.
+    One PNG per obs type rather than one big grid of tiny panels: with 20+
+    obs types configured that grid squeezed every type into a sliver too
+    narrow to read -- the same problem fig_obs_fit had. build_report.py
+    embeds all of them behind an obs-type dropdown; it derives the same
+    type list from the cache independently (every type present qualifies
+    here, so there is no presence filter to keep in sync -- just the list
+    itself).
+
+    Thinning and QC both move this number, and a count that steps or
+    collapses mid-run is usually the first sign that something upstream
+    broke. The common sample is drawn alongside so the size of the
+    comparable subset is visible at the same time.
     """
     order = sorted(cycles)
-    names = P.exp_names(cycles[order[-1]])
+    names = P.all_exp_names(cfg, cycles)
     col = P.color_map(names)
     types = sorted({t for d in cycles.values() for t in d.get('obs', {})})
     if not types:
-        return None
+        return []
     t = _times(cycles)
     single = len(t) == 1
     mk = 'o' if single else 'o-'
 
-    nc = min(3, len(types))
-    nr = int(np.ceil(len(types) / nc))
-    fig, axes = plt.subplots(nr, nc, figsize=(4.6 * nc, 3.3 * nr),
-                             squeeze=False)
-    for a in axes.ravel()[len(types):]:
-        a.set_visible(False)
-    for i, ot in enumerate(types):
-        ax = axes[i // nc][i % nc]
+    written = []
+    for ot in types:
+        fig, ax = plt.subplots(figsize=(6.0, 3.6))
         top = 0.0
+        drawn = False
         # The common sample goes down first: it often sits exactly on top of
         # the most-thinned experiment, and the experiment must stay visible.
         common = np.array([P.get(cycles[c], 'obs', ot, 'counts', names[0],
@@ -133,6 +170,7 @@ def fig_obs_counts(cycles, cfg):
                     ms=7 if single else 5, lw=1.2, mec=P.SURFACE, mew=0.8,
                     zorder=1)
             top = max(top, np.nanmax(common))
+            drawn = True
         for n in names:
             v = np.array([P.get(cycles[c], 'obs', ot, 'counts', n,
                                 'n_pass_own') for c in order], dtype='f8')
@@ -142,32 +180,27 @@ def fig_obs_counts(cycles, cfg):
             ax.plot(tt, vv, mk, color=col[n], label=n, ms=5 if single else 4,
                     mec=P.SURFACE, mew=1.0, zorder=3)
             top = max(top, np.nanmax(v))
-        ax.set_title(P.short(ot), fontsize=10)
+            drawn = True
+        if not drawn:
+            plt.close(fig)
+            continue
         ax.set_ylim(0, 1.1 * top if top > 0 else 1)
-        if i % nc == 0:
-            ax.set_ylabel('observations passing QC')
+        ax.set_ylabel('observations passing QC')
         P.tidy(ax)
         if single:
             ax.set_xticks(t)
             ax.set_xticklabels([t[0].strftime('%Y-%m-%d %HZ')], fontsize=8)
-    P.maybe_legend(axes[0][0], fontsize=8)
-    if not single:
-        _date_labels(fig, axes, t)
-    fig.suptitle('Observations assimilated per cycle%s'
-                 % ('  (single cycle - add cycles to see evolution)'
-                    if single else ''),
-                 y=1.01, fontsize=11.5, color=P.INK)
-    fig.tight_layout()
-    return P.save(fig, cfg, 'cycle_obs_counts.png')
-
-
-def _panel_grid(n, w=4.6, h=3.3, ncol=3):
-    nc = min(ncol, max(n, 1))
-    nr = int(np.ceil(n / nc))
-    fig, axes = plt.subplots(nr, nc, figsize=(w * nc, h * nr), squeeze=False)
-    for a in axes.ravel()[n:]:
-        a.set_visible(False)
-    return fig, axes, nc
+        else:
+            _date_labels(fig, np.array([[ax]]), t)
+        P.maybe_legend(ax, fontsize=8)
+        fig.suptitle('%s: observations assimilated per cycle%s'
+                     % (P.short(ot),
+                        '  (single cycle - add cycles to see evolution)'
+                        if single else ''),
+                     y=1.03, fontsize=11.5, color=P.INK)
+        fig.tight_layout()
+        written.append(P.save(fig, cfg, 'obscount_type_%s.png' % P.slug(ot)))
+    return written
 
 
 def _date_labels(fig, axes, t=None):
@@ -224,64 +257,126 @@ def _time_lines(ax, t, series, col, single):
 
 
 def fig_obs_fit(cycles, cfg):
-    """Background and analysis fit in observation space, against cycle.
+    """Background and analysis fit in observation space, one figure per type.
 
-    The bar chart in the report says where each system stands at the latest
-    date; this says whether it is holding. Solid is RMS(O-B), dashed
-    RMS(O-A), so the gap within a colour is what the analysis bought at that
-    cycle and the slope is whether it is being kept.
+    Two panels: RMS departure, and the signed mean beside it. Both are drawn
+    from the same per-type sample (see P.type_sample), which the title names
+    because it is not always the common one.
+
+    One PNG per obs type rather than one big grid of tiny panels: with 20+
+    obs types configured that grid squeezed every type into a sliver too
+    narrow to read -- the same problem fig_verif_series had with regions.
+    build_report.py embeds all of them behind an obs-type picker; it derives
+    the same type list from the cache independently (every type present
+    qualifies here, unlike the region list in fig_verif_series, so there is
+    no presence filter to keep in sync -- just the list itself).
     """
-    order = sorted(cycles)
-    names = P.exp_names(cycles[order[-1]])
+    names = P.all_exp_names(cfg, cycles)
     col = P.color_map(names)
     types = sorted({t for d in cycles.values() for t in d.get('obs', {})})
     if not types:
-        return None
+        return []
     t = _times(cycles)
     single = len(t) == 1
-    fig, axes, nc = _panel_grid(len(types))
-    for i, ot in enumerate(types):
-        ax = axes[i // nc][i % nc]
-        series = {n: (_series(cycles, ot, n, 'ombg_rms'),
-                      _series(cycles, ot, n, 'oman_rms')) for n in names}
-        if not _time_lines(ax, t, series, col, single):
-            ax.set_visible(False)
+
+    def draw(ot, sample, stratum, fname):
+        rms = {n: (_series(cycles, ot, n, 'ombg_rms', sample, stratum),
+                   _series(cycles, ot, n, 'oman_rms', sample, stratum))
+               for n in names}
+        # RMS cannot distinguish a run that is scattered from one that is
+        # systematically offset, and only the second is a bias the system can
+        # be asked to correct -- so the signed mean goes beside it, from the
+        # same sample and the same cycles.
+        bias = {n: (_series(cycles, ot, n, 'ombg_mean', sample, stratum),
+                    _series(cycles, ot, n, 'oman_mean', sample, stratum))
+                for n in names}
+        fig, axes = plt.subplots(1, 2, figsize=(11.4, 3.6), squeeze=False)
+        ax_r, ax_b = axes[0]
+        if not _time_lines(ax_r, t, rms, col, single):
+            plt.close(fig)
+            return None
+        # A departure mean is signed, so zero is the whole reference: an
+        # experiment straddling this line is unbiased at this scale.
+        ax_b.axhline(0, color=P.MUTED, lw=1.2, ls=(0, (4, 3)), zorder=1)
+        if not _time_lines(ax_b, t, bias, col, single):
+            ax_b.set_visible(False)
+        ax_r.set_ylabel('RMS departure (obs units)')
+        ax_b.set_ylabel('mean departure (obs units)')
+        ax_r.set_title('RMS departure', fontsize=10)
+        ax_b.set_title('bias (mean departure)', fontsize=10)
+        for ax in axes[0]:
+            if not ax.get_visible():
+                continue
+            P.tidy(ax)
+            if single:
+                ax.set_xticks(t)
+                ax.set_xticklabels([t[0].strftime('%Y-%m-%d %HZ')], fontsize=8)
+        if not single:
+            _date_labels(fig, axes, t)
+        P.maybe_legend(ax_r, fontsize=7.5)
+        # Name the sample on the figure itself. It is picked per obs type and
+        # silently falls back to 'own' where no genuine cross-experiment join
+        # exists, which changes what a comparison between runs MEANS -- the
+        # section note says this can happen, but only the figure can say
+        # whether it happened to this type.
+        fig.suptitle('%s%s: fit to observations, solid O$-$B / dashed O$-$A'
+                     '  [%s]%s'
+                     % (P.short(ot),
+                        '' if stratum == 'all' else ' - %s' % stratum.replace('_', ' '),
+                        'common sample' if sample == 'common'
+                        else "each experiment's own sample",
+                        '  (single cycle - add cycles to see evolution)'
+                        if single else ''),
+                     y=1.03, fontsize=11.5, color=P.INK)
+        fig.tight_layout()
+        return P.save(fig, cfg, fname)
+
+    written = []
+    for ot in types:
+        # each obs type samples whoever actually shares it, not the run-wide
+        # common/own choice -- one type missing an experiment shouldn't push
+        # every OTHER, fully-shared type onto its own (unjoined) sample too
+        sample = P.type_sample(cycles, ot)
+        out = draw(ot, sample, 'all', 'obsfit_type_%s.png' % P.slug(ot))
+        if out is None:
             continue
-        ax.set_title(P.short(ot), fontsize=10)
-        if i % nc == 0:
-            ax.set_ylabel('RMS departure (obs units)')
-        P.tidy(ax)
-        if single:
-            ax.set_xticks(t)
-            ax.set_xticklabels([t[0].strftime('%Y-%m-%d %HZ')], fontsize=8)
-    P.maybe_legend(axes[0][0], fontsize=7.5)
-    if not single:
-        _date_labels(fig, axes, t)
-    fig.suptitle('Fit to observations per cycle, solid O$-$B / dashed O$-$A%s'
-                 % ('  (single cycle - add cycles to see evolution)'
-                    if single else ''),
-                 y=1.01, fontsize=11.5, color=P.INK)
-    fig.tight_layout()
-    return P.save(fig, cfg, 'cycle_obs_fit.png')
+        written.append(out)
+        # The same pair per region stratum the cache carries (basins,
+        # `regions:` boxes, NH/SH for ice): build_report nests a region
+        # picker inside the obs-type menu over these files.
+        for st in region_strata(cycles, ot, sample):
+            out = draw(ot, sample, st, 'obsfit_type_%s_region_%s.png'
+                       % (P.slug(ot), P.slug(st)))
+            if out is not None:
+                written.append(out)
+    return written
 
 
 def fig_verif_series(cycles, cfg):
-    """Fit to the gridded products against cycle, per product and region."""
+    """Fit to the gridded products against cycle, one figure per region.
+
+    One PNG per region rather than the old single wide grid (one row per
+    product, one column per region): with several basins configured, that
+    grid squeezed every region into a sliver too narrow to read. build_report
+    .py embeds all of them behind a region picker and shows one at a time --
+    it derives the same product/region lists from the cache independently,
+    so both sides must apply the identical presence filter below.
+    """
     order = sorted(cycles)
-    names = P.exp_names(cycles[order[-1]])
+    names = P.all_exp_names(cfg, cycles)
     col = P.color_map(names)
     prods = [p for p in LV.PRODUCTS
              if any(P.get(d, 'state', n, 'ocean', 'verif', p, default=None)
                     for d in cycles.values() for n in names)]
     if not prods:
-        return None
-    regions = ['global'] + [r['name'] for r in cfg.get('regions', [])]
+        return []
+    regions = ['global'] + region_list(cfg)
     regions = [r for r in regions
                if any(P.get(d, 'state', n, 'ocean', 'verif', p, 'bkg', r,
                             default=None)
                       for d in cycles.values() for n in names for p in prods)]
     if not regions:
-        return None
+        return []
     t = _times(cycles)
     single = len(t) == 1
 
@@ -289,43 +384,132 @@ def fig_verif_series(cycles, cfg):
         return np.array([P.get(cycles[c], 'state', n, 'ocean', 'verif', p, st,
                                reg, 'rms') for c in order], dtype='f8')
 
-    fig, axes = plt.subplots(len(prods), len(regions),
-                             figsize=(3.6 * len(regions), 3.1 * len(prods)),
-                             squeeze=False)
-    for r, p in enumerate(prods):
-        spec = LV.PRODUCTS[p]
-        for c, reg in enumerate(regions):
-            ax = axes[r][c]
+    written = []
+    for reg in regions:
+        fig, axes = plt.subplots(1, len(prods),
+                                 figsize=(4.2 * len(prods), 3.4),
+                                 squeeze=False)
+        drawn = False
+        for c, p in enumerate(prods):
+            spec = LV.PRODUCTS[p]
+            ax = axes[0][c]
             series = {n: (rms(n, p, 'bkg', reg), rms(n, p, 'ana', reg))
                       for n in names}
             if not _time_lines(ax, t, series, col, single):
                 ax.set_visible(False)
                 continue
-            if r == 0:
-                ax.set_title(reg.replace('_', ' '), fontsize=10, color=P.INK)
-            if c == 0:
-                ax.set_ylabel('%s\nRMS (%s)' % (spec['label'], spec['units']))
+            drawn = True
+            ax.set_title(spec['label'], fontsize=10, color=P.INK)
+            ax.set_ylabel('RMS (%s)' % spec['units'])
             P.tidy(ax)
             if single:
                 ax.set_xticks(t)
                 ax.set_xticklabels([t[0].strftime('%m-%d %HZ')], fontsize=7.5)
-    P.maybe_legend(axes[0][0], fontsize=7.5)
-    if not single:
-        _date_labels(fig, axes, t)
-    fig.suptitle('Fit to gridded analyses per cycle, solid background / '
-                 'dashed analysis%s'
-                 % ('  (single cycle - add cycles to see evolution)'
-                    if single else ''),
-                 y=1.01, fontsize=11.5, color=P.INK)
-    fig.tight_layout()
-    return P.save(fig, cfg, 'cycle_verif_scores.png')
+        if not drawn:
+            plt.close(fig)
+            continue
+        P.maybe_legend(axes[0][0], fontsize=7.5)
+        if not single:
+            _date_labels(fig, axes, t)
+        fig.suptitle('%s: fit to gridded analyses, solid background / '
+                     'dashed analysis%s'
+                     % (reg.replace('_', ' '),
+                        '  (single cycle - add cycles to see evolution)'
+                        if single else ''),
+                     y=1.03, fontsize=11.5, color=P.INK)
+        fig.tight_layout()
+        written.append(P.save(fig, cfg, 'verif_region_%s.png' % P.slug(reg)))
+    return written
+
+
+def fig_atmos_series(cycles, cfg):
+    """Area-mean atmospheric forcing over the ocean against cycle, one
+    figure per region -- the same regions the gridded-analysis scores use,
+    and the same picker in the report. One column per lv_atmos field; a
+    second row carries each experiment minus the reference, since coupled
+    runs share the weather to first order and the divergence between them
+    is only legible as a difference. The reference is the configured one
+    when it has an atmosphere (3dvar-rt does not), else the first that has."""
+    order = sorted(cycles)
+    names = P.all_exp_names(cfg, cycles)
+    col = P.color_map(names)
+    fields = [f for f in LA.FIELDS if any(
+        P.get(d, 'state', n, 'atmos', 'region', 'global', f, default=None)
+        is not None for d in cycles.values() for n in names)]
+    if not fields:
+        return []
+    have = [n for n in names if any(
+        P.get(d, 'state', n, 'atmos', default=None) for d in cycles.values())]
+    ref = cfg.get('reference') if cfg.get('reference') in have else (
+        have[0] if have else None)
+    others = [n for n in have if n != ref]
+    regions = ['global'] + region_list(cfg)
+    regions = [r for r in regions if any(
+        P.get(d, 'state', n, 'atmos', 'region', r, default=None)
+        for d in cycles.values() for n in names)]
+    t = _times(cycles)
+    single = len(t) == 1
+    written = []
+    for reg in regions:
+        nrow = 2 if others else 1
+        fig, axes = plt.subplots(nrow, len(fields),
+                                 figsize=(3.6 * len(fields), 3.4 * nrow),
+                                 squeeze=False)
+        drawn = False
+        for c, f in enumerate(fields):
+            ax = axes[0][c]
+            label, units, _lim, _div = LA.FIELDS[f]
+            series = {}
+            for n in names:
+                v = np.array([P.get(cycles[cy], 'state', n, 'atmos', 'region',
+                                    reg, f) for cy in order], dtype='f8')
+                if not np.any(np.isfinite(v)):
+                    continue
+                series[n] = v
+                tt, vv = _finite(t, v)
+                ax.plot(tt, vv, 'o' if single else 'o-', color=col[n], label=n,
+                        ms=5 if single else 3.5, mec=P.SURFACE, mew=0.8, lw=1.6)
+                drawn = True
+            ax.set_title(label, fontsize=10, color=P.INK)
+            ax.set_ylabel(units.replace('$', ''), fontsize=8.5)
+            P.tidy(ax)
+            if others:
+                axd = axes[1][c]
+                axd.axhline(0, color=P.MUTED, lw=1.2, ls=(0, (4, 3)), zorder=1)
+                for n in others:
+                    if n not in series or ref not in series:
+                        continue
+                    tt, vv = _finite(t, series[n] - series[ref])
+                    axd.plot(tt, vv, 'o' if single else 'o-', color=col[n],
+                             label='%s - %s' % (n, ref), ms=5 if single else 3.5,
+                             mec=P.SURFACE, mew=0.8, lw=1.6)
+                axd.set_title('%s, minus %s' % (label, ref), fontsize=9.5,
+                              color=P.INK2)
+                axd.set_ylabel(units.replace('$', ''), fontsize=8.5)
+                P.tidy(axd)
+        if not drawn:
+            plt.close(fig)
+            continue
+        P.maybe_legend(axes[0][0], fontsize=7.5)
+        if others:
+            P.maybe_legend(axes[1][0], fontsize=7.5)
+        if not single:
+            _date_labels(fig, axes, t)
+        fig.suptitle('%s: atmospheric forcing over the ocean, area means of '
+                     'the f006 forcing valid at each analysis time%s'
+                     % (reg.replace('_', ' '),
+                        '; bottom row: difference from %s' % ref if others else ''),
+                     y=1.02, fontsize=11.5, color=P.INK)
+        fig.tight_layout()
+        written.append(P.save(fig, cfg, 'atmos_region_%s.png' % P.slug(reg)))
+    return written
 
 
 def fig_drift(cycles, cfg):
     """RMS(O-B) for every obs type, normalised, to expose slow divergence."""
     if len(cycles) < 3:
         return None
-    names = P.exp_names(cycles[sorted(cycles)[-1]])
+    names = P.all_exp_names(cfg, cycles)
     col = P.color_map(names)
     types = sorted({t for d in cycles.values() for t in d.get('obs', {})})
     t = _times(cycles)
@@ -333,7 +517,7 @@ def fig_drift(cycles, cfg):
     for n in names:
         stack = []
         for ot in types:
-            v = _series(cycles, ot, n, 'ombg_rms')
+            v = _series(cycles, ot, n, 'ombg_rms', P.type_sample(cycles, ot))
             if np.isfinite(v[0]) and v[0] > 0:
                 stack.append(v / v[0])
         if not stack:
@@ -380,7 +564,7 @@ def fig_background_drift(cycles, cfg, grid):
     away; this is the only view here that catches that.
     """
     order = sorted(cycles)
-    names = P.exp_names(cycles[order[-1]])
+    names = P.all_exp_names(cfg, cycles)
     col = P.color_map(names)
     t = _times(cycles)
     single = len(t) == 1
@@ -459,8 +643,22 @@ def fig_background_drift(cycles, cfg, grid):
     return P.save(fig, cfg, 'cycle_background_drift.png')
 
 
-def fig_increment_hovmoller(cycles, cfg, grid):
-    """RMS increment as depth against cycle, one column per experiment.
+def _profile_series(cycles, order, n, var, block, region):
+    """Per-cycle profiles of one variable from a per-region block
+    ('incr_region' / 'incr_mean_region'), or None where absent."""
+    return [P.get(cycles[c], 'state', n, 'ocean', block, region, var, 'mean',
+                  default=None) for c in order]
+
+
+def fig_increment_hovmoller(cycles, cfg, grid, reducer='rms', region='global'):
+    """Increment as depth against cycle, one column per experiment.
+
+    ``reducer`` 'rms' draws the magnitude on a sequential scale (the file
+    cycle_increment_hovmoller.png, as before); 'mean' draws the signed
+    area-weighted mean on a diverging scale centred on zero, per region
+    (cycle_increment_hovmoller_mean_region_<slug>.png). The same increment
+    that is the same sign at the same depth cycle after cycle is a bias the
+    model keeps rejecting, which the RMS alone cannot separate from scatter.
 
     Reads only the cached profiles, so it covers every cycle cheaply -- the
     across-date view of the increments that map figures cannot give at scale.
@@ -468,23 +666,24 @@ def fig_increment_hovmoller(cycles, cfg, grid):
     if len(cycles) < 2:
         return None
     order = sorted(cycles)
-    names = P.exp_names(cycles[order[-1]])
+    names = P.all_exp_names(cfg, cycles)
     t = _times(cycles)
+    block = 'incr_region' if reducer == 'rms' else 'incr_mean_region'
     vars3d = [v for v in cfg.get('state_vars', {}).get('ocean', [])
-              if any(len(P.get(cycles[c], 'state', n, 'ocean', 'incr_rms', v,
-                               default=[]) or []) > 1
-                     for c in order for n in names)]
+              if any(len(p or []) > 1
+                     for n in names
+                     for p in _profile_series(cycles, order, n, v, block, region))]
     if not vars3d:
         return None
 
     fig, axes = plt.subplots(len(vars3d), len(names),
                              figsize=(4.6 * len(names), 3.4 * len(vars3d)),
                              squeeze=False)
+    drawn = False
     for r, var in enumerate(vars3d):
         panels = {}
         for n in names:
-            cols = [P.get(cycles[c], 'state', n, 'ocean', 'incr_rms', var,
-                          default=None) for c in order]
+            cols = _profile_series(cycles, order, n, var, block, region)
             if not any(cols):
                 continue
             nk = max(len(c) for c in cols if c)
@@ -494,9 +693,15 @@ def fig_increment_hovmoller(cycles, cfg, grid):
                     M[:len(c), j] = c
             panels[n] = M
         if not panels:
+            for ax in axes[r]:
+                ax.set_visible(False)
             continue
-        vmax = np.nanpercentile(np.concatenate(
-            [m[np.isfinite(m)].ravel() for m in panels.values()]), 99)
+        allv = np.concatenate([m[np.isfinite(m)].ravel() for m in panels.values()])
+        if reducer == 'rms':
+            vmin, vmax, cmap = 0, np.nanpercentile(allv, 99), P.SEQUENTIAL
+        else:
+            lim = np.nanpercentile(np.abs(allv), 99) or 1e-9
+            vmin, vmax, cmap = -lim, lim, P.DIVERGING
         import plot_statespace as PS
         y, _ = PS.depth_axis(cycles[order[-1]], grid)
         for j, n in enumerate(names):
@@ -506,9 +711,9 @@ def fig_increment_hovmoller(cycles, cfg, grid):
                 continue
             M = panels[n]
             yy = y[:M.shape[0]]
-            h = ax.pcolormesh(t, yy, M, cmap=P.SEQUENTIAL,
-                              vmin=0, vmax=vmax, shading='nearest',
-                              rasterized=True)
+            h = ax.pcolormesh(t, yy, M, cmap=cmap, vmin=vmin, vmax=vmax,
+                              shading='nearest', rasterized=True)
+            drawn = True
             # Set the limits explicitly rather than calling invert_yaxis():
             # autoscaling from pcolormesh cell edges and then inverting used
             # to lose the shallow half of the profile.
@@ -521,33 +726,117 @@ def fig_increment_hovmoller(cycles, cfg, grid):
                 ax.set_ylabel('%s\nnominal depth (m)' % var)
         cb = fig.colorbar(h, ax=list(axes[r]), fraction=0.02, pad=0.01)
         cb.outline.set_visible(False)
-        cb.set_label('RMS increment (%s)' % var, fontsize=8.5)
+        cb.set_label('%s increment (%s)' % (reducer.upper() if reducer == 'rms'
+                                            else 'mean', var), fontsize=8.5)
         cb.ax.tick_params(labelsize=7.5)
+    if not drawn:
+        plt.close(fig)
+        return None
     fig.autofmt_xdate(rotation=30)
-    fig.suptitle('Increment magnitude against depth and cycle', y=1.0,
-                 fontsize=11.5, color=P.INK)
-    return P.save(fig, cfg, 'cycle_increment_hovmoller.png')
+    if reducer == 'rms':
+        fig.suptitle('Increment magnitude against depth and cycle', y=1.0,
+                     fontsize=11.5, color=P.INK)
+        fname = 'cycle_increment_hovmoller.png'
+    else:
+        fig.suptitle('Mean increment against depth and cycle - %s '
+                     '(area-weighted, signed)' % region.replace('_', ' '),
+                     y=1.0, fontsize=11.5, color=P.INK)
+        fname = 'cycle_increment_hovmoller_mean_region_%s.png' % P.slug(region)
+    return P.save(fig, cfg, fname)
 
 
-def fig_increment_2d(cycles, cfg):
-    """RMS increment of the 2-D fields against cycle."""
+def fig_increment_hovmoller_means(cycles, cfg, grid):
+    """The signed-mean hovmoller for global and every configured region."""
+    written = []
+    for reg in ['global'] + region_list(cfg):
+        out = fig_increment_hovmoller(cycles, cfg, grid, 'mean', reg)
+        if out:
+            written.append(out)
+    return written
+
+
+def _column_weights(depth, dmax=None):
+    """Layer-thickness weights from the nominal mid-depths of the cached
+    profile (edges at the midpoints between levels, the surface at 0), cut
+    at ``dmax`` metres so the column mean is over the part being tuned."""
+    d = np.asarray(depth, dtype='f8')
+    edges = np.concatenate([[0.0], 0.5 * (d[1:] + d[:-1]),
+                            [d[-1] + 0.5 * (d[-1] - d[-2]) if len(d) > 1
+                             else 2 * d[-1]]])
+    if dmax:
+        edges = np.minimum(edges, float(dmax))
+    return np.diff(edges)
+
+
+def fig_increment_mean_series(cycles, cfg, grid, region='global'):
+    """Signed, area-weighted mean increment against cycle, one panel per
+    field, for one region (cycle_increment_mean_region_<slug>.png).
+
+    The 2-D figure draws the mean dashed under the RMS, where it is
+    invisible: the mean is one or two orders of magnitude smaller than the
+    RMS. This figure gives it its own axis. For a 3-D field two lines per
+    experiment: the surface level (solid) and the thickness-weighted column
+    mean down to `depth_max:` (dashed, full column when unset). A line that
+    stays on one side of zero is a bias the model keeps rejecting.
+    """
     if len(cycles) < 2:
         return None
     order = sorted(cycles)
-    names = P.exp_names(cycles[order[-1]])
+    names = P.all_exp_names(cfg, cycles)
     col = P.color_map(names)
     t = _times(cycles)
+    dmax = cfg.get('depth_max')
+    import plot_statespace as PS
+    depth_any = None
+    for c in order:
+        d, src = PS.depth_axis(cycles[c], grid)
+        if src != 'level index':
+            depth_any = d
+            break
     flat = ([('ocean', v) for v in cfg.get('state_vars', {}).get('ocean', [])]
             + [('ice', v) for v in cfg.get('state_vars', {}).get('ice', [])])
     panels = []
     for realm, var in flat:
         series = {}
         for n in names:
-            v = np.array([(lambda p: p[0] if p and len(p) == 1 else np.nan)(
-                P.get(cycles[c], 'state', n, realm, 'incr_rms', var,
-                      default=None)) for c in order], dtype='f8')
-            if np.any(np.isfinite(v)) and np.nanmax(np.abs(v)) > 0:
-                series[n] = v
+            profs = [P.get(cycles[c], 'state', n, realm, 'incr_mean_region',
+                           region, var, 'mean', default=None) for c in order]
+            if not any(profs):
+                continue
+            surf = np.array([p[0] if p else np.nan for p in profs], dtype='f8')
+            if not (np.any(np.isfinite(surf)) and np.nanmax(np.abs(surf)) > 0):
+                continue
+            # a field the region does not carry (sea ice in the Kuroshio box)
+            # leaves round-off in the mean; the RMS says whether there is an
+            # increment there at all
+            rms = np.array([(lambda r: r[0] if r else np.nan)(
+                P.get(cycles[c], 'state', n, realm, 'incr_region', region,
+                      var, 'mean', default=None)) for c in order], dtype='f8')
+            if np.any(np.isfinite(rms)) and np.nanmax(rms) < 1e-7:
+                continue
+            colm = None
+            if any(len(p or []) > 1 for p in profs):
+                colm = np.full(len(order), np.nan)
+                for j, c in enumerate(order):
+                    p = profs[j]
+                    if not p or len(p) < 2:
+                        continue
+                    depth = cycles[c]['state'].get(n, {}).get('depth')
+                    if not depth:
+                        # the reference's axis, as the hovmoller does, or
+                        # any cycle's: an experiment without a background
+                        # (3dvar-rt) never caches one of its own
+                        depth, src = PS.depth_axis(cycles[c], grid, len(p))
+                        if src == 'level index':
+                            depth = depth_any
+                    if depth is None:
+                        continue
+                    w = _column_weights(np.asarray(depth[:len(p)]), dmax)
+                    v = np.asarray(p, dtype='f8')
+                    ok = np.isfinite(v) & (w > 0)
+                    if ok.any():
+                        colm[j] = np.sum(v[ok] * w[ok]) / np.sum(w[ok])
+            series[n] = (surf, colm)
         if series:
             panels.append((realm, var, series))
     if not panels:
@@ -558,23 +847,103 @@ def fig_increment_2d(cycles, cfg):
     fig, axes = plt.subplots(nr, nc, figsize=(4.4 * nc, 3.2 * nr), squeeze=False)
     for a in axes.ravel()[len(panels):]:
         a.set_visible(False)
+    has3d = False
     for i, (realm, var, series) in enumerate(panels):
         ax = axes[i // nc][i % nc]
+        ax.axhline(0, color=P.MUTED, lw=1.0, ls=(0, (4, 3)), zorder=1)
+        for n, (surf, colm) in series.items():
+            tt, vv = _finite(t, surf)
+            ax.plot(tt, vv, 'o-', color=col[n], label=n, ms=4, mec=P.SURFACE,
+                    mew=1.0)
+            if colm is not None and np.any(np.isfinite(colm)):
+                has3d = True
+                tm, vm = _finite(t, colm)
+                ax.plot(tm, vm, marker='s', ms=3, ls='--', color=col[n],
+                        lw=1.2, alpha=0.85)
+        ax.set_title('%s  (%s)' % (var, realm), fontsize=10)
+        P.tidy(ax)
+        if i % nc == 0:
+            ax.set_ylabel('mean increment')
+    P.maybe_legend(axes[0][0], fontsize=8.5)
+    _date_labels(fig, axes, t)
+    col_note = (' -- surface (solid), column mean%s (dashed)'
+                % (' to %g m' % float(dmax) if dmax else '')) if has3d else ''
+    fig.suptitle('Area-weighted mean increment across cycles - %s%s'
+                 % (region.replace('_', ' '), col_note),
+                 y=1.01, fontsize=11.5, color=P.INK)
+    fig.tight_layout()
+    return P.save(fig, cfg, 'cycle_increment_mean_region_%s.png'
+                  % P.slug(region))
+
+
+def fig_increment_mean_series_all(cycles, cfg, grid):
+    """The mean-increment series for global and every configured region."""
+    written = []
+    for reg in ['global'] + region_list(cfg):
+        out = fig_increment_mean_series(cycles, cfg, grid, reg)
+        if out:
+            written.append(out)
+    return written
+
+
+def fig_increment_2d(cycles, cfg):
+    """RMS increment of the 2-D fields against cycle."""
+    if len(cycles) < 2:
+        return None
+    order = sorted(cycles)
+    names = P.all_exp_names(cfg, cycles)
+    col = P.color_map(names)
+    t = _times(cycles)
+    flat = ([('ocean', v) for v in cfg.get('state_vars', {}).get('ocean', [])]
+            + [('ice', v) for v in cfg.get('state_vars', {}).get('ice', [])])
+    panels = []
+    for realm, var in flat:
+        series, means = {}, {}
+        for n in names:
+            def one(key):
+                return np.array([(lambda p: p[0] if p and len(p) == 1 else np.nan)(
+                    P.get(cycles[c], 'state', n, realm, key, var, default=None))
+                    for c in order], dtype='f8')
+            v = one('incr_rms')
+            if np.any(np.isfinite(v)) and np.nanmax(np.abs(v)) > 0:
+                series[n] = v
+                means[n] = one('incr_mean')
+        if series:
+            panels.append((realm, var, series, means))
+    if not panels:
+        return None
+
+    nc = min(3, len(panels))
+    nr = int(np.ceil(len(panels) / nc))
+    fig, axes = plt.subplots(nr, nc, figsize=(4.4 * nc, 3.2 * nr), squeeze=False)
+    for a in axes.ravel()[len(panels):]:
+        a.set_visible(False)
+    for i, (realm, var, series, means) in enumerate(panels):
+        ax = axes[i // nc][i % nc]
+        has_mean = any(np.any(np.isfinite(m)) for m in means.values())
+        if has_mean:
+            ax.axhline(0, color=P.MUTED, lw=1.0, ls=(0, (4, 3)), zorder=1)
         for n, v in series.items():
             tt, vv = _finite(t, v)
             ax.plot(tt, vv, 'o-', color=col[n], label=n, ms=4, mec=P.SURFACE,
                     mew=1.0)
+            # the signed mean, dashed, in the same colour: a line that stays
+            # on one side of zero is a bias the model keeps rejecting
+            if has_mean and np.any(np.isfinite(means[n])):
+                tm, vm = _finite(t, means[n])
+                ax.plot(tm, vm, '--', color=col[n], lw=1.0, alpha=0.8)
         ax.set_title('%s  (%s)' % (var, realm), fontsize=10)
         # One field per panel, so the scale stays linear: a log axis flattens
         # exactly the cycle-to-cycle changes this figure exists to show.
-        ax.set_ylim(bottom=0)
+        if not has_mean:
+            ax.set_ylim(bottom=0)
         P.tidy(ax)
         if i % nc == 0:
-            ax.set_ylabel('RMS increment')
+            ax.set_ylabel('increment: RMS (solid), mean (dashed)')
     P.maybe_legend(axes[0][0], fontsize=8.5)
     _date_labels(fig, axes, t)
-    fig.suptitle('2-D field increment magnitude across cycles', y=1.01,
-                 fontsize=11.5, color=P.INK)
+    fig.suptitle('2-D field increments across cycles: RMS (solid) and '
+                 'area-weighted mean (dashed)', y=1.01, fontsize=11.5, color=P.INK)
     fig.tight_layout()
     return P.save(fig, cfg, 'cycle_increment_2d.png')
 
@@ -593,22 +962,45 @@ def main(argv=None):
     ap.add_argument('--cache', action='append', default=None,
                     help='extra cache directory to read and merge (repeatable); '
                          'the first is where new results are written')
+    ap.add_argument('--force', action='store_true',
+                    help='redraw even when no cached cycle has changed')
     a = ap.parse_args(argv)
     a.config = a.config or a.config_opt
     cfg = load_config(a.config, a.root, a.outdir, a.cache)
     cycles = P.load_cycles(cfg)
+    # Every figure here spans every cycle, so the whole stage is one unit of
+    # work: any changed or added cycle redraws it all (under a minute).
+    fresh = Fresh(cfg, 'timeseries', force=a.force, script=__file__)
+    inputs = [os.path.join(root, '%s.json' % c) for c in cycles
+              for root in cfg['caches']]
+    if fresh.ok('all', inputs):
+        print('cycling figures: up to date, skipped')
+        return 0
     types = sorted({t for d in cycles.values() for t in d.get('obs', {})})
+    if any(P.type_sample(cycles, ot) != 'common' for ot in types):
+        print('  ! some obs types have no genuine cross-experiment common '
+              'sample -- falling back to each experiment\'s own sample for '
+              'those (run compute_cycle.py --rejoin to fix this where '
+              'possible)')
     print('cycling figures over %d cycle(s)' % len(cycles))
     for ot in types:
-        fig_timeseries(cycles, cfg, ot)
+        fig_timeseries(cycles, cfg, ot, P.type_sample(cycles, ot))
     fig_obs_counts(cycles, cfg)
     fig_obs_fit(cycles, cfg)
     fig_verif_series(cycles, cfg)
+    fig_atmos_series(cycles, cfg)
     fig_drift(cycles, cfg)
     grid = Grid(cfg['grid'])
     fig_background_drift(cycles, cfg, grid)
     fig_increment_hovmoller(cycles, cfg, grid)
+    fig_increment_hovmoller_means(cycles, cfg, grid)
+    fig_increment_mean_series_all(cycles, cfg, grid)
     fig_increment_2d(cycles, cfg)
+    written = [os.path.join(cfg['figs'], f) for f in os.listdir(cfg['figs'])
+               if f.startswith(('cycle_', 'obsfit_', 'obscount_', 'verif_region_',
+                                'atmos_region_'))]
+    fresh.record('all', inputs, None, written)
+    fresh.save()
     return 0
 
 

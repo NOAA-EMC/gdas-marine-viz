@@ -165,6 +165,16 @@ class Experiment:
         ev = dict(ENSVAR_PATTERNS)
         ev.update(d.get('ensvar_patterns') or {})
         self.ensvar_patterns = ev
+        # Older archives name the analysis increment differently (e.g.
+        # ocn.incr.nc / ice.incr.nc rather than jedi_increment*.nc); override
+        # per experiment rather than hardcoding every convention ever used.
+        self.incr_pattern = d.get('increment_pattern')
+        # The verification suite normally reconstructs an analysis as the
+        # background plus its increment.  A few diagnostics, including the
+        # frontal-current maps, need the written analysis state itself.  Keep
+        # its archive-specific name in the registry rather than duplicating
+        # path conventions in those diagnostics.
+        self.analysis_pattern = d.get('analysis_pattern')
 
     def dir_for(self, cycle, stem=None, realm=''):
         """cycle is a 10-character YYYYMMDDHH string."""
@@ -223,9 +233,38 @@ class Experiment:
 
     # -- state space --------------------------------------------------------
     def increment(self, cycle, realm):
-        pat = ('%s/*ensmean_incr.nc' if self.kind == 'letkf'
-               else '%s/*jedi_increment*.nc') % realm
-        return self._glob1(cycle, pat, required=False)
+        default = ('*ensmean_incr.nc' if self.kind == 'letkf'
+                   else '*jedi_increment*.nc')
+        # A list is tried in order, like analysis_pattern: 3dvar-rt's
+        # archive wrote *ocn.incr.nc, then *jedi_increment* from 2025-12-18.
+        pats = self.incr_pattern or default
+        pats = pats if isinstance(pats, (list, tuple)) else [pats]
+        for pat in pats:
+            hit = self._glob1(cycle, '%s/%s' % (realm, pat), required=False)
+            if hit is not None:
+                return hit
+        return None
+
+    def analysis(self, cycle, realm='ocean'):
+        """Written analysis state for an optional archive-specific pattern.
+
+        The pattern is relative to the realm directory.  Returning ``None``
+        when it is not configured lets an optional diagnostic report a clear
+        unavailable-cycle reason without affecting the standard suite.
+        """
+        if not self.analysis_pattern:
+            return None
+        # A list tries each pattern in turn: an archive whose file naming
+        # changed mid-run (3dvar-rt wrote *ocn.ana.nc, then *jedi_analysis*)
+        # has no single glob that resolves at every cycle.
+        patterns = (self.analysis_pattern
+                    if isinstance(self.analysis_pattern, (list, tuple))
+                    else [self.analysis_pattern])
+        for pattern in patterns:
+            hit = self._glob1(cycle, '%s/%s' % (realm, pattern), required=False)
+            if hit is not None:
+                return hit
+        return None
 
     def ensvar(self, cycle, realm, when):
         """Path to the 'prior' / 'post' / 'an' ensemble variance, or None."""
@@ -293,7 +332,9 @@ def load_config(path=None, root_override=None, outdir_override=None,
     src = [src] if isinstance(src, str) else list(src)
     if cache_override:
         src = list(cache_override) + [p for p in src if p not in cache_override]
-    cfg['caches'] = [_abs(p) for p in src]
+    # De-duplicated, order kept: build_comparison.py passes the page cache
+    # and then whatever the caller listed, which may name it again.
+    cfg['caches'] = list(dict.fromkeys(_abs(p) for p in src))
     cfg['cache'] = cfg['caches'][0]
     cfg['figs'] = _abs(cfg.get('figs') or os.path.join(outdir, 'figs'))
     cfg['report'] = _abs(cfg.get('report')
@@ -315,15 +356,160 @@ def load_config(path=None, root_override=None, outdir_override=None,
             prods[name] = entry
         v['products'] = prods
         cfg['verification'] = v
+    # WOA23 climatology directory. Same rule as `verification:` above, and
+    # deliberately NOT nested inside it -- every consumer of that block assumes
+    # a same-day L4 product with an lv_verif.PRODUCTS spec, which a climatology
+    # is not.
+    if cfg.get('woa'):
+        w = cfg['woa']
+        w = {'path': w} if isinstance(w, str) else dict(w or {})
+        if w.get('path'):
+            w['path'] = _abs(w['path'])
+        cfg['woa'] = w
+    # GREP monthly reanalysis-ensemble directory. Same rule again, and again
+    # not nested in `verification:`: GREP is a monthly mean of the full 3-D
+    # state from three reanalyses, not a same-day surface L4 field.
+    if cfg.get('grep'):
+        g = cfg['grep']
+        g = {'path': g} if isinstance(g, str) else dict(g or {})
+        if g.get('path'):
+            g['path'] = _abs(g['path'])
+        cfg['grep'] = g
     names = [e.name for e in cfg['experiments']]
     if len(set(names)) != len(names):
         raise ValueError('duplicate experiment names: %s' % names)
     if cfg.get('reference') and cfg['reference'] not in names:
         raise ValueError('reference %r not among %s' % (cfg['reference'], names))
     check_retired(cfg)
+    # Regions every report gets without asking: the basin mask's Southern
+    # Ocean stops short of the ice, and neither it nor the Arctic basin
+    # gives the polar cap that the sea-ice and high-latitude SST/SSS
+    # scores need. Only lat bands, so they work with or without a basin
+    # mask; a config entry of the same name replaces the default.
+    have = {r['name'] for r in cfg.get('regions') or []}
+    cfg['regions'] = list(cfg.get('regions') or []) + [
+        dict(r) for r in DEFAULT_REGIONS if r['name'] not in have]
     corr_regions(cfg)          # validate the names now, not mid-run
     cfg['cycles'] = resolve_cycles(cfg['cycles'])
     return cfg
+
+
+# ---------------------------------------------------------------------------
+# figure freshness
+# ---------------------------------------------------------------------------
+
+# The parts of the config that change how a figure LOOKS. `cycles:` is
+# deliberately not among them: adding a cycle must not redraw every other
+# cycle's figures, which is the whole point of caching them.
+VIEW_KEYS = ('map_limits', 'sections', 'map_levels', 'map_stride',
+             'state_vars', 'background_vars', 'regions', 'corr_regions',
+             'depth_bins', 'depth_max', 'verification', 'woa', 'grep',
+             'frontal_analysis', 'ocean_basin_mask', 'reference', 'obs_bins',
+             'atmos_vars')
+
+
+def view_hash(cfg):
+    """Short digest of the view-affecting config plus the experiment list."""
+    import hashlib
+    import json
+    view = {k: cfg.get(k) for k in VIEW_KEYS}
+    view['experiments'] = [(e.name, e.label, e.kind) for e in cfg['experiments']]
+    blob = json.dumps(view, sort_keys=True, default=str).encode()
+    return hashlib.sha1(blob).hexdigest()[:12]
+
+
+class Fresh:
+    """Skip figures whose inputs have not changed since they were drawn.
+
+    Every plot stage redrew everything on every run -- 30 minutes of
+    state-space maps for a rerun that had added one cycle. Each stage keeps
+    one record file, figs/.fresh-<stage>.json: for every unit of work it
+    drew (a cycle, a field, one figure) the mtimes of the inputs it read,
+    the parameters that shaped it (view_hash(cfg), a colour scale, ...) and
+    the files it wrote. ``ok(key, inputs, params)`` says whether that unit
+    can be skipped: same inputs, same params, every output still there.
+    ``force`` (a --force flag) ignores the records; an edit to the plot
+    script itself counts as an input, so code changes redraw too.
+
+    Records are held in memory and written by ``save()`` -- call it at the
+    end of the stage, and after merging what parallel workers return.
+    """
+
+    def __init__(self, cfg, stage, force=False, script=None):
+        self.path = os.path.join(cfg['figs'], '.fresh-%s.json' % stage)
+        self.force = force
+        self.view = view_hash(cfg)
+        self.always = [script] if script else []
+        self.always.append(os.path.join(HERE, 'lv_plot.py'))
+        self.records = {}
+        if os.path.exists(self.path) and not force:
+            import json
+            try:
+                with open(self.path) as f:
+                    self.records = json.load(f)
+            except (OSError, ValueError):
+                self.records = {}
+        self.skipped = 0
+        self.new = {}                 # records added this run (workers return these)
+
+    @staticmethod
+    def _mtimes(paths):
+        # normalised, so './plot_x.py' from one invocation and the absolute
+        # path from another are the same input
+        out = {}
+        for p in paths:
+            if not p:
+                continue
+            p = os.path.normpath(os.path.abspath(p))
+            out[p] = os.path.getmtime(p) if os.path.exists(p) else None
+        return out
+
+    def _stamp(self, inputs, params):
+        import json
+        return json.dumps({'inputs': self._mtimes(list(inputs) + self.always),
+                           'params': dict(params or {}, view=self.view)},
+                          sort_keys=True, default=str)
+
+    def ok(self, key, inputs, params=None):
+        """True when ``key`` was drawn from these inputs and params and its
+        outputs are all still there (or it legitimately drew nothing)."""
+        if self.force:
+            return False
+        rec = self.records.get(key)
+        if not rec or rec.get('stamp') != self._stamp(inputs, params):
+            return False
+        if not rec.get('empty') and not all(
+                os.path.exists(o) for o in rec.get('outputs') or []):
+            return False
+        self.skipped += 1
+        return True
+
+    def record(self, key, inputs, params, outputs):
+        """Note what was just drawn. ``outputs`` may be empty when the unit
+        legitimately produced nothing; that is recorded too, so a unit with
+        nothing to draw is not retried on every run."""
+        outputs = [o for o in (outputs or []) if o]
+        self.records[key] = self.new[key] = {
+            'stamp': self._stamp(inputs, params),
+            'outputs': outputs, 'empty': not outputs}
+
+    def merge(self, records):
+        """Fold in records returned by a worker process."""
+        self.records.update(records or {})
+
+    def save(self):
+        import json
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        tmp = self.path + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(self.records, f, indent=0, sort_keys=True)
+        os.replace(tmp, self.path)
+
+
+# Appended to `regions:` by load_config() unless the config names them.
+DEFAULT_REGIONS = [
+    {'name': 'Antarctic', 'lat0': -90, 'lat1': -45, 'lon0': -180, 'lon1': 180},
+]
 
 
 def region_box(r):
@@ -357,6 +543,74 @@ def in_region(r, lat, lon=None):
     if lon0 <= lon1:
         return sel & (lon >= lon0) & (lon < lon1)
     return sel & ((lon >= lon0) | (lon < lon1))    # straddles the dateline
+
+
+# --------------------------------------------------------------------------
+# ocean-basin mask (RECCAP2 open_ocean), the real-geography alternative to a
+# hand-drawn `regions:` box for the broad basin breakdown. `corr_regions:`
+# keeps using boxes -- the correlation-length fit needs an actual box extent
+# to fit within, which a basin mask cannot give it.
+# --------------------------------------------------------------------------
+
+_BASIN_MASK_CACHE = {}
+
+
+def _load_basin_mask(path):
+    """(lat, lon, open_ocean codes, {code: name}), cached by path.
+
+    Only open_ocean is read: it is the file's whole-basin classification
+    (Atlantic/Pacific/Indian/Arctic/Southern, 0 = not open ocean), separate
+    from its `coastal_marcats` sub-regions this suite has no use for. Codes
+    and names both come from the variable's own `region_names` attribute --
+    "1.Atlantic, 2.Pacific, ..." -- rather than being hardcoded here, so a
+    differently-coded mask file still reads correctly.
+    """
+    path = expand(path)
+    if path not in _BASIN_MASK_CACHE:
+        with Dataset(path) as ds:
+            lat = np.asarray(ds['lat'][:], dtype='f8')
+            lon = np.asarray(ds['lon'][:], dtype='f8')
+            codes = np.asarray(ds['open_ocean'][:], dtype='i4')
+            names = dict(kv.strip().split('.', 1)
+                         for kv in ds['open_ocean'].region_names.split(','))
+            names = {int(k): v for k, v in names.items()}
+        _BASIN_MASK_CACHE[path] = (lat, lon, codes, names)
+    return _BASIN_MASK_CACHE[path]
+
+
+def basin_regions(path):
+    """[(code, name), ...] in ascending code order, from the mask file."""
+    return sorted(_load_basin_mask(path)[3].items())
+
+
+def basin_at(path, lat, lon):
+    """RECCAP2 open_ocean code at each (lat, lon), any matching shape.
+
+    Nearest cell on the mask's own 1-degree grid -- exact for a uniform axis,
+    same approach as lv_verif.sample_to_grid. ``lon`` is wrapped into the
+    mask's 0..360 convention (cell centres 0.5..359.5) first, since callers
+    pass either that or -180..180.
+    """
+    mlat, mlon, codes, _names = _load_basin_mask(path)
+    dla = (mlat[-1] - mlat[0]) / (mlat.size - 1)
+    dlo = (mlon[-1] - mlon[0]) / (mlon.size - 1)
+    j = np.clip(np.rint((np.asarray(lat) - mlat[0]) / dla).astype(int),
+                0, mlat.size - 1)
+    i = np.mod(np.rint((np.mod(lon, 360.0) - mlon[0]) / dlo).astype(int),
+               mlon.size)
+    return codes[j, i]
+
+
+def region_list(cfg):
+    """Every region name in display order: basins first (if configured),
+    then the explicit `regions:` boxes -- shared so the grid masks, the
+    observation strata and figure ordering all agree on one list."""
+    names = []
+    mask_path = cfg.get('ocean_basin_mask')
+    if mask_path:
+        names += [name for _code, name in basin_regions(mask_path)]
+    names += [r['name'] for r in cfg.get('regions', []) if r['name'] not in names]
+    return names
 
 
 def corr_regions(cfg):
@@ -445,6 +699,13 @@ class Grid:
             self.lat = self._f2d(g, 'lat')
             self.area = self._f2d(g, 'area')
             self.mask = self._f2d(g, 'mask2d') > 0
+            # Rotation between the logical grid and geographic north, for
+            # putting velocity components into east/north (soca's
+            # rotate2north). Absent from an lv_grid.nc written before this
+            # was added: velocities are then left in the grid frame, which
+            # only matters north of ~65N on the tripolar grid.
+            self.cos_rot = self._f2d(g, 'cos_rot') if 'cos_rot' in g.variables else None
+            self.sin_rot = self._f2d(g, 'sin_rot') if 'sin_rot' in g.variables else None
         self.shape = self.mask.shape
         self.wgt = np.where(self.mask, self.area, 0.0)
         # This gridspec runs -300..60 deg; box selection and plotting both want
@@ -506,15 +767,21 @@ class Grid:
         return float(np.interp(q / 100.0, c, v))
 
     def regions(self, cfg):
-        """{name: bool mask} from the ``regions:`` config, always incl. global.
+        """{name: bool mask} from ``ocean_basin_mask:`` and ``regions:``,
+        always including global.
 
         Boxes are given in conventional longitude, so selection uses lon180
         rather than the gridspec's native -300..60 range.
         """
         out = {'global': self.mask.copy()}
+        mask_path = cfg.get('ocean_basin_mask')
+        if mask_path:
+            codes = basin_at(mask_path, self.lat, self.lon180)
+            for code, name in basin_regions(mask_path):
+                out[name] = self.mask & (codes == code)
         for r in cfg.get('regions', []):
             name = r['name']
-            if name == 'global':
+            if name == 'global' or name in out:
                 continue
             out[name] = self.mask & in_region(r, self.lat, self.lon180)
         return out
@@ -670,9 +937,22 @@ class ObsSet:
         return out
 
     def passed(self):
-        return self.qc == 0
+        """Observations the departures are scored on: those that passed QC
+        (0) and those the DA carried as PASSIVE (1) -- monitored, with a
+        full O-B and O-A, but given no weight. SMAP/SMOS SSS are configured
+        that way here (Domain Check, action passivate), and excluding them
+        left the two types in the report with no numbers at all."""
+        return (self.qc == 0) | (self.qc == 1)
+
+    def passive_only(self):
+        """True when nothing was assimilated: every scored obs is passive."""
+        if self.qc is None:
+            return False
+        return bool(np.any(self.qc == 1)) and not np.any(self.qc == 0)
 
     def qc_counts(self):
+        if self.qc is None:
+            return {}
         vals, cnt = np.unique(self.qc, return_counts=True)
         return {qc_name(v): int(c) for v, c in zip(vals, cnt)}
 
