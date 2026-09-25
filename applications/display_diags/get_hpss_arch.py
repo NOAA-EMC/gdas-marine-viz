@@ -2,12 +2,13 @@
 
 import argparse
 import os
+import yaml
 from extract_last_dir import extract_last_dir
-from wxflow import parse_yaml
 
 
 def main(yaml_file):
-    expconfigs = parse_yaml(path=yaml_file)
+    with open(yaml_file) as f:
+        expconfigs = yaml.safe_load(f)
 
     local_hpss_root = expconfigs['local hpss root']
 
