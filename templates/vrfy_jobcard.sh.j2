@@ -43,6 +43,7 @@ export EVA_PLOTS={{ eva_plots | default("OFF") }}
 export EVA_LETKF_PLOTS={{ eva_letkf_plots | default("OFF") }}
 export COMPUTE_LETKF_OBSSTATS={{ compute_letkf_obsstats | default("OFF") }}
 export NENS={{ nens | default(0) }}
+export LEGACY={{ legacy | default(false) | lower }}
 
 # Define and export the environment variables
 export cyc="{{ cyc }}"

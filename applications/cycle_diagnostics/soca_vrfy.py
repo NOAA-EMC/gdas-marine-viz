@@ -49,8 +49,10 @@ def plotConfig(grid_file=[],
         'Temp': 'deg C',
         'Salt': 'psu',
         'aice_h': 'unitless',
-        'hi_h': 'meter',
-        'hs_h': 'meter',
+        'hi_h': 'meter',        # ice volume per unit area (legacy)
+        'hs_h': 'meter',        # snow volume per unit area (legacy)
+        'hi_div_aice_h': 'meter',  # ice thickness
+        'hs_div_aice_h': 'meter',  # snow depth
         'u': 'm/s',
         'v': 'm/s'
     }

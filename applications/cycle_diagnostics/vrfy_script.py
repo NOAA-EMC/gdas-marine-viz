@@ -87,6 +87,15 @@ plot_increment = os.getenv('PLOT_INCREMENT', 'OFF').upper() == 'ON'
 plot_analysis = os.getenv('PLOT_ANALYSIS', 'OFF').upper() == 'ON'
 eva_plots = os.getenv('EVA_PLOTS', 'OFF').upper() == 'ON'
 eva_letkf_plots = os.getenv('EVA_LETKF_PLOTS', 'OFF').upper() == 'ON'
+legacy = os.getenv('LEGACY', 'false').lower() == 'true'
+
+
+def ice_thickness_vars(hi_bounds, hs_bounds):
+    # legacy: hi_h/hs_h are ice/snow volume; current: hi_div_aice_h/hs_div_aice_h are ice thickness/snow depth
+    if legacy:
+        return {'hi_h': hi_bounds, 'hs_h': hs_bounds}
+    return {'hi_div_aice_h': hi_bounds, 'hs_div_aice_h': hs_bounds}
+
 
 # output directory
 vrfyout = os.getenv('VRFYOUT', './vrfyout')
@@ -109,8 +118,7 @@ if plot_analysis:
                    plotConfig(grid_file=grid_file,
                               data_file=os.path.join(com_ice_analysis, f'{RUN}.t' + cyc + 'z.jedi_analysis.a006.nc'),
                               variables_horiz={'aice_h': [0.0, 1.0],
-                                               'hi_h': [0.0, 4.0],
-                                               'hs_h': [0.0, 0.5]},
+                                               **ice_thickness_vars([0.0, 4.0], [0.0, 0.5])},
                               colormap='jet',
                               projs=['North', 'South', 'Global'],
                               vrfyout=os.path.join(vrfyout, 'vrfy', 'ana'))]   # sea ice analysis
@@ -155,8 +163,7 @@ if plot_parametric_b:
                                 data_file=os.path.join(comout, os.path.pardir, os.path.pardir,
                                                        'bmatrix', 'ice', f'{RUN}.t' + cyc + 'z.ice.bkgerr_stddev.nc'),
                                 variables_horiz={'aice_h': [0.0, 0.3],
-                                                 'hi_h': [0.0, 2.0],
-                                                 'hs_h': [0.0, 0.2]},
+                                                 **ice_thickness_vars([0.0, 2.0], [0.0, 0.2])},
                                 colormap='gist_ncar',
                                 projs=['North', 'South', 'Global'],
                                 vrfyout=os.path.join(vrfyout, 'vrfy', 'bkgerr')),   # sea ice bkgerr stddev
@@ -371,8 +378,7 @@ if plot_increment:
                               data_file=os.path.join(com_ice_analysis, f'{RUN}.t' + cyc + 'z.jedi_increment.i006.nc'),
                               lats=np.arange(-60, 60, 10),
                               variables_horiz={'aice_h': [-0.2, 0.2],
-                                               'hi_h': [-0.5, 0.5],
-                                               'hs_h': [-0.1, 0.1]},
+                                               **ice_thickness_vars([-0.5, 0.5], [-0.1, 0.1])},
                               colormap='seismic',
                               projs=['North', 'South'],
                               vrfyout=os.path.join(vrfyout, 'vrfy', 'incr'))]   # sea ice increment
