@@ -49,10 +49,10 @@ def plotConfig(grid_file=[],
         'Temp': 'deg C',
         'Salt': 'psu',
         'aice_h': 'unitless',
-        'hi_h': 'meter',        # CICE history files (background)
-        'hs_h': 'meter',        # CICE history files (background)
-        'hi_div_aice_h': 'meter',  # JEDI/SOCA analysis and increment files
-        'hs_div_aice_h': 'meter',  # JEDI/SOCA analysis and increment files
+        'hi_h': 'meter',        # ice volume per unit area (legacy)
+        'hs_h': 'meter',        # snow volume per unit area (legacy)
+        'hi_div_aice_h': 'meter',  # ice thickness
+        'hs_div_aice_h': 'meter',  # snow depth
         'u': 'm/s',
         'v': 'm/s'
     }

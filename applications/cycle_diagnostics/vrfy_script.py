@@ -91,7 +91,7 @@ legacy = os.getenv('LEGACY', 'false').lower() == 'true'
 
 
 def ice_thickness_vars(hi_bounds, hs_bounds):
-    # legacy experiments name these hi_h/hs_h; current ones name them hi_div_aice_h/hs_div_aice_h
+    # legacy: hi_h/hs_h are ice/snow volume; current: hi_div_aice_h/hs_div_aice_h are ice thickness/snow depth
     if legacy:
         return {'hi_h': hi_bounds, 'hs_h': hs_bounds}
     return {'hi_div_aice_h': hi_bounds, 'hs_div_aice_h': hs_bounds}
