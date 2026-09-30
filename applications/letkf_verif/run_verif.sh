@@ -3,11 +3,11 @@
 #SBATCH --account=da-cpu
 #SBATCH --qos=batch
 ##SBATCH --partition=hera
-#SBATCH --nodes=1
-#SBATCH --ntasks=128
+#SBATCH --nodes=2
+#SBATCH --ntasks=256
 ##SBATCH --cpus-per-task=60
 #SBATCH --mem=300GB
-#SBATCH --time=01:30:00
+#SBATCH --time=01:20:00
 #SBATCH --output=slurm-%j.log
 
 # The verification job: precompute + build the LETKF-verif comparison
@@ -36,8 +36,8 @@
 #            binned departures, time series, fronts -- and the scorecard
 #            CONCURRENTLY (they only
 #            share the read-only cache and write different files), then the
-#            report once all of them are in. State-space draws its cycles
-#            --jobs-way in parallel too.
+#            report once all of them are in. State-space, binned departures
+#            and fronts draw their cycles --jobs-way in parallel too.
 #   caching  every stage skips work whose inputs have not changed: the
 #            rejoin when the page-cache file is newer than its sources, and
 #            each plot stage per cycle (figs/.fresh-<stage>.json records

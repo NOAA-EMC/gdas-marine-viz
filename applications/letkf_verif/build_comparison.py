@@ -67,10 +67,11 @@ def main(argv=None):
                          'join; scores fall back to each experiment\'s own '
                          'sample and are confounded by thinning and QC')
     ap.add_argument('--jobs', type=int, default=1,
-                    help='cycles to rejoin in parallel (passed through to '
-                         'compute_cycle.py --rejoin, which already supports '
-                         'this for a full compute; the figure/scorecard/'
-                         'report stages after it have no --jobs option)')
+                    help='cycles to process in parallel: passed to the '
+                         'rejoin (compute_cycle.py --rejoin) and to the '
+                         'binned, state-space and frontal figure stages; '
+                         'the other figure, scorecard and report stages '
+                         'have no --jobs option')
     ap.add_argument('--hours', default='00',
                     help='UTC hours of the cycles to draw per-date state, '
                          'background, gridded-product and frontal-current '
@@ -132,7 +133,8 @@ def main(argv=None):
         ('timeseries', 'cycling figures',
          lambda: plot_timeseries.main(common + force)),
         ('fronts', 'frontal-current figures',
-         lambda: plot_fronts.main(common + ['--hours', a.hours] + force)),
+         lambda: plot_fronts.main(
+             common + ['--hours', a.hours, '--jobs', str(a.jobs)] + force)),
         ('stability', 'SSH cycling-stability diagnostics',
          lambda: plot_stability.main(common + force)),
         # No-ops without a `grep:` block, and skips any month outside GREP's

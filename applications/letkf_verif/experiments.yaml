@@ -209,6 +209,7 @@ depth_bins: [0, 10, 50, 100, 300, 700, 2000, 6000]
 # outliers pushed to +/-10 psu. View setting only, no recompute.
 obs_bins:
   deg: 1
+  insitu_deg: 5
   limits:
     sss: {mean: 1.0, rms: 1.0}
     rads_adt: {mean: 0.15, rms: 0.15}

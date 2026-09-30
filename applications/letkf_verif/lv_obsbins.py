@@ -26,6 +26,11 @@ from lv_obsspace import is_profile
 # Bin edge spacing in degrees; `obs_bins: {deg: 1}` in the config overrides.
 DEFAULT_DEG = 1.0
 
+# The in situ types (Argo, gliders, drifters, ships, ...) are far too sparse
+# per cycle for 1-degree bins -- a map of isolated specks -- so they are
+# binned at least this coarse; `obs_bins: {insitu_deg: 3}` overrides.
+DEFAULT_INSITU_DEG = 3.0
+
 # Depth layers the profile types' maps are also binned in (metres, [top,
 # bottom]); `obs_bins: {layers: [...]}` overrides. They may overlap: 0-10 m
 # is the surface the satellites see, 0-300 m the thermocline the DA is
@@ -34,7 +39,7 @@ DEFAULT_LAYERS = [[0, 10], [0, 300], [300, 12000]]
 
 # Bumped whenever what goes into '<cycle>_obsbins.npz' changes; a cached
 # file with an older (or no) version is rebuilt by the rejoin.
-VERSION = 2
+VERSION = 3
 
 # Fixed value ranges for the obs-vs-model histograms, per IODA variable, so
 # one cycle's histogram adds to the next. The fallback is deliberately wide.
@@ -54,8 +59,19 @@ SUMS = ('n', 's_y', 's_ombg', 's_ombg2', 's_oman', 's_oman2',
         's_r', 's_r2', 's_reff', 's_reff2')
 
 
-def bin_deg(cfg):
-    return float((cfg.get('obs_bins') or {}).get('deg', DEFAULT_DEG))
+def bin_deg(cfg, obstype=None):
+    """Bin spacing for ``obstype``: `deg`, or for the in situ types the
+    coarser of `deg` and `insitu_deg`."""
+    ob = cfg.get('obs_bins') or {}
+    deg = float(ob.get('deg', DEFAULT_DEG))
+    if obstype and obstype.startswith('insitu_'):
+        deg = max(deg, float(ob.get('insitu_deg', DEFAULT_INSITU_DEG)))
+    return deg
+
+
+def deg_of(ny):
+    """Bin spacing back from a stored map's (or section's) latitude count."""
+    return 180.0 / ny
 
 
 def layers(cfg):
@@ -129,7 +145,7 @@ def compute(obstype, aligned, common_pass, cfg):
     '<experiment>/<name>' to the array to store, ``scalars`` maps
     experiment to the regression fits (they go into the cycle JSON).
     """
-    deg = bin_deg(cfg)
+    deg = bin_deg(cfg, obstype)
     arrays, scalars = {}, {}
     for name, s in aligned.items():
         lat = s.meta.get('latitude')
