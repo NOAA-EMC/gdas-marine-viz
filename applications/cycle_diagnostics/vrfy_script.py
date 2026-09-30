@@ -90,11 +90,11 @@ eva_letkf_plots = os.getenv('EVA_LETKF_PLOTS', 'OFF').upper() == 'ON'
 legacy = os.getenv('LEGACY', 'false').lower() == 'true'
 
 
-def drop_legacy_vars(variables_horiz):
-    # older experiments don't have these ice increment/analysis variables
+def ice_thickness_vars(hi_bounds, hs_bounds):
+    # legacy experiments name these hi_h/hs_h; current ones name them hi_div_aice_h/hs_div_aice_h
     if legacy:
-        return {k: v for k, v in variables_horiz.items() if k not in ('hi_div_aice_h', 'hs_div_aice_h')}
-    return variables_horiz
+        return {'hi_h': hi_bounds, 'hs_h': hs_bounds}
+    return {'hi_div_aice_h': hi_bounds, 'hs_div_aice_h': hs_bounds}
 
 
 # output directory
@@ -117,9 +117,8 @@ if plot_analysis:
                               vrfyout=os.path.join(vrfyout, 'vrfy', 'ana')),   # ocean surface analysis
                    plotConfig(grid_file=grid_file,
                               data_file=os.path.join(com_ice_analysis, f'{RUN}.t' + cyc + 'z.jedi_analysis.a006.nc'),
-                              variables_horiz=drop_legacy_vars({'aice_h': [0.0, 1.0],
-                                                                'hi_div_aice_h': [0.0, 4.0],
-                                                                'hs_div_aice_h': [0.0, 0.5]}),
+                              variables_horiz={'aice_h': [0.0, 1.0],
+                                               **ice_thickness_vars([0.0, 4.0], [0.0, 0.5])},
                               colormap='jet',
                               projs=['North', 'South', 'Global'],
                               vrfyout=os.path.join(vrfyout, 'vrfy', 'ana'))]   # sea ice analysis
@@ -163,9 +162,8 @@ if plot_parametric_b:
     config_bkgerr = [plotConfig(grid_file=grid_file_bkgerr,
                                 data_file=os.path.join(comout, os.path.pardir, os.path.pardir,
                                                        'bmatrix', 'ice', f'{RUN}.t' + cyc + 'z.ice.bkgerr_stddev.nc'),
-                                variables_horiz=drop_legacy_vars({'aice_h': [0.0, 0.3],
-                                                                  'hi_div_aice_h': [0.0, 2.0],
-                                                                  'hs_div_aice_h': [0.0, 0.2]}),
+                                variables_horiz={'aice_h': [0.0, 0.3],
+                                                 **ice_thickness_vars([0.0, 2.0], [0.0, 0.2])},
                                 colormap='gist_ncar',
                                 projs=['North', 'South', 'Global'],
                                 vrfyout=os.path.join(vrfyout, 'vrfy', 'bkgerr')),   # sea ice bkgerr stddev
@@ -379,9 +377,8 @@ if plot_increment:
                    plotConfig(grid_file=grid_file,
                               data_file=os.path.join(com_ice_analysis, f'{RUN}.t' + cyc + 'z.jedi_increment.i006.nc'),
                               lats=np.arange(-60, 60, 10),
-                              variables_horiz=drop_legacy_vars({'aice_h': [-0.2, 0.2],
-                                                                'hi_div_aice_h': [-0.5, 0.5],
-                                                                'hs_div_aice_h': [-0.1, 0.1]}),
+                              variables_horiz={'aice_h': [-0.2, 0.2],
+                                               **ice_thickness_vars([-0.5, 0.5], [-0.1, 0.1])},
                               colormap='seismic',
                               projs=['North', 'South'],
                               vrfyout=os.path.join(vrfyout, 'vrfy', 'incr'))]   # sea ice increment
