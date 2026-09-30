@@ -7,8 +7,9 @@ once for every cached cycle pooled ('all'):
     figs/obsbins_map_<type>[_<cycle>|_all].png
         one row per statistic (obs count, mean O-B, RMS O-B, mean O-A,
         RMS O-A, assigned and effective obs error, RMS(O-B) over each),
-        one column per experiment -- on the 1-degree bins compute_cycle.py
-        wrote. Ice types are drawn polar.
+        one column per experiment -- on the bins compute_cycle.py wrote
+        (1 degree, 3 for the in situ types; the spacing is read back from
+        the stored array's shape). Ice types are drawn polar.
     figs/obsbins_reg_<type>[_<cycle>|_all].png
         observation against background and against analysis, as a log-
         density histogram with the 1:1 line and the least-squares fit.
@@ -398,6 +399,10 @@ def draw(which, split, names, cycles, cfg, lims, deg):
         exps = split[obstype]
         lim = lims.get(obstype) or {'mean': 1.0, 'rms': 1.0}
         short = P.short(obstype)
+        # the spacing this type was binned at, from what is stored
+        ny = next((e['map/n'].shape[0] for e in exps.values()
+                   if 'map/n' in e), None)
+        deg = B.deg_of(ny) if ny else B.bin_deg(cfg, obstype)
         # every depth, then -- for the profile types -- one map per layer
         views = ['map'] + sorted({rest.split('/', 1)[0] for e in exps.values()
                                   for rest in e if rest.startswith('map_')},

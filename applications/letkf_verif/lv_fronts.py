@@ -58,6 +58,12 @@ GRID_STEP_DEG = 0.125
 # weakest experiment, which flattered exactly the run that needed flattering.
 EQUATOR_MASK_DEG = 2.0
 
+# Gaussian sigma, in working-grid cells (0.125 deg), of the height the SSH
+# figure draws its streamlines and contours from: ~0.5 deg. The raw gradient
+# of a bilinearly regridded field is too noisy to integrate or contour; the
+# strong-current mask and every metric keep the unsmoothed field.
+SSH_SMOOTH_SIGMA = 4
+
 
 def _regions(spec):
     """Validate and normalize ``frontal_analysis.regions``."""
@@ -240,6 +246,15 @@ def geostrophic(eta, lat, lon):
             G / coriolis * np.gradient(eta, axis=1) / dx)
 
 
+def smooth(field, sigma=SSH_SMOOTH_SIGMA):
+    """NaN-aware Gaussian smoothing: land and gaps neither leak in nor grow."""
+    ok = np.isfinite(field)
+    out = (gaussian_filter(np.where(ok, field, 0.0), sigma)
+           / np.maximum(gaussian_filter(ok.astype(float), sigma), 1e-6))
+    out[~ok] = np.nan
+    return out
+
+
 def strong_mask(speed, threshold):
     """Finite speed cells meeting a shared absolute current threshold."""
     return np.isfinite(speed) & (speed >= threshold)
@@ -329,7 +344,13 @@ def run(cfg, regions, cycle, experiment_names=None):
                                    grid['lat'], grid['lon'], tlat, tlon)
                        for key, experiment in experiments.items()})
         speed, strong, components = {}, {}, {}
+        ssh, flow = {}, {}
         for key, eta in fields.items():
+            # For the SSH figure: height with its box mean removed (ADT and
+            # ave_ssh have different reference levels; the flow only sees
+            # gradients) and the geostrophic flow of the smoothed height.
+            ssh[key] = smooth(eta) - np.nanmean(eta)
+            flow[key] = geostrophic(ssh[key], tlat, tlon)
             ug, vg = geostrophic(eta, tlat, tlon)
             speed[key] = np.hypot(ug, vg)
             strong[key] = strong_mask(speed[key], region['strong_speed_mps'])
@@ -355,7 +376,7 @@ def run(cfg, regions, cycle, experiment_names=None):
         results[name] = dict(
             cfg=region, tlat=tlat, tlon=tlon, offsets=offsets,
             speed=speed, strong_mask=strong, axes=axes, peaks=peaks,
-            profiles=profiles, sst=sst)
+            profiles=profiles, sst=sst, ssh=ssh, flow=flow)
     return results
 
 

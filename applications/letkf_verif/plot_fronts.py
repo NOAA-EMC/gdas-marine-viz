@@ -14,6 +14,10 @@ Writes straight into cfg['figs'], the way the other stages do:
                                    cycle; boxes of DENSITY_AREA_DEG2 or more
                                    (the Global box) get the coarse density
                                    view instead of an outline -- density_map()
+    figs/front_ssh_<slug>[_<cycle>].png
+                                   the box's sea surface height, Copernicus
+                                   beside each analysis, with geostrophic
+                                   streamlines (contours for the Global box)
     figs/front_sst_<slug>[_<cycle>].png
                                    the box's SST: OSTIA beside each analysis,
                                    with the strong-current outlines
@@ -32,7 +36,9 @@ The method, its assumptions and its caveats live in lv_fronts.py.
 """
 
 import argparse
+import contextlib
 import csv
+import io
 import os
 import sys
 import time
@@ -47,6 +53,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cartopy.crs as ccrs  # noqa: E402
 import cartopy.feature as cfeature  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.colors import LinearSegmentedColormap  # noqa: E402
 from matplotlib.transforms import ScaledTranslation  # noqa: E402
 import lv_fronts as LF  # noqa: E402
 import lv_verif as LV  # noqa: E402
@@ -70,6 +77,15 @@ DENSITY_BLOCK_DEG = 2.0
 # is the shared reference on every panel, not one series among several.
 STYLE = {'copernicus': dict(color='#101010', label='Copernicus L4'),
          'ostia': dict(color='#101010', label='OSTIA')}
+
+# SSH figure. Streamlines go from thin light grey to thick black as speed
+# rises to STREAM_TOP_FACTOR x the region's threshold. Drawing time grows
+# with STREAM_DENSITY (~20 s for the Gulf Stream box at 2). The Global box
+# gets height contours at GLOBAL_CONTOUR_M instead.
+STREAM_CMAP = LinearSegmentedColormap.from_list('stream', ['#9a9a9a', '#000000'])
+STREAM_DENSITY = 2
+STREAM_TOP_FACTOR = 2.5
+GLOBAL_CONTOUR_M = 0.25
 
 
 def _keys(result, labels):
@@ -302,6 +318,81 @@ def sst_map(name, result, figs, cycle, labels, tag=''):
     return path
 
 
+def ssh_map(name, result, figs, cycle, labels, tag=''):
+    """The region's sea surface height with its geostrophic streamlines.
+
+    Copernicus L4 ADT beside each analysis, box mean removed, on one shared
+    scale. Streamlines of geostrophic flow ARE height contours, so a box that
+    gets streamlines draws no separate contours; their width and darkness
+    scale with speed so the jet stands out and the eddy field recedes. The
+    Global box gets contours instead, for the reason density_map() gives
+    for its outlines: at that scale streamlines are unreadable.
+    """
+    ssh = result.get('ssh') or {}
+    keys = [k for k in _keys(result, labels) if k in ssh]
+    if not keys:
+        return None
+    stacked = np.concatenate([np.abs(ssh[k][np.isfinite(ssh[k])])
+                              for k in keys])
+    if not stacked.size:
+        return None
+    lim = float(np.nanpercentile(stacked, 99))
+    streams = not uses_density_view(result['cfg'])
+    top = STREAM_TOP_FACTOR * result['cfg']['strong_speed_mps']
+    ncol = min(3, len(keys))
+    nrow = int(np.ceil(len(keys) / ncol))
+    figure = plt.figure(figsize=(5.0 * ncol, 4.2 * nrow))
+    pm = None
+    for index, key in enumerate(keys):
+        axis = figure.add_subplot(nrow, ncol, index + 1,
+                                  projection=ccrs.PlateCarree())
+        pm = axis.pcolormesh(result['tlon'], result['tlat'], ssh[key],
+                             cmap=DIVERGING, vmin=-lim, vmax=lim,
+                             shading='auto', transform=ccrs.PlateCarree(),
+                             rasterized=True)
+        if streams:
+            ug, vg = result['flow'][key]
+            speed = np.hypot(ug, vg)
+            frac = np.clip(speed / top, 0, 1)
+            axis.streamplot(result['tlon'], result['tlat'], ug, vg,
+                            density=STREAM_DENSITY, color=speed,
+                            cmap=STREAM_CMAP, norm=plt.Normalize(0, top),
+                            linewidth=.3 + 1.9 * frac, arrowsize=.6,
+                            transform=ccrs.PlateCarree(), zorder=5)
+        else:
+            levels = np.arange(-np.ceil(lim / GLOBAL_CONTOUR_M),
+                               np.ceil(lim / GLOBAL_CONTOUR_M) + 1) \
+                * GLOBAL_CONTOUR_M
+            axis.contour(result['tlon'], result['tlat'], ssh[key],
+                         levels=levels, colors='#555', linewidths=.4,
+                         transform=ccrs.PlateCarree(), zorder=5)
+        finite = np.isfinite(ssh[key])
+        corner = ('%.2f to %.2f m'
+                  % (np.nanpercentile(ssh[key], 1),
+                     np.nanpercentile(ssh[key], 99))
+                  if np.any(finite) else 'no data')
+        _finish_panel(axis, result, _label(key, labels), corner)
+    for index in range(len(keys), nrow * ncol):
+        figure.add_subplot(nrow, ncol, index + 1).axis('off')
+    _colorbar(figure, pm, [.14, .075, .72, .022],
+              'sea surface height minus box mean  (m)')
+    smooth_deg = LF.SSH_SMOOTH_SIGMA * LF.GRID_STEP_DEG
+    _headline(figure, '%s: sea surface height and geostrophic currents' % name,
+              'Cycle %s. Copernicus L4 ADT beside each analysis, box mean '
+              'removed, smoothed over %.1f$^\\circ$; %s.'
+              % (cycle, smooth_deg,
+                 'streamlines: geostrophic flow, width and darkness '
+                 'growing with speed up to %.2f m s$^{-1}$' % top
+                 if streams else
+                 'contours every %.2f m' % GLOBAL_CONTOUR_M))
+    figure.subplots_adjust(left=.05, right=.985, bottom=.16, top=.80,
+                           wspace=.12, hspace=.20)
+    path = os.path.join(figs, 'front_ssh_%s%s.png' % (slug(name), tag))
+    figure.savefig(path, dpi=125, bbox_inches='tight', facecolor='white')
+    plt.close(figure)
+    return path
+
+
 def strong_current_map(name, result, figs, cycle, labels, tag=''):
     """One multi-panel strong-current footprint figure for a current region.
 
@@ -411,6 +502,63 @@ def profiles(results, figs, cycle, labels, ncol=2, tag=''):
     return path
 
 
+# Shared with forked workers: set once in main() before the pool is created.
+_SHARED = {}
+
+
+def _cycle_key(cfg, regions, present_c, cycle, tag):
+    """The Fresh inputs and params of one cycle's figures."""
+    inputs = [LV.product_path(cfg, 'adt', cycle),
+              LV.product_path(cfg, 'sst', cycle), cfg['grid']] + [
+        e.analysis(cycle) for e in cfg['experiments'] if e.name in present_c]
+    return inputs, {'regions': sorted(regions), 'tag': tag}
+
+
+def _draw_cycle(cfg, regions, present_c, cycle, tag, names, labels, figs,
+                single):
+    """Every figure of one cycle; returns (paths written, metric rows)."""
+    results = LF.run(cfg, regions, cycle, present_c)
+    cycle_rows = LF.metrics(results, names)
+    if single:
+        LF.print_metrics(cycle_rows)
+    new = [strong_current_map(name, result, figs, cycle, labels, tag)
+           for name, result in results.items()]
+    new += [ssh_map(name, result, figs, cycle, labels, tag)
+            for name, result in results.items()]
+    new += [sst_map(name, result, figs, cycle, labels, tag)
+            for name, result in results.items()]
+    new.append(profiles(results, figs, cycle, labels, tag=tag))
+    return ([p for p in new if p],
+            [dict(cycle=cycle, **row) for row in cycle_rows])
+
+
+def _cycle_worker(task):
+    """One cycle in a worker; returns its log, Fresh records and rows.
+
+    Output is captured rather than printed so parallel cycles do not
+    interleave their lines.
+    """
+    cycle, tag = task
+    sh = _SHARED
+    fresh = Fresh(sh['cfg'], 'fronts', force=sh['force'], script=__file__)
+    buf = io.StringIO()
+    new, cycle_rows = [], []
+    with contextlib.redirect_stdout(buf):
+        t_cycle = time.time()
+        try:
+            new, cycle_rows = _draw_cycle(
+                sh['cfg'], sh['regions'], sh['present'][cycle], cycle, tag,
+                sh['names'], sh['labels'], sh['figs'], False)
+            inputs, params = _cycle_key(sh['cfg'], sh['regions'],
+                                        sh['present'][cycle], cycle, tag)
+            fresh.record('cycle:%s' % cycle, inputs, params, new)
+            print('  %s: %d figure(s) in %.1fs'
+                  % (cycle, len(new), time.time() - t_cycle))
+        except Exception as e:                      # keep the pool alive
+            print('  ! %s failed: %s: %s' % (cycle, type(e).__name__, e))
+    return cycle, buf.getvalue(), fresh.new, cycle_rows, new
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     ap.add_argument('config', nargs='?', default=None,
@@ -435,6 +583,9 @@ def main(argv=None):
                     help='subset of configured current names')
     ap.add_argument('--force', action='store_true',
                     help='redraw cycles whose inputs have not changed')
+    ap.add_argument('--jobs', type=int, default=1,
+                    help='cycles to draw in parallel (forked worker '
+                         'processes, one cycle each)')
     a = ap.parse_args(argv)
     a.config = a.config or a.config_opt
     t_all = time.time()
@@ -500,32 +651,46 @@ def main(argv=None):
 
     fresh = Fresh(cfg, 'fronts', force=a.force, script=__file__)
     written, rows = [], []
+    # Fresh checks stay in the parent, so an up-to-date cycle never reaches
+    # a worker and the skipped count is the parent's own.
+    pending = []
     for c in available:
-        t_cycle = time.time()
         tag = '_%s' % c if len(available) > 1 else ''
-        inputs = [LV.product_path(cfg, 'adt', c), LV.product_path(cfg, 'sst', c),
-                  cfg['grid']] + [
-            e.analysis(c) for e in cfg['experiments'] if e.name in present[c]]
-        params = {'regions': sorted(regions), 'tag': tag}
+        inputs, params = _cycle_key(cfg, regions, present[c], c, tag)
         if fresh.ok('cycle:%s' % c, inputs, params):
             print('  %s: up to date, skipped' % c, flush=True)
             # its metric rows are kept from the recorded csv, see below
             continue
-        results = LF.run(cfg, regions, c, present[c])
-        cycle_rows = LF.metrics(results, names)
-        if len(available) == 1:
-            LF.print_metrics(cycle_rows)
-        rows += [dict(cycle=c, **row) for row in cycle_rows]
-        new = [strong_current_map(name, result, figs, c, labels, tag)
-               for name, result in results.items()]
-        new += [sst_map(name, result, figs, c, labels, tag)
-                for name, result in results.items()]
-        new.append(profiles(results, figs, c, labels, tag=tag))
-        new = [p for p in new if p]
-        written += new
-        print('  %s: %d figure(s) in %.1fs'
-              % (c, len(new), time.time() - t_cycle), flush=True)
-        fresh.record('cycle:%s' % c, inputs, params, new)
+        pending.append((c, tag))
+    single = len(available) == 1
+    jobs = max(1, min(a.jobs, len(pending)))
+    if pending:
+        print('drawing %d cycle(s), %d-way' % (len(pending), jobs), flush=True)
+    if jobs == 1:
+        for c, tag in pending:
+            t_cycle = time.time()
+            new, cycle_rows = _draw_cycle(cfg, regions, present[c], c, tag,
+                                          names, labels, figs, single)
+            rows += cycle_rows
+            written += new
+            print('  %s: %d figure(s) in %.1fs'
+                  % (c, len(new), time.time() - t_cycle), flush=True)
+            inputs, params = _cycle_key(cfg, regions, present[c], c, tag)
+            fresh.record('cycle:%s' % c, inputs, params, new)
+    else:
+        from concurrent.futures import ProcessPoolExecutor
+        # Workers are forked after this, so they inherit cfg (and its
+        # experiment objects) rather than having them pickled per task.
+        _SHARED.update(cfg=cfg, regions=regions, present=present,
+                       names=names, labels=labels, figs=figs, force=a.force)
+        with ProcessPoolExecutor(max_workers=jobs) as ex:
+            for c, log, records, cycle_rows, new in ex.map(_cycle_worker,
+                                                           pending):
+                if log.strip():
+                    print(log.rstrip(), flush=True)
+                fresh.merge(records)
+                rows += cycle_rows
+                written += new
     # The metrics csv is rewritten whole: rows for skipped cycles are carried
     # over from the previous file so a partial redraw does not lose them.
     csv_path = os.path.join(cfg['outdir'], 'front_metrics.csv')

@@ -124,7 +124,7 @@ Everything lands under `--outdir`.
 | `grid:` | soca gridspec, or a ~7 MB slim copy made by `make_gridfile.py` |
 | `regions:` | Named lat/lon boxes for the regional profiles; `global` is always included |
 | `verification:` | One directory per gridded product — they come from unrelated archives, so each names its own. `adt`, `sss`, `sst` and `icec` (OSTIA sea-ice fraction against `aice_h`); an experiment with no ocean history is scored for SST/SSS from the `sst_h`/`sss_h` in its sea-ice history |
-| `obs_bins:` | `deg` (bin spacing), `limits` (colour-scale bounds per obs type or prefix), `layers` (depth layers the profile types' maps are also binned in; default 0–10 m, 0–300 m, 300 m–bottom) for the binned departures (section 09) |
+| `obs_bins:` | `deg` (bin spacing), `insitu_deg` (the in situ types' spacing, never finer than `deg`; default 3), `limits` (colour-scale bounds per obs type or prefix), `layers` (depth layers the profile types' maps are also binned in; default 0–10 m, 0–300 m, 300 m–bottom) for the binned departures (section 09) |
 | `frontal_analysis:` | Optional ADT-gradient diagnostic for the `--hours` cycles; configures current boxes and shared absolute speed thresholds. Each experiment also needs `analysis_pattern:` for its written ocean analysis state. |
 | `depth_max:` | Cut every depth panel at N metres; a view setting, so it needs no recompute |
 | `sections:` | `zonal` latitudes and `meridional` longitudes to cut vertical sections of the increment and background along. A zonal line is one grid row, a true latitude circle only to ~64&deg;N; anything above 65&deg;N is drawn but flagged by `preflight.py`, by `plot_statespace.py` and on the panel |
