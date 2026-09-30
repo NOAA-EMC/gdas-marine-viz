@@ -49,8 +49,10 @@ def plotConfig(grid_file=[],
         'Temp': 'deg C',
         'Salt': 'psu',
         'aice_h': 'unitless',
-        'hi_h': 'meter',
-        'hs_h': 'meter',
+        'hi_h': 'meter',        # CICE history files (background)
+        'hs_h': 'meter',        # CICE history files (background)
+        'hi_div_aice_h': 'meter',  # JEDI/SOCA analysis and increment files
+        'hs_div_aice_h': 'meter',  # JEDI/SOCA analysis and increment files
         'u': 'm/s',
         'v': 'm/s'
     }
