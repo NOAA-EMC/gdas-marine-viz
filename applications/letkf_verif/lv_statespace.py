@@ -6,16 +6,63 @@ time (12 MB per read) and reduced immediately. Nothing here ever holds a whole
 """
 
 import contextlib
+import glob
 import os
 
 import numpy as np
 from netCDF4 import Dataset
 
 import lv_common
+import lv_restart
 import lv_verif
 import lv_woa
 
 EARTH_R = 6371.0e3
+
+
+class _MergedDataset:
+    """Several netCDF files read as one: a MOM6 restart splits the state
+    over MOM.res.nc (Temp, Salt, h, u) and MOM.res_N.nc (v, ave_ssh, ...).
+    Only what the readers here use -- ``ds[var]`` and ``ds.variables`` --
+    with the first file that has a name winning."""
+
+    def __init__(self, paths, drop=()):
+        self._ds = [Dataset(p) for p in paths]
+        self.variables = {}
+        for ds in self._ds:
+            for name, var in ds.variables.items():
+                if name not in drop:
+                    self.variables.setdefault(name, var)
+
+    def __getitem__(self, name):
+        return self.variables[name]
+
+    def close(self):
+        for ds in self._ds:
+            ds.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
+# Restart variables that share a history name but not its meaning: the
+# restart's MLD is ePBL's active mixing layer, the history's is the
+# delta-rho = 0.125 mixed layer. Hidden, so the field is absent rather than
+# silently different.
+RESTART_HIDE = ('MLD',)
+
+
+def open_dataset(path):
+    """netCDF4.Dataset, or for a MOM6 restart ('*MOM.res.nc') the restart
+    and its MOM.res_N.nc siblings merged into one view."""
+    if path.endswith('MOM.res.nc'):
+        stem = path[:-len('.nc')]
+        extra = sorted(glob.glob(stem + '_[0-9]*.nc'))
+        return _MergedDataset([path] + extra, drop=RESTART_HIDE)
+    return Dataset(path)
 
 
 def _levels(ds, var):
@@ -287,7 +334,7 @@ def depth_from_h(grid, path, stride=4):
     """
     if path is None:
         return None
-    with Dataset(path) as ds:
+    with open_dataset(path) as ds:
         if 'h' not in ds.variables:
             return None
         nk = _levels(ds, 'h')
@@ -411,7 +458,7 @@ def open_source(src, varmap=None):
     elif hasattr(src, 'level'):
         yield src
     else:
-        with Dataset(src) as ds:
+        with open_dataset(src) as ds:
             yield FileSource(ds, varmap)
 
 
@@ -697,7 +744,7 @@ def section_geometry(grid, hpath, lines, stride=2):
         axes['x_%s' % key] = x
     if hpath is None:
         return axes, wet
-    with Dataset(hpath) as ds:
+    with open_dataset(hpath) as ds:
         if 'h' not in ds.variables:
             return axes, wet
         nk = _levels(ds, 'h')
@@ -948,7 +995,7 @@ def woa_block(grid, cfg, cycle, bkg, exp, model_depth, regions, blevels,
 
     fields, wlat, wlon, info = lv_woa.build(entry, cycle, model_depth, wvars)
     out = {'has_woa': True, 'woa': info}
-    with Dataset(bkg) as ds:
+    with open_dataset(bkg) as ds:
         bsrc = FileSource(ds, exp.varmap)
         # wetness always from the MODEL's own layer thickness: below the sea
         # floor MOM6 writes zeros while WOA still has a climatological value,
@@ -1005,6 +1052,22 @@ def compute(grid, exp, cycle, cfg):
         post = exp.ensvar(cycle, realm, 'post')
         an = exp.ensvar(cycle, realm, 'an')
         bkg = exp.background(cycle, realm)
+        # No history to read: the nearest restart stands in for the
+        # background STATE figures (maps, profiles, sections, WOA, the depth
+        # axis). `bkg` itself stays None, so the verification scores below
+        # keep reading exactly what they did.
+        # The restart is on the native hybrid layers, so it is read through
+        # a z-level copy on the analysis file's levels (lv_restart), built
+        # once per restart and shared by every cycle that falls back on it.
+        rst = (exp.background_restart(cycle, realm)
+               if bkg is None and realm == 'ocean' else None)
+        if rst is not None:
+            ana = exp.analysis(cycle, realm)
+            zpath = (lv_restart.remapped(
+                rst[0], ana, os.path.join(cfg['cache'], 'restart_z', exp.name))
+                if ana is not None else None)
+            rst = (zpath,) + tuple(rst[1:]) if zpath else None
+        state_bkg = bkg if bkg is not None else (rst[0] if rst else None)
 
         r = {'has_increment': incr is not None,
              'has_ensvar': prior is not None and post is not None,
@@ -1012,11 +1075,12 @@ def compute(grid, exp, cycle, cfg):
              # cache written before the post-inflation file existed still
              # reads correctly
              'has_an_ensvar': an is not None,
-             'has_background': bkg is not None}
+             'has_background': state_bkg is not None}
 
         # -- background --------------------------------------------------
         bv = bvars.get(realm, [])
-        if bkg is not None and bv:
+        if state_bkg is not None and bv:
+            bkg_saved, bkg = bkg, state_bkg
             # Hoisted above the reducers: the WOA climatology is placed on
             # this axis, so it has to exist before anything below runs. It is
             # a pure read of h and depends on nothing here.
@@ -1040,6 +1104,12 @@ def compute(grid, exp, cycle, cfg):
             if realm == 'ocean':
                 r.update(woa_block(grid, cfg, cycle, bkg, exp, res.get('depth'),
                                    regions, blevels, lines, stride, maps))
+            if rst is not None:
+                r['bkg_fallback'] = 'restart'
+                r['bkg_valid'] = rst[1]
+                r['bkg_offset_hours'] = rst[2]
+                r['bkg_cycle'] = rst[1]
+            bkg = bkg_saved
         elif realm == 'ocean' and bv:
             # No ocean/history to read Temp/Salt from at all (e.g. 3dvar-rt,
             # which only archives ice/history) -- CICE's coupled history
@@ -1107,7 +1177,7 @@ def compute(grid, exp, cycle, cfg):
         # axis, so only the x coordinate is written and the plot layer falls
         # back to the level index.
         if realm == 'ocean' and lines:
-            axes, wet = section_geometry(grid, bkg, lines, stride)
+            axes, wet = section_geometry(grid, state_bkg, lines, stride)
             for k, v in axes.items():
                 maps['ocean/sec/%s' % k] = v
             # The increment carries no usable thickness of its own, so it is
@@ -1118,8 +1188,9 @@ def compute(grid, exp, cycle, cfg):
                 m = wet.get(k.rpartition('_')[2])
                 maps['ocean/incr_sec/%s' % k] = (
                     v if m is None else np.where(m, v, np.nan).astype('f4'))
-            if bkg is not None and bv:
-                for k, v in section_planes(grid, bkg, bv, lines, exp.varmap,
+            if state_bkg is not None and bv:
+                for k, v in section_planes(grid, state_bkg, bv, lines,
+                                           exp.varmap,
                                            stride, wet_mask=True).items():
                     maps['ocean/bkg_sec/%s' % k] = v
         for k, v in spread_reduction_maps(grid, prior, post, variables,

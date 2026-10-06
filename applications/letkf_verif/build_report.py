@@ -472,16 +472,34 @@ def obstype_dropdown_widget(cycles, figs, base, label, cfg=None):
         # actually has files for.
         stem = os.path.join(figs, '%s_type_%s_region_' % (base, P.slug(t)))
         regs = sorted(f[len(stem):-4] for f in glob.glob(stem + '*.png'))
-        if not regs:
+        # Profile types also have one per depth layer
+        # (obsfit_type_<type>_layer_<slug>.png, lv_obsbins.layers), as
+        # chips between 'global' and the regions, in the configured order.
+        lstem = os.path.join(figs, '%s_type_%s_layer_' % (base, P.slug(t)))
+        layers = ['layer:' + B.layer_slug(lo, hi)
+                  for lo, hi in B.layers(cfg or {})
+                  if os.path.exists('%s%s.png' % (lstem, B.layer_slug(lo, hi)))]
+        if not regs and not layers:
             return whole
+
+        def chip(r):
+            if r.startswith('layer:'):
+                return ('%s to bottom' % r[6:].replace('m-bottom', ' m')
+                        if r.endswith('bottom') else r[6:-1] + ' m')
+            return r.replace('_', ' ')
+
+        def panel_r(r):
+            if r == 'global':
+                return whole
+            path_r = ('%s%s.png' % (lstem, r[6:]) if r.startswith('layer:')
+                      else '%s%s.png' % (stem, r))
+            return img(path_r, '%s, %s: %s' % (P.short(t), chip(r), label),
+                       optional=True)
+
         basin_color = basin_colors(cfg) if cfg else {}
         return picker_widget(
-            '%s-%s' % (base, P.slug(t)), ['global'] + regs,
-            label_fn=lambda r: r.replace('_', ' '),
-            panel_fn=lambda r: whole if r == 'global' else img(
-                '%s%s.png' % (stem, r),
-                '%s, %s: %s' % (P.short(t), r.replace('_', ' '), label),
-                optional=True),
+            '%s-%s' % (base, P.slug(t)), ['global'] + layers + regs,
+            label_fn=chip, panel_fn=panel_r,
             style_fn=lambda r: _basin_chip_style(basin_color, r))
 
     return picker_widget(base, types, label_fn=P.short, panel_fn=panel,
@@ -1884,7 +1902,10 @@ values over the cycles each experiment has cached. <b>Regions</b> in the
 time-series picker are the basins of <code>ocean_basin_mask</code> and the
 <code>regions:</code> boxes from the config, selected by observation
 latitude/longitude; ice types are split NH/SH. <b>Profile</b> types (Argo,
-gliders, moorings) are also binned in depth (<code>depth_bins:</code>), and
+gliders, moorings) are also binned in depth (<code>depth_bins:</code>): the
+time series has a chip per depth layer (0&ndash;10&nbsp;m, 0&ndash;300&nbsp;m,
+300&nbsp;m to the bottom; <code>obs_bins.layers</code>), pooled exactly from
+those bins, and
 the profile figure draws RMS(O&minus;B) per bin against
 &radic;(&sigma;<sub>b</sub><sup>2</sup>&nbsp;+&nbsp;R<sup>2</sup>), where
 &sigma;<sub>b</sub> is the prior ensemble spread in observation space (zero

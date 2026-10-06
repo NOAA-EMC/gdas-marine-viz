@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import matplotlib.pyplot as plt  # noqa: E402
 import lv_plot as P  # noqa: E402
 import lv_atmos as LA  # noqa: E402
+import lv_obsbins as B  # noqa: E402
 import lv_verif as LV  # noqa: E402
 from lv_common import Fresh, Grid, load_config, region_list  # noqa: E402
 
@@ -83,6 +84,55 @@ def region_strata(cycles, obstype, sample):
                 if st != 'all' and 'depth_' not in st and st not in seen:
                     seen.append(st)
     return seen
+
+
+def layer_bins(cycles, obstype, sample, lo, hi):
+    """The cached global depth-bin strata ('depth_<a>_<b>') that tile the
+    layer [lo, hi), or None when they do not -- a layer edge that is not a
+    `depth_bins:` edge gives no figure rather than a wrong one. A layer
+    reaching past the deepest bin (hi = 12000 for 'to the bottom') takes
+    every bin from lo down."""
+    bins = set()
+    for c in cycles:
+        blk = cycles[c].get('obs', {}).get(obstype, {}).get(sample, {})
+        for per_exp in blk.values():
+            bins.update(st for st in (per_exp or {})
+                        if st.startswith('depth_'))
+    edges = sorted((float(a), float(b), st) for st in bins
+                   for a, b in [st[len('depth_'):].split('_')])
+    inside = [(a, b, st) for a, b, st in edges if a >= lo and b <= hi
+              or a >= lo and b > hi and hi >= 10000]
+    if not inside or inside[0][0] != lo:
+        return None
+    for (_a0, b0, _s0), (a1, _b1, _s1) in zip(inside, inside[1:]):
+        if a1 != b0:
+            return None
+    if hi < 10000 and inside[-1][1] != hi:
+        return None
+    return [st for _a, _b, st in inside]
+
+
+def _pooled_series(cycles, obstype, name, key, sample, bins):
+    """_series over the union of depth bins, pooled exactly from each bin's
+    count: means weight by n, RMS values pool their mean squares."""
+    out = []
+    for c in sorted(cycles):
+        blk = P.get(cycles[c].get('obs', {}).get(obstype, {}), sample, name,
+                    default=None) or {}
+        num = den = 0.0
+        for st in bins:
+            m = blk.get(st) or {}
+            n, v = m.get('n') or 0, m.get(key)
+            if not n or v is None or not np.isfinite(v):
+                continue
+            num += n * (v * v if key.endswith('_rms') else v)
+            den += n
+        if not den:
+            out.append(np.nan)
+        else:
+            out.append(np.sqrt(num / den) if key.endswith('_rms')
+                       else num / den)
+    return np.array(out, dtype='f8')
 
 
 def fig_timeseries(cycles, cfg, obstype, sample='common'):
@@ -279,16 +329,21 @@ def fig_obs_fit(cycles, cfg):
     t = _times(cycles)
     single = len(t) == 1
 
-    def draw(ot, sample, stratum, fname):
-        rms = {n: (_series(cycles, ot, n, 'ombg_rms', sample, stratum),
-                   _series(cycles, ot, n, 'oman_rms', sample, stratum))
+    def draw(ot, sample, stratum, fname, bins=None):
+        # ``bins``: a depth layer, pooled from these cached depth strata;
+        # ``stratum`` is then only its label
+        def series(n, key):
+            if bins:
+                return _pooled_series(cycles, ot, n, key, sample, bins)
+            return _series(cycles, ot, n, key, sample, stratum)
+
+        rms = {n: (series(n, 'ombg_rms'), series(n, 'oman_rms'))
                for n in names}
         # RMS cannot distinguish a run that is scattered from one that is
         # systematically offset, and only the second is a bias the system can
         # be asked to correct -- so the signed mean goes beside it, from the
         # same sample and the same cycles.
-        bias = {n: (_series(cycles, ot, n, 'ombg_mean', sample, stratum),
-                    _series(cycles, ot, n, 'oman_mean', sample, stratum))
+        bias = {n: (series(n, 'ombg_mean'), series(n, 'oman_mean'))
                 for n in names}
         fig, axes = plt.subplots(1, 2, figsize=(11.4, 3.6), squeeze=False)
         ax_r, ax_b = axes[0]
@@ -344,6 +399,20 @@ def fig_obs_fit(cycles, cfg):
         # The same pair per region stratum the cache carries (basins,
         # `regions:` boxes, NH/SH for ice): build_report nests a region
         # picker inside the obs-type menu over these files.
+        # Profile types by depth layer too, the same layers section 09 maps
+        # (lv_obsbins.layers): pooled from the cached depth bins, so every
+        # cached cycle has them without a recompute.
+        for lo, hi in B.layers(cfg):
+            bins = layer_bins(cycles, ot, sample, lo, hi)
+            if not bins:
+                continue
+            label = B.layer_slug(lo, hi).replace('m-bottom', ' m to the bottom')
+            if label.endswith('m') and 'bottom' not in label:
+                label = label[:-1] + ' m'
+            out = draw(ot, sample, label, 'obsfit_type_%s_layer_%s.png'
+                       % (P.slug(ot), B.layer_slug(lo, hi)), bins=bins)
+            if out is not None:
+                written.append(out)
         for st in region_strata(cycles, ot, sample):
             out = draw(ot, sample, st, 'obsfit_type_%s_region_%s.png'
                        % (P.slug(ot), P.slug(st)))

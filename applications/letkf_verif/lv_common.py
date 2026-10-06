@@ -121,6 +121,16 @@ BKG_DEFAULTS = {
                   pattern='*ensmean_prior.nc', offset_hours=0),
 }
 
+# Optional stand-in for an ocean background whose history was never archived
+# (3dvar-rt keeps only a few MOM6 restarts, at 18z every few days): the
+# restart NEAREST in valid time, within max_offset_hours. Set per experiment
+# as `background: {restart: {stem: ..., ...}}`; the stem carries {realm} like
+# the history stem. Only the background state figures read it -- never a
+# verification score or a cycle-to-cycle diagnostic, which a state days away
+# from the cycle would corrupt.
+RESTART_DEFAULTS = dict(pattern='*.MOM.res.nc', max_offset_hours=72,
+                        search_step_hours=6)
+
 # CICE history carries grid-cell-mean thickness; the analysis files carry
 # thickness per unit ice area. Map the former onto the latter so every
 # downstream consumer sees one set of names.
@@ -161,6 +171,8 @@ class Experiment:
         bkg = dict(BKG_DEFAULTS[self.kind])
         bkg.update(d.get('background') or {})
         self.bkg = bkg
+        rst = bkg.get('restart')
+        self.restart = dict(RESTART_DEFAULTS, **rst) if rst else None
         self.varmap = BKG_VARMAP[self.kind]
         ev = dict(ENSVAR_PATTERNS)
         ev.update(d.get('ensvar_patterns') or {})
@@ -230,6 +242,39 @@ class Experiment:
             d = os.path.join(self.dir_for(bc), realm)
         hits = sorted(glob.glob(os.path.join(d, self.bkg['pattern'])))
         return hits[0] if hits else None
+
+    def background_restart(self, cycle, realm='ocean'):
+        """The restart nearest in valid time to ``cycle``, as
+        (path, valid 'YYYYMMDDHH', offset hours valid - cycle), or None.
+
+        Valid time comes from the file name's 'YYYYMMDD.HHMMSS' prefix. On a
+        tie the earlier restart wins: the one after the cycle already holds
+        that cycle's analysis, so it is not a background.
+        """
+        if not self.restart:
+            return None
+        t0 = parse_cycle(cycle)
+        span = float(self.restart['max_offset_hours'])
+        step = float(self.restart['search_step_hours'])
+        best = None
+        n = int(span // step)
+        for i in range(-n - 1, n + 2):
+            dc = (t0 + timedelta(hours=i * step)).strftime(CYCLE_FMT)
+            d = self.dir_for(dc, self.restart['stem'], realm)
+            for path in sorted(glob.glob(os.path.join(
+                    d, self.restart['pattern']))):
+                stamp = os.path.basename(path)[:15]
+                try:
+                    valid = datetime.strptime(stamp, '%Y%m%d.%H%M%S')
+                except ValueError:
+                    valid = parse_cycle(dc)
+                off = (valid - t0).total_seconds() / 3600.0
+                if abs(off) > span:
+                    continue
+                rank = (abs(off), off > 0)
+                if best is None or rank < best[0]:
+                    best = (rank, path, valid.strftime(CYCLE_FMT), off)
+        return None if best is None else best[1:]
 
     # -- state space --------------------------------------------------------
     def increment(self, cycle, realm):

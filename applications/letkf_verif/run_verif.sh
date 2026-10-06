@@ -7,7 +7,7 @@
 #SBATCH --ntasks=256
 ##SBATCH --cpus-per-task=60
 #SBATCH --mem=300GB
-#SBATCH --time=01:20:00
+#SBATCH --time=02:20:00
 #SBATCH --output=slurm-%j.log
 
 # The verification job: precompute + build the LETKF-verif comparison
