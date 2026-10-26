@@ -286,8 +286,7 @@ print('ALL_CYCLES="%s"' % ' '.join(cycles))
 print('EXPS="%s"' % ' '.join(e.name for e in cfg['experiments']))
 print('declare -A CYCLES_FOR')
 for e in cfg['experiments']:
-    on_disk = [c for c in cycles if os.path.isdir(e.dir_for(c))]
-    print('CYCLES_FOR[%s]="%s"' % (e.name, ' '.join(on_disk)))
+    print('CYCLES_FOR[%s]="%s"' % (e.name, ' '.join(cycles)))
 PY
 )" || { echo "!! could not parse $CFG"; exit 1; }
 
