@@ -148,6 +148,9 @@ if [ -n "${SLURM_JOB_ID:-}" ] && command -v srun >/dev/null; then
     # memory (AllocTRES mem=, all nodes together, e.g. "mem=1500G"), or
     # failing that each node's RealMemory
     job_mem=
+    if [ "${SLURM_MEM_PER_NODE:-}" = 0 ]; then
+        unset SLURM_MEM_PER_NODE
+    fi
     if [ -z "${SLURM_MEM_PER_NODE:-}${SLURM_MEM_PER_CPU:-}" ]; then
         job_mem=$(scontrol show job "$SLURM_JOB_ID" | tr ' ' '\n' |
             sed -n 's/^AllocTRES=//p' | tr ',' '\n' | awk -F= '$1 == "mem" {
