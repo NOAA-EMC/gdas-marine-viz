@@ -263,7 +263,7 @@ words() { local list; read -ra list <<<"$1"; echo "${#list[@]}"; }
 # chunk_size <n>: the chunk for splitting n cycles over the nodes -- at most
 # one step's worth of workers, small enough to give every node a share
 chunk_size() {
-    local c=$(( ($1 + NNODE - 1) / NNODE ))
+    local c=$(( $1 / NNODE ))
     [ "$c" -gt "$MAXW" ] && c=$MAXW
     [ "$c" -lt 1 ] && c=1
     echo "$c"
