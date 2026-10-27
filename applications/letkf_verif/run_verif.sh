@@ -37,7 +37,8 @@
 # nodes works; with --exclusive --mem=0 each node is used whole. The batch
 # script itself (yaml parsing, preflight, the report) runs on the first node,
 # which keeps one share back for it. Outside Slurm (no SLURM_JOB_ID) the same
-# work runs on this machine, sized to its cores and memory.
+# work runs on this machine, with concurrent steps held to its core and memory
+# capacity.
 #
 # Parallelism:
 #   stage 1  precompute: every experiment's cycles on disk are split into
@@ -220,6 +221,50 @@ place() {
     PICKED=$best
 }
 
+LOCAL_ACTIVE=() LOCAL_USED=0
+declare -A LOCAL_SHARES LOCAL_STATUS
+
+# Reap completed local steps and return their shares to the pool.
+reap_local() {
+    local running pid rc
+    local still=()
+    running=$(jobs -pr)
+    running=${running//$'\n'/ }
+    for pid in "${LOCAL_ACTIVE[@]}"; do
+        case " $running " in
+            *" $pid "*) still+=("$pid") ;;
+            *)
+                if wait "$pid"; then rc=0; else rc=$?; fi
+                LOCAL_STATUS[$pid]=$rc
+                LOCAL_USED=$(( LOCAL_USED - LOCAL_SHARES[$pid] ))
+                unset 'LOCAL_SHARES[$pid]'
+                ;;
+        esac
+    done
+    LOCAL_ACTIVE=("${still[@]}")
+}
+
+# Wait for a step without losing a status already collected by reap_local.
+wait_child() {
+    local pid=$1 rc
+    if [ "$USE_SRUN" -eq 0 ] && [ "${LOCAL_STATUS[$pid]+present}" ]; then
+        rc=${LOCAL_STATUS[$pid]}
+        unset 'LOCAL_STATUS[$pid]'
+    else
+        if wait "$pid"; then rc=0; else rc=$?; fi
+        if [ "$USE_SRUN" -eq 0 ] && [ "${LOCAL_SHARES[$pid]+present}" ]; then
+            LOCAL_USED=$(( LOCAL_USED - LOCAL_SHARES[$pid] ))
+            unset 'LOCAL_SHARES[$pid]'
+            local still=() active
+            for active in "${LOCAL_ACTIVE[@]}"; do
+                [ "$active" = "$pid" ] || still+=("$active")
+            done
+            LOCAL_ACTIVE=("${still[@]}")
+        fi
+    fi
+    return "$rc"
+}
+
 # launch <log> <workers> <command...>: run the command in the background as
 # one job step on the roomiest node, with <workers> + 1 cores and that many
 # WORKER_GB shares of memory; its pid in LAUNCHED. (The SLURM_MEM_PER_* the
@@ -229,6 +274,13 @@ launch() {
     shift 2
     u=$(( w + 1 ))
     place "$u"
+    if [ "$USE_SRUN" -eq 0 ]; then
+        while :; do
+            reap_local
+            [ $(( LOCAL_USED + u )) -le "${CAP[0]}" ] && break
+            sleep 0.1
+        done
+    fi
     if [ "$USE_SRUN" -eq 1 ]; then
         env -u SLURM_MEM_PER_NODE -u SLURM_MEM_PER_CPU -u SLURM_MEM_PER_GPU \
             srun --nodes=1 --ntasks=1 --exact --cpus-per-task="$u" \
@@ -238,6 +290,11 @@ launch() {
         "$@" > "$log" 2>&1 &
     fi
     LAUNCHED=$!
+    if [ "$USE_SRUN" -eq 0 ]; then
+        LOCAL_ACTIVE+=("$LAUNCHED")
+        LOCAL_SHARES[$LAUNCHED]=$u
+        LOCAL_USED=$(( LOCAL_USED + u ))
+    fi
     echo "   ${NODES[PICKED]}: $w worker(s), $(( u * WORKER_GB )) GB, log: $log"
 }
 
@@ -350,7 +407,7 @@ done
 
 fail=0
 for key in "${!PIDS[@]}"; do
-    if wait "${PIDS[$key]}"; then
+    if wait_child "${PIDS[$key]}"; then
         echo "-- precompute ok: $key"
     else
         echo "!! precompute FAILED: $key -- see $OUT/precompute-${key%.part*}*.log"
@@ -407,8 +464,8 @@ for part in "${parts[@]}"; do
     RPIDS[part$k]=$LAUNCHED
 done
 for key in "${!RPIDS[@]}"; do
-    wait "${RPIDS[$key]}"
-    echo "-- rejoin $key exit code: $?"
+    if wait_child "${RPIDS[$key]}"; then rc=0; else rc=$?; fi
+    echo "-- rejoin $key exit code: $rc"
 done
 
 echo
@@ -434,7 +491,7 @@ for s in $POOLED $SINGLE; do
     SPIDS[$s]=$LAUNCHED
 done
 for s in "${!SPIDS[@]}"; do
-    if wait "${SPIDS[$s]}"; then
+    if wait_child "${SPIDS[$s]}"; then
         echo "-- $s ok"
     else
         echo "!! $s exited non-zero -- see $OUT/page/stage-$s.log (report is still built)"
