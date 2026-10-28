@@ -25,6 +25,10 @@ Cost is dominated by reading the model history. The content integrals run at
 every cycle, because the time series is the one product that wants density;
 the sections subsample to one cycle a day (`section_hour:`), which changes a
 monthly mean by far less than the month-to-month signal it is there to show.
+Each background is reduced on its own and cached one file per cycle, so the
+backgrounds are read `--jobs`-way in parallel and a month that is still
+filling reduces only its new cycles; once a month is complete only its
+monthly mean is kept.
 
 The field averaged is the ocean BACKGROUND valid at each cycle, through
 Experiment.background() -- the same field every other state-space diagnostic
@@ -33,11 +37,12 @@ window.
 
 Run with the gdas-marine-viz venv and OMP_NUM_THREADS=1.
 
-    python3 plot_grep.py experiments.yaml --outdir page
+    python3 plot_grep.py experiments.yaml --outdir page --jobs 16
 """
 
 import argparse
 import csv
+import json
 import os
 import time
 
@@ -74,101 +79,217 @@ def _member_style(member, i):
     return MEMBER_STYLE.get(member, _FALLBACK[i % 3])
 
 
-def _mean(values):
-    """Mean of a list of 2-D arrays, NaN where nothing contributed."""
-    acc, cnt = None, None
-    for v in values:
+class _Mean:
+    """Running mean of 2-D arrays, NaN where nothing contributed.
+
+    Accumulated as the values arrive, so a month of fields is never held at
+    once; the sum is taken in the order given, as _mean() always did.
+    """
+
+    def __init__(self):
+        self.acc, self.cnt = None, None
+
+    def add(self, v):
         ok = np.isfinite(v)
         a = np.where(ok, v, 0.0)
-        acc = a if acc is None else acc + a
-        cnt = ok.astype('i4') if cnt is None else cnt + ok
-    if acc is None:
-        return None
-    with np.errstate(invalid='ignore'):
-        return np.where(cnt > 0, acc / np.maximum(cnt, 1), np.nan)
+        self.acc = a if self.acc is None else self.acc + a
+        self.cnt = ok.astype('i4') if self.cnt is None else self.cnt + ok
+
+    def value(self):
+        if self.acc is None:
+            return None
+        with np.errstate(invalid='ignore'):
+            return np.where(self.cnt > 0, self.acc / np.maximum(self.cnt, 1),
+                            np.nan)
+
+
+def _mean(values):
+    """Mean of a list of 2-D arrays, NaN where nothing contributed."""
+    m = _Mean()
+    for v in values:
+        m.add(v)
+    return m.value()
 
 
 # --------------------------------------------------------------------------
-# the model side, one month
+# the model side: one cycle, and a month from its cycles
 # --------------------------------------------------------------------------
 
-def model_month(cfg, entry, exp, grid, cycles, lines, uv_lines,
-                stride, log, floor=None):
-    """Monthly reduction of one experiment: content, sections, level maps.
-
-    Returns (data, rows, slrows). ``rows`` is the per-cycle region series
-    that feeds the time series and the csv; ``slrows`` the per-cycle global
-    sea level, empty without ``floor``; ``data`` holds the monthly means.
-
-    Reduced cycle by cycle and accumulated: a monthly mean of the full 3-D
-    field would be 466 MB per variable, and nothing here needs one. Every
-    quantity taken is linear in the state, so the mean of the reduction is
-    the reduction of the mean.
-    """
-    bands = entry['bands']
+def _section_cycle(entry, lines, cycle):
+    """Whether this cycle enters the monthly section means."""
     section_hour = entry.get('section_hour')
-    want_sec = bool(entry.get('sections')) and bool(lines)
-    regions = _regions(cfg, grid)
+    return (bool(entry.get('sections')) and bool(lines)
+            and (not section_hour or cycle[8:10] == str(section_hour)))
 
-    acc = {G.band_key(b): {'ohc': [], 'sc': [], 'deep': None} for b in bands}
-    sec, axes, nsec = {}, {}, 0
-    rows, slrows = [], []
-    for n, cycle in enumerate(cycles):
-        path = G.background_file(exp, cycle)
-        if path is None:
-            continue
-        t0 = time.time()
-        content = G.model_content(path, bands, floor=floor)
-        if 'sealevel' in content:
-            slrows.append(_sealevel_row(grid, floor, content['sealevel'],
-                                        exp.name, cycle))
-        for b in bands:
-            k = G.band_key(b)
-            acc[k]['ohc'].append(content[k]['ohc'].astype('f4'))
-            acc[k]['sc'].append(content[k]['sc'].astype('f4'))
-            # A column counts as reaching the band bottom only if it does so
-            # at EVERY cycle, so the monthly mean is an average over one
-            # fixed volume rather than a varying one.
-            d = content[k]['deep']
-            acc[k]['deep'] = d if acc[k]['deep'] is None else (acc[k]['deep'] & d)
-        rows.extend(_content_rows(grid, regions, content, bands, exp.name,
-                                  cycle))
 
-        if want_sec and (not section_hour or cycle[8:10] == str(section_hour)):
-            if not axes:
-                # The depth axis comes from one cycle's layer thickness. This
-                # output is remapped to fixed z levels, so it is the same
-                # every cycle; re-deriving it per cycle would cost a second
-                # each for an identical answer.
-                axes, _wet = S.section_geometry(grid, path, lines, stride)
-            for var in entry['variables']:
-                use = lines if var not in ('u', 'v') else uv_lines
-                if not use:
-                    continue
-                planes = S.section_planes(grid, path, [var], use,
-                                          exp.varmap, stride, wet_mask=True)
-                for key, plane in planes.items():
-                    sec.setdefault(key, []).append(plane)
-            nsec += 1
-        if log and (n % 20 == 0 or n == len(cycles) - 1):
-            log('      %s (%d/%d) %.0fs' % (cycle, n + 1, len(cycles),
-                                            time.time() - t0))
+def model_cycle(entry, exp, grid, regions, cycle, lines, uv_lines, stride,
+                floor=None):
+    """Reduction of one experiment's background at one cycle.
 
-    data = {'n_cycles': len([c for c in cycles
-                             if G.background_file(exp, c)]),
-            'n_sections': nsec}
+    Returns (data, rows, slrow), or None when the cycle has no background.
+    ``data`` holds the band content ('content/<band>/{ohc,sc,deep}') and, on
+    a section cycle, the section planes ('sec/<key>'); ``rows`` are the
+    region rows for the time series and the csv; ``slrow`` the global sea
+    level row, None without ``floor``.
+
+    Each cycle stands alone, so cycles are reduced in parallel and cached
+    one file each; month_from_cycles() takes the monthly means. Every
+    quantity taken is linear in the state, so the mean of the reductions is
+    the reduction of the mean -- and a monthly mean of the full 3-D field
+    would be 466 MB per variable, which nothing here needs.
+    """
+    path = G.background_file(exp, cycle)
+    if path is None:
+        return None
+    bands = entry['bands']
+    content = G.model_content(path, bands, floor=floor)
+    slrow = None
+    if 'sealevel' in content:
+        slrow = _sealevel_row(grid, floor, content['sealevel'], exp.name,
+                              cycle)
+    data = {}
     for b in bands:
         k = G.band_key(b)
-        if not acc[k]['ohc']:
-            continue
-        data['content/%s/ohc' % k] = _mean(acc[k]['ohc'])
-        data['content/%s/sc' % k] = _mean(acc[k]['sc'])
-        data['content/%s/deep' % k] = acc[k]['deep']
-    for key, planes in sec.items():
-        data['sec/%s' % key] = _mean(planes)
+        data['content/%s/ohc' % k] = content[k]['ohc'].astype('f4')
+        data['content/%s/sc' % k] = content[k]['sc'].astype('f4')
+        data['content/%s/deep' % k] = content[k]['deep']
+    rows = _content_rows(grid, regions, content, bands, exp.name, cycle)
+    if _section_cycle(entry, lines, cycle):
+        for var in entry['variables']:
+            use = lines if var not in ('u', 'v') else uv_lines
+            if not use:
+                continue
+            planes = S.section_planes(grid, path, [var], use, exp.varmap,
+                                      stride, wet_mask=True)
+            for key, plane in planes.items():
+                data['sec/%s' % key] = plane
+    return data, rows, slrow
+
+
+def month_from_cycles(entry, paths, axes):
+    """Monthly means from the per-cycle files model_cycle()'s results were
+    cached in, read in cycle order. Returns (data, rows, slrows), as the
+    monthly reduction always has.
+
+    A column counts as reaching a band's bottom only if it does so at EVERY
+    cycle, so the monthly mean is an average over one fixed volume rather
+    than a varying one.
+    """
+    means, deep = {}, {}
+    rows, slrows, nsec = [], [], 0
+    for p in paths:
+        d = _load_npz(p)
+        rows.extend(json.loads(d.pop('rows').item()))
+        slrow = json.loads(d.pop('slrow').item())
+        if slrow:
+            slrows.append(slrow)
+        nsec += int(d.pop('sections'))
+        for key, val in d.items():
+            if key.endswith('/deep'):
+                deep[key] = val if key not in deep else (deep[key] & val)
+            else:
+                means.setdefault(key, _Mean()).add(val)
+    data = {'n_cycles': len(paths), 'n_sections': nsec}
+    data.update({key: m.value() for key, m in means.items()})
+    data.update(deep)
     for key, val in axes.items():
         data['axis/%s' % key] = val
     return data, rows, slrows
+
+
+def _cycle_npz(cdir, exp_name, cycle):
+    return os.path.join(cdir, 'cycles', P.slug(exp_name), '%s.npz' % cycle)
+
+
+def _save_cycle(path, data, rows, slrow, sections):
+    """One cycle's reduction, rows included (as json: they are mixed
+    strings and floats), so a later run rebuilds the month from it alone."""
+    def plain(r):
+        return {k: (float(v) if isinstance(v, (float, np.floating)) else v)
+                for k, v in r.items()}
+    out = dict(data)
+    out['rows'] = np.array(json.dumps([plain(r) for r in rows]))
+    out['slrow'] = np.array(json.dumps(plain(slrow) if slrow else None))
+    out['sections'] = np.array(bool(sections))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    _save_npz(path, out)
+
+
+# --------------------------------------------------------------------------
+# worker processes
+# --------------------------------------------------------------------------
+
+# What a worker needs, set once per process by _init_worker() (or, without a
+# pool, from main()'s own objects): reloading the config and grid per task
+# would cost more than many of the tasks.
+_CTX = {}
+
+
+def _context(cfg, entry, grid, lines, uv_lines, stride, floor, depth=None):
+    _CTX.clear()
+    _CTX.update(cfg=cfg, entry=entry, grid=grid, lines=lines,
+                uv_lines=uv_lines, stride=stride, floor=floor, depth=depth,
+                regions=_regions(cfg, grid),
+                exps={e.name: e for e in cfg['experiments']})
+
+
+def _init_worker(config, root, outdir, cache, lines, uv_lines, stride, floor,
+                 depth):
+    cfg = load_config(config, root, outdir, cache)
+    grid = Grid(cfg['grid'])
+    S.set_rotation(grid)
+    _context(cfg, G.configured(cfg), grid, lines, uv_lines, stride, floor,
+             depth)
+
+
+def _cycle_job(task):
+    """Reduce one (experiment, cycle) and cache it; returns the task back
+    with the seconds it took. The result goes to disk, not back through
+    the pool: a cycle's fields are tens of MB."""
+    name, cycle, path = task
+    t = time.time()
+    c = _CTX
+    out = model_cycle(c['entry'], c['exps'][name], c['grid'], c['regions'],
+                      cycle, c['lines'], c['uv_lines'], c['stride'],
+                      c['floor'])
+    if out is None:
+        return name, cycle, None, time.time() - t
+    data, rows, slrow = out
+    _save_cycle(path, data, rows, slrow,
+                _section_cycle(c['entry'], c['lines'], cycle))
+    return name, cycle, path, time.time() - t
+
+
+def _grep_job(task):
+    """One GREP member and month, saved to its npz; returns (task, rows,
+    slrows, seconds), rows None when the month is not in the file."""
+    member, month, path = task
+    t = time.time()
+    c = _CTX
+    data, rows, slrows = grep_month(c['cfg'], c['entry'], member, c['grid'],
+                                    month, c['lines'], c['uv_lines'],
+                                    c['stride'], c['depth'], None,
+                                    floor=c['floor'])
+    if data is None:
+        return task, None, [], time.time() - t
+    _save_npz(path, data)
+    return task, rows, slrows, time.time() - t
+
+
+def _pool(fn, tasks, jobs, init_args):
+    """fn over tasks, results in task order: in up to ``jobs`` worker
+    processes, or in this one (already set up by _context()) when there is
+    nothing to share out. A worker killed outright (out of memory) fails the
+    stage with BrokenProcessPool rather than hanging it."""
+    if jobs <= 1 or len(tasks) <= 1:
+        for t in tasks:
+            yield fn(t)
+        return
+    from concurrent.futures import ProcessPoolExecutor
+    with ProcessPoolExecutor(max_workers=min(jobs, len(tasks)),
+                             initializer=_init_worker,
+                             initargs=init_args) as ex:
+        yield from ex.map(fn, tasks)
 
 
 def _sealevel_row(grid, floor, parts, who, when):
@@ -601,6 +722,9 @@ def main(argv=None):
     ap.add_argument('--cache', action='append', default=None)
     ap.add_argument('--experiment', action='append', default=None)
     ap.add_argument('--force', action='store_true')
+    ap.add_argument('--jobs', type=int, default=1,
+                    help='worker processes for the model backgrounds (one '
+                         'cycle each) and the GREP member-months')
     a = ap.parse_args(argv)
     a.config = a.config or a.config_opt
 
@@ -665,9 +789,35 @@ def main(argv=None):
              if entry.get('sealevel') else None)
     floor_sig = None if floor is None else round(float(floor.sum()), 1)
 
+    # The model depth axis the GREP sections are interpolated to: any
+    # background's, since this output is remapped to fixed z levels.
+    depth = None
+    for e in exps:
+        for month, cycles in per_exp.get(e.name, []):
+            p = G.background_file(e, cycles[0])
+            if p:
+                depth = G.model_depth(p)
+                break
+        if depth is not None:
+            break
+
+    # Both sides below share out their work --jobs-way. The workers rebuild
+    # the config and grid from these; without a pool the work runs here,
+    # from main()'s own objects.
+    init_args = (a.config, a.root, a.outdir, a.cache, lines, uv_lines,
+                 stride, floor, depth)
+    _context(cfg, entry, grid, lines, uv_lines, stride, floor, depth)
+
     # -- the model side --------------------------------------------------
+    # A month is the mean of its cycles' reductions, and each cycle's is
+    # cached on its own (grep/cycles/<exp>/<cycle>.npz): a month still
+    # filling reduces only its new cycles, not the whole month again. The
+    # cycles to reduce, from every month and experiment at once, are what
+    # --jobs shares out. A month that is complete keeps only its monthly
+    # npz; its cycle files are removed once that is written.
     rows, slrows = [], []
     model = {}
+    stale, todo, recs = [], [], {}
     for e in exps:
         for month, cycles in per_exp.get(e.name, []):
             npz = os.path.join(cdir, '%s_%s.npz' % (P.slug(e.name), month))
@@ -690,37 +840,71 @@ def main(argv=None):
                         'sealevel'))
                 print('  %s %s: up to date' % (e.name, month), flush=True)
                 continue
-            t = time.time()
-            print('  %s %s: %d background(s), %.0f%% of the month'
-                  % (e.name, month, len(cycles),
-                     100.0 * G.coverage(month, cycles, entry.get('hour'),
-                                        entry.get('step_hours', 6))),
-                  flush=True)
-            data, mrows, msl = model_month(cfg, entry, e, grid, cycles,
-                                           lines, uv_lines, stride,
-                                           log=lambda s: print(s, flush=True),
-                                           floor=floor)
-            if not data:
-                continue
-            _save_npz(npz, data)
-            model.setdefault(month, {})[e.name] = data
-            rows.extend(mrows)
-            slrows.extend(msl)
-            fresh.record(key, inputs, params, [npz])
-            print('    %.0fs' % (time.time() - t), flush=True)
+            have = [c for c in cycles if G.background_file(e, c)]
+            n_new = 0
+            for c in have:
+                cpath = _cycle_npz(cdir, e.name, c)
+                ckey = 'cycle:%s:%s' % (e.name, c)
+                cin = [G.background_file(e, c), __file__]
+                cpar = {'bands': entry['bands'],
+                        'variables': entry['variables'],
+                        'sections': _section_cycle(entry, lines, c),
+                        'lines': [ln[0] for ln in lines],
+                        'uv_lines': [ln[0] for ln in uv_lines],
+                        'stride': stride, 'floor': floor_sig}
+                if fresh.ok(ckey, cin, cpar) and os.path.exists(cpath):
+                    continue
+                todo.append((e.name, c, cpath))
+                recs[(e.name, c)] = (ckey, cin, cpar)
+                n_new += 1
+            stale.append((e, month, cycles, have, npz, key, inputs, params))
+            cover = G.coverage(month, cycles, entry.get('hour'),
+                               entry.get('step_hours', 6))
+            print('  %s %s: %d background(s), %.0f%% of the month, %d to '
+                  'reduce' % (e.name, month, len(cycles), 100.0 * cover,
+                              n_new), flush=True)
+
+    if todo:
+        t = time.time()
+        print('  reducing %d background(s), %d-way'
+              % (len(todo), max(1, min(a.jobs, len(todo)))), flush=True)
+        for n, (name, c, path, dt) in enumerate(
+                _pool(_cycle_job, todo, a.jobs, init_args), 1):
+            if path:
+                fresh.record(*recs[(name, c)], [path])
+            if n % 20 == 0 or n == len(todo):
+                print('      %s %s (%d/%d) %.0fs, %.0fs in all'
+                      % (name, c, n, len(todo), dt, time.time() - t),
+                      flush=True)
+
+    for e, month, cycles, have, npz, key, inputs, params in stale:
+        paths = [_cycle_npz(cdir, e.name, c) for c in have]
+        paths = [p for p in paths if os.path.exists(p)]
+        # The depth axis comes from one cycle's layer thickness. This
+        # output is remapped to fixed z levels, so it is the same every
+        # cycle; re-deriving it per cycle would cost a second each for an
+        # identical answer.
+        axes = {}
+        first = next((c for c in have if _section_cycle(entry, lines, c)),
+                     None)
+        if first is not None:
+            axes, _wet = S.section_geometry(
+                grid, G.background_file(e, first), lines, stride)
+        data, mrows, msl = month_from_cycles(entry, paths, axes)
+        _save_npz(npz, data)
+        model.setdefault(month, {})[e.name] = data
+        rows.extend(mrows)
+        slrows.extend(msl)
+        fresh.record(key, inputs, params, [npz])
+        if G.coverage(month, cycles, entry.get('hour'),
+                      entry.get('step_hours', 6)) >= 0.99:
+            for p in paths:
+                os.remove(p)
+            for c in have:
+                fresh.records.pop('cycle:%s:%s' % (e.name, c), None)
 
     # -- the GREP side ---------------------------------------------------
-    depth = None
-    for e in exps:
-        for month, cycles in per_exp.get(e.name, []):
-            p = G.background_file(e, cycles[0])
-            if p:
-                depth = G.model_depth(p)
-                break
-        if depth is not None:
-            break
-
-    grep = {}
+    grep, todo, recs = {}, [], {}
     for month in sorted(model):
         for member in entry['members']:
             npz = os.path.join(cdir, 'GREP_%s_%s.npz' % (member, month))
@@ -740,20 +924,22 @@ def main(argv=None):
                         _csv_path(cfg, G.LABEL, 'sealevel'),
                         '%s/%s' % (G.LABEL, member), month, 'sealevel'))
                 continue
-            t = time.time()
-            print('  %s %s %s' % (G.LABEL, member, month), flush=True)
-            data, grows, gsl = grep_month(cfg, entry, member, grid, month,
-                                          lines, uv_lines, stride, depth,
-                                          log=lambda s: print(s, flush=True),
-                                          floor=floor)
-            if data is None:
-                continue
-            _save_npz(npz, data)
-            grep.setdefault(month, {})[member] = data
-            rows.extend(grows)
-            slrows.extend(gsl)
-            fresh.record(key, inputs, params, [npz])
-            print('    %.0fs' % (time.time() - t), flush=True)
+            todo.append((member, month, npz))
+            recs[(member, month)] = (key, inputs, params)
+
+    for (member, month, npz), grows, gsl, dt in _pool(_grep_job, todo, a.jobs,
+                                                      init_args):
+        if grows is None:
+            print('  %s %s %s: not in the file' % (G.LABEL, member, month),
+                  flush=True)
+            continue
+        data = _load_npz(npz)
+        grep.setdefault(month, {})[member] = data
+        rows.extend(grows)
+        slrows.extend(gsl)
+        fresh.record(*recs[(member, month)], [npz])
+        print('  %s %s %s: %d field(s), %.0fs'
+              % (G.LABEL, member, month, len(data), dt), flush=True)
 
     _write_csv(cfg, rows)
     if slrows:
