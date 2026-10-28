@@ -73,6 +73,11 @@ def main(argv=None):
                          'figure stages; '
                          'the other figure, scorecard and report stages '
                          'have no --jobs option')
+    ap.add_argument('--cycle', action='append', default=None,
+                    help='rejoin only this cycle (repeatable), so the rejoin '
+                         'can be split across nodes; the figure, scorecard '
+                         'and report stages ignore it and read every cached '
+                         'cycle')
     ap.add_argument('--hours', default='00',
                     help='UTC hours of the cycles to draw per-date state, '
                          'background, gridded-product and frontal-current '
@@ -111,11 +116,14 @@ def main(argv=None):
         common += ['--cache', os.path.join(a.outdir, 'cache')]
     for c in a.cache or []:
         common += ['--cache', c]
+    cycles = []
+    for c in a.cycle or []:
+        cycles += ['--cycle', c]
 
     stages = [
         ('rejoin', 'rejoining observations across experiments',
          lambda: compute_cycle.main(
-             common + ['--rejoin', '--jobs', str(a.jobs)] + force)),
+             common + ['--rejoin', '--jobs', str(a.jobs)] + cycles + force)),
         ('obsspace', 'observation-space figures',
          lambda: plot_obsspace.main(common + ['--hours', a.hours] + force)),
         # --hours: the per-cycle state-space figures (cartopy maps, the most

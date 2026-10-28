@@ -147,8 +147,20 @@ sbatch run_verif.sh                       # one build; slurm-<jobid>.log lands h
 from and writes everything beside it (`precompute-<exp>/`, `page/`, the
 tarball); it finds the application through the symlink, so no path needs
 editing. Slurm sizing beyond its header goes on the command line
-(`sbatch --time=02:00:00 run_verif.sh`). `PRECOMPUTE_OPTS=--force`,
-`BUILD_OPTS`, `HOURS`, `GRIDSPEC` and `VENV` are read from the environment.
+(`sbatch --nodes=4 --time=02:00:00 run_verif.sh`). `PRECOMPUTE_OPTS=--force`,
+`BUILD_OPTS`, `HOURS`, `GRIDSPEC`, `WORKER_GB` and `VENV` are read from the
+environment.
+
+The job uses every node it is given (whole nodes: `--exclusive --mem=0`).
+Each precompute chunk, rejoin chunk and figure stage is its own `srun` step,
+placed on the node with the most room and held to `WORKER_GB` (default 5) of
+memory per worker process plus one share for its parent; the cycles of each
+experiment, and of the rejoin, are split into at least as many chunks as there
+are nodes. A step that outgrows its memory is killed alone, with "oom-kill" in
+its log and its peak in `sacct -j <jobid> --format=JobID,MaxRSS,MaxRSSNode,State`;
+raise `WORKER_GB` or add nodes. Stage 1 runs in one wave while nodes &times;
+(node memory / `WORKER_GB`) covers the cycles on disk; beyond that the chunks
+queue for room.
 
 ### Daily updates
 
