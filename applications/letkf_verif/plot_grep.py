@@ -897,7 +897,7 @@ def main(argv=None):
         slrows.extend(msl)
         fresh.record(key, inputs, params, [npz])
         if G.coverage(month, cycles, entry.get('hour'),
-                      entry.get('step_hours', 6)) >= 0.99:
+                      entry.get('step_hours', 6)) >= 1.0:
             for p in paths:
                 os.remove(p)
             for c in have:
