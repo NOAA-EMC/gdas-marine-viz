@@ -7,7 +7,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --exclusive
 #SBATCH --mem=0
-#SBATCH --time=05:59:00
+#SBATCH --time=02:59:00
 #SBATCH --output=slurm-%j.log
 
 # The verification job: precompute + build the LETKF-verif comparison
