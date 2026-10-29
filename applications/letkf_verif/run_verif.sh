@@ -335,7 +335,14 @@ chunk_size() {
 }
 
 # has_force <options>: the word list holds --force
-has_force() { case " $1 " in *" --force "*) echo 1 ;; *) echo 0 ;; esac; }
+has_force() {
+    local opt
+    # shellcheck disable=SC2086  # options are a word list, as at launch
+    for opt in $1; do
+        if [ "$opt" = "--force" ]; then echo 1; return; fi
+    done
+    echo 0
+}
 
 # ---------------------------------------------------------------------------
 # Read the yaml: experiment names, the cycles, and which of them each
