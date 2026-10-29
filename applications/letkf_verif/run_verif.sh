@@ -87,7 +87,20 @@
 # over a status flag that just means "go check what's flagged."
 set -uo pipefail
 
-source /scratch3/NCEPDEV/da/Guillaume.Vernieres/venvs/gdas-marine-viz/bin/activate
+# Start, end and elapsed wall time at the very end of the log, early exits
+# included.
+JOB_START=$(date +%s)
+job_times() {
+    local rc=$? t=$(( $(date +%s) - JOB_START ))
+    echo
+    echo "== job start:   $(date -u -d "@$JOB_START" '+%Y-%m-%d %H:%M:%S UTC')"
+    echo "   job end:     $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+    printf '   elapsed:     %02d:%02d:%02d (exit %d)\n' \
+        $(( t / 3600 )) $(( t % 3600 / 60 )) $(( t % 60 )) "$rc"
+}
+trap job_times EXIT
+
+source/scratch3/NCEPDEV/da/Guillaume.Vernieres/venvs/gdas-marine-viz/bin/activate
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
 
 # The application is wherever this script lives; the config is $CFG from the
