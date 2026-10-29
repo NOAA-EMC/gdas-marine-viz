@@ -335,7 +335,30 @@ chunk_size() {
 }
 
 # has_force <options>: the word list holds --force
-has_force() { case " $1 " in *" --force "*) echo 1 ;; *) echo 0 ;; esac; }
+has_force() {
+    local opt
+    # shellcheck disable=SC2086  # options are a word list, as at launch
+    for opt in $1; do
+        if [ "$opt" = "--force" ]; then echo 1; return; fi
+    done
+    echo 0
+}
+
+# has_rejoin_overrides <options>: options change the probe's config, caches,
+# or output directory, so its freshness result cannot be trusted
+has_rejoin_overrides() {
+    local opt
+    # shellcheck disable=SC2086  # options are a word list, as at launch
+    for opt in $1; do
+        case "$opt" in
+            --cache|--cache=*|--config|--config=*|--outdir|--outdir=*|--root|--root=*)
+                echo 1
+                return
+                ;;
+        esac
+    done
+    echo 0
+}
 
 # ---------------------------------------------------------------------------
 # Read the yaml: experiment names, the cycles, and which of them each
@@ -472,7 +495,11 @@ echo "== stage 2a: rejoin observations across experiments =="
 # BUILD_OPTS=--force), found now that stage 1 has rewritten its caches, and
 # with the cache list build_comparison.py would give the rejoin: the page's
 # own cache first, then the per-experiment ones.
-REJOIN_CYCLES=$(python3 - "$CFG" "$OUT/page" "$(has_force "$BUILD_OPTS")" "${CACHES[@]}" <<'PY'
+if [ "$(has_rejoin_overrides "$BUILD_OPTS")" -eq 1 ]; then
+    echo "-- rejoin: BUILD_OPTS changes config/cache inputs or output; checking every cycle"
+    REJOIN_CYCLES=$ALL_CYCLES
+else
+    REJOIN_CYCLES=$(python3 - "$CFG" "$OUT/page" "$(has_force "$BUILD_OPTS")" "${CACHES[@]}" <<'PY'
 import os, sys
 sys.path.insert(0, os.getcwd())
 from lv_common import load_config
@@ -484,6 +511,7 @@ print(' '.join(str(c) for c in cfg['cycles']
                if force or not rejoin_current(cfg, str(c))))
 PY
 ) || { echo "!! could not check the rejoin cache; rejoining every cycle"; REJOIN_CYCLES=$ALL_CYCLES; }
+fi
 nrej=$(words "$REJOIN_CYCLES")
 if [ "$nrej" -eq 0 ]; then
     echo "-- rejoin: all $NCYC cycles current -- skipping"
