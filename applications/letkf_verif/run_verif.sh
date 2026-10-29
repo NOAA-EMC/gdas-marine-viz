@@ -53,9 +53,10 @@
 #            series, fronts, stability, GREP, background error -- and the
 #            scorecard, one step each, CONCURRENTLY (they only share the
 #            read-only cache and write different files), then the report
-#            once all of them are in. Binned departures, state-space, fronts
-#            and stability draw their cycles --jobs-way in parallel, with
-#            --jobs set so the four of them fit the allocation together.
+#            once all of them are in. Binned departures, state-space,
+#            fronts, stability and GREP draw (GREP: reduce) their cycles
+#            --jobs-way in parallel, with --jobs set so the five of them fit
+#            the allocation together.
 #   caching  every stage skips work whose inputs have not changed: the
 #            rejoin when the page-cache file is newer than its sources, and
 #            each plot stage per cycle (figs/.fresh-<stage>.json records
@@ -470,11 +471,11 @@ done
 
 echo
 echo "== stage 2b: figures + scorecard, concurrently =="
-# The four stages with a worker pool share what the allocation has left
-# after the five single-process ones (two shares each: the stage, and room
+# The five stages with a worker pool share what the allocation has left
+# after the four single-process ones (two shares each: the stage, and room
 # for what it loads).
-POOLED="obsbins statespace fronts stability"
-SINGLE="obsspace timeseries grep bkgerr scorecard"
+POOLED="obsbins statespace fronts stability grep"
+SINGLE="obsspace timeseries bkgerr scorecard"
 jobs=$(( TOTCAP - 2 * $(words "$SINGLE") ))
 jobs=$(( jobs / $(words "$POOLED") - 1 ))
 [ "$jobs" -gt "$NCYC" ] && jobs=$NCYC

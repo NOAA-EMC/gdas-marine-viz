@@ -108,7 +108,7 @@ Everything lands under `--outdir`.
 | `figs/cycle_*.png` | Everything against cycle: obs fit, obs counts, gridded-analysis scores, background drift |
 | `figs/grep_content_<band>_region_<region>.png` | Heat and salt content through time over a depth band: the model at every cycle against each GREP reanalysis member's monthly mean, as the equivalent band-mean temperature and salinity (section 11) |
 | `figs/grep_sections_<var>[_0-Nm]_<YYYYMM>.png`, `figs/grep_bias_{heat,salt}_<band>_<YYYYMM>.png` | Monthly-mean T/S/u/v sections with one column per GREP member beside each experiment, and the model-minus-member band-mean difference maps |
-| `grep_content_<exp>.csv`, `grep_content_grep.csv`, `grep/*.npz` | The content series behind those figures, and the cached monthly reductions |
+| `grep_content_<exp>.csv`, `grep_content_grep.csv`, `grep/*.npz`, `grep/cycles/<exp>/<cycle>.npz` | The content series behind those figures, the cached monthly reductions, and each background's own reduction for a month still filling (so a daily run reads only the new cycles; removed once the month is complete). The backgrounds are reduced `--jobs`-way in parallel |
 | `figs/cycle_ssh_stability_<exp>.png`, `ssh_stability_<exp>.{csv,json}` | SSH cycling-stability metrics per cycle and region (increment size, persistence, rejection, small/grid-scale variance, shock, on-track index) with fitted trends and a flagged verdict (section 07) |
 | `cache/` | The per-cycle reductions (`<cycle>.json`, `_maps.npz`, `_obsbins.npz`); the report never re-reads model output |
 | `figs/.fresh-<stage>.json` | What each plot stage drew from which inputs; a rerun skips units whose inputs have not changed (`--force` redraws) |
