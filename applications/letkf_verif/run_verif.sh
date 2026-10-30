@@ -3,11 +3,11 @@
 #SBATCH --account=da-cpu
 #SBATCH --qos=batch
 ##SBATCH --partition=hera
-#SBATCH --nodes=2
+#SBATCH --nodes=4
 #SBATCH --ntasks-per-node=1
 #SBATCH --exclusive
 #SBATCH --mem=0
-#SBATCH --time=02:20:00
+#SBATCH --time=02:59:00
 #SBATCH --output=slurm-%j.log
 
 # The verification job: precompute + build the LETKF-verif comparison
@@ -41,14 +41,17 @@
 # capacity.
 #
 # Parallelism:
-#   stage 1  precompute: every experiment's cycles on disk are split into
-#            chunks, at most one node's worth of workers each and small
-#            enough that there are at least as many chunks as nodes; every
-#            chunk is a step (precompute_experiment.py --cycle ... --jobs
-#            <chunk size>), all at once. Cycles are independent and cached
-#            one file each, so chunks of one experiment do not collide.
-#   stage 2  rejoin first (it rewrites the page cache the rest read), split
-#            over cycles across the nodes the same way; then the figure
+#   stage 1  precompute: every experiment's cycles not yet in its cache are
+#            split into chunks, at most one node's worth of workers each and
+#            small enough that there are at least as many chunks as nodes;
+#            every chunk is a step (precompute_experiment.py --cycle ...
+#            --jobs <chunk size>), all at once. Cached cycles are dropped
+#            before the split, so they neither take a node's share nor leave
+#            the new cycles bunched on a few nodes. Cycles are independent
+#            and cached one file each, so chunks of one experiment do not
+#            collide.
+#   stage 2  rejoin first (it rewrites the page cache the rest read), its
+#            out-of-date cycles split across the nodes the same way; then the figure
 #            stages -- obs-space, state-space, binned departures, time
 #            series, fronts, stability, GREP, background error -- and the
 #            scorecard, one step each, CONCURRENTLY (they only share the
@@ -58,18 +61,22 @@
 #            --jobs-way in parallel, with --jobs set so the five of them fit
 #            the allocation together.
 #   caching  every stage skips work whose inputs have not changed: the
-#            rejoin when the page-cache file is newer than its sources, and
+#            precompute for cycles already cached and the rejoin when the
+#            page-cache file is newer than its sources (both checked here,
+#            before anything is launched), and
 #            each plot stage per cycle (figs/.fresh-<stage>.json records
 #            what was drawn from which cache files). A rerun that added one
 #            cycle redraws that cycle and the across-date sequences only.
-#            BUILD_OPTS="--force" redoes everything.
+#            BUILD_OPTS="--force" redoes everything after the precompute,
+#            PRECOMPUTE_OPTS="--force" the precompute.
 #
 # Sizing: a measured worker peaks around 3 GB RSS (sacct on a real run);
 # WORKER_GB=5 (the default) leaves margin. A step killed for memory says
 # "oom-kill" in its log: raise WORKER_GB (fewer, roomier workers per node)
 # or add nodes. Precompute wall time is one wave bounded by the slowest
-# cycle as long as nodes x (node memory / WORKER_GB) covers every cycle on
-# disk; past that the chunks queue for room and it takes more waves.
+# cycle as long as nodes x (node memory / WORKER_GB) covers every cycle still
+# to compute (cached ones do not count); past that the chunks queue for room
+# and it takes more waves.
 # OMP/BLAS threads are pinned to 1 so worker processes do not also fan out
 # into threads.
 #
@@ -327,24 +334,59 @@ chunk_size() {
     echo "$c"
 }
 
+# has_force <options>: the word list holds --force
+has_force() {
+    local opt
+    # shellcheck disable=SC2086  # options are a word list, as at launch
+    for opt in $1; do
+        if [ "$opt" = "--force" ]; then echo 1; return; fi
+    done
+    echo 0
+}
+
+# has_rejoin_overrides <options>: options change the probe's config, caches,
+# or output directory, so its freshness result cannot be trusted
+has_rejoin_overrides() {
+    local opt
+    # shellcheck disable=SC2086  # options are a word list, as at launch
+    for opt in $1; do
+        case "$opt" in
+            --cache|--cache=*|--config|--config=*|--outdir|--outdir=*|--root|--root=*)
+                echo 1
+                return
+                ;;
+        esac
+    done
+    echo 0
+}
+
 # ---------------------------------------------------------------------------
 # Read the yaml: experiment names, the cycles, and which of them each
-# experiment has a directory for (the cycles it can actually precompute).
-# Uses the same loader the python stages use, so relative paths and stems
-# resolve identically.
+# experiment still has to precompute (TODO_FOR: not in its cache yet, or
+# every cycle under PRECOMPUTE_OPTS=--force). Cached cycles are dropped here,
+# before the work is split over the nodes, so the split spreads only real
+# work. Uses the same loader and cache test the python stages use, so
+# relative paths and stems resolve identically.
 # ---------------------------------------------------------------------------
-eval "$(python3 - "$CFG" <<'PY'
+eval "$(python3 - "$CFG" "$OUT" "$(has_force "$PRECOMPUTE_OPTS")" <<'PY'
 import os, sys
 sys.path.insert(0, os.getcwd())
 from lv_common import load_config
-cfg = load_config(sys.argv[1], None, None, None)
+from compute_cycle import is_cached
+path, out, force = sys.argv[1], sys.argv[2], sys.argv[3] == '1'
+cfg = load_config(path, None, None, None)
 cycles = [str(c) for c in cfg['cycles']]
 print('NCYC=%d' % len(cycles))
 print('ALL_CYCLES="%s"' % ' '.join(cycles))
 print('EXPS="%s"' % ' '.join(e.name for e in cfg['experiments']))
-print('declare -A CYCLES_FOR')
+print('declare -A CYCLES_FOR TODO_FOR')
 for e in cfg['experiments']:
+    # the cache precompute_experiment.py --outdir writes this experiment to
+    ecfg = load_config(path, None, os.path.join(out, 'precompute-' + e.name),
+                       None)
+    todo = [c for c in cycles if force or not is_cached(ecfg, c)]
     print('CYCLES_FOR[%s]="%s"' % (e.name, ' '.join(cycles)))
+    print('TODO_FOR[%s]="%s"' % (e.name, ' '.join(todo)))
 PY
 )" || { echo "!! could not parse $CFG"; exit 1; }
 
@@ -374,20 +416,21 @@ declare -A PIDS
 CACHES=()
 total=0
 for exp in $EXPS; do
-    total=$(( total + $(words "${CYCLES_FOR[$exp]}") ))
+    total=$(( total + $(words "${TODO_FOR[$exp]}") ))
 done
+[ "$total" -eq 0 ] && echo "-- every experiment has all $NCYC cycles cached -- nothing to precompute"
 chunk=$(chunk_size "$total")
 reset_load
 for exp in $EXPS; do
     CACHES+=(--cache "$OUT/precompute-$exp/cache")
-    n=$(words "${CYCLES_FOR[$exp]}")
+    n=$(words "${TODO_FOR[$exp]}")
     if [ "$n" -eq 0 ]; then
-        echo "-- $exp: none of the $NCYC cycles resolve on disk -- skipping precompute"
+        echo "-- $exp: all $NCYC cycles cached -- skipping precompute"
         continue
     fi
     # shellcheck disable=SC2086
-    mapfile -t parts < <(chunks "$chunk" ${CYCLES_FOR[$exp]})
-    echo "-- $exp: $n of $NCYC cycles on disk, in ${#parts[@]} step(s)"
+    mapfile -t parts < <(chunks "$chunk" ${TODO_FOR[$exp]})
+    echo "-- $exp: $n of $NCYC cycles to compute ($(( $(words "${CYCLES_FOR[$exp]}") - n )) cached), in ${#parts[@]} step(s)"
     k=0
     for part in "${parts[@]}"; do
         k=$(( k + 1 ))
@@ -448,8 +491,36 @@ mkdir -p "$OUT/page"
 
 echo
 echo "== stage 2a: rejoin observations across experiments =="
-# shellcheck disable=SC2086
-mapfile -t parts < <(chunks "$(chunk_size "$NCYC")" $ALL_CYCLES)
+# Only the cycles whose join is out of date (every cycle under
+# BUILD_OPTS=--force), found now that stage 1 has rewritten its caches, and
+# with the cache list build_comparison.py would give the rejoin: the page's
+# own cache first, then the per-experiment ones.
+if [ "$(has_rejoin_overrides "$BUILD_OPTS")" -eq 1 ]; then
+    echo "-- rejoin: BUILD_OPTS changes config/cache inputs or output; checking every cycle"
+    REJOIN_CYCLES=$ALL_CYCLES
+else
+    REJOIN_CYCLES=$(python3 - "$CFG" "$OUT/page" "$(has_force "$BUILD_OPTS")" "${CACHES[@]}" <<'PY'
+import os, sys
+sys.path.insert(0, os.getcwd())
+from lv_common import load_config
+from compute_cycle import rejoin_current
+path, page, force = sys.argv[1], sys.argv[2], sys.argv[3] == '1'
+caches = [os.path.join(page, 'cache')] + sys.argv[5::2]   # skip the --cache words
+cfg = load_config(path, None, page, caches)
+print(' '.join(str(c) for c in cfg['cycles']
+               if force or not rejoin_current(cfg, str(c))))
+PY
+) || { echo "!! could not check the rejoin cache; rejoining every cycle"; REJOIN_CYCLES=$ALL_CYCLES; }
+fi
+nrej=$(words "$REJOIN_CYCLES")
+if [ "$nrej" -eq 0 ]; then
+    echo "-- rejoin: all $NCYC cycles current -- skipping"
+    parts=()
+else
+    echo "-- rejoin: $nrej of $NCYC cycles out of date"
+    # shellcheck disable=SC2086
+    mapfile -t parts < <(chunks "$(chunk_size "$nrej")" $REJOIN_CYCLES)
+fi
 declare -A RPIDS
 reset_load
 k=0

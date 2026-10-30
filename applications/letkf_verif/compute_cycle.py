@@ -189,6 +189,32 @@ def _obsbins_current(bpath):
         return False
 
 
+def is_cached(cfg, cycle):
+    """The cycle already has a cache file (what run_one skips on)."""
+    return os.path.exists(os.path.join(cfg['cache'], '%s.json' % cycle))
+
+
+def rejoin_current(cfg, cycle):
+    """The cycle's join in the page cache is still the right answer (what
+    rejoin_one skips on).
+
+    The join only changes when a source cache does: a page-cache file newer
+    than every per-experiment file it merges is still the right answer, and
+    re-reading 650 MB of observations to reproduce it was the one part of a
+    rerun that scaled with the cycle count for nothing. (With the page cache
+    as the only cache there is nothing to merge from, and the existing file
+    is the answer by definition.)
+    """
+    jpath = os.path.join(cfg['cache'], '%s.json' % cycle)
+    sources = [p for p in (os.path.join(root, '%s.json' % cycle)
+                           for root in cfg['caches'][1:]) if os.path.exists(p)]
+    bpath = os.path.join(cfg['cache'], '%s_obsbins.npz' % cycle)
+    return (os.path.exists(jpath)
+            and _obsbins_current(bpath)    # an older join predates the bins
+            and (not sources or os.path.getmtime(jpath)
+                 > max(map(os.path.getmtime, sources))))
+
+
 def rejoin_one(cfg, cycle, work, verbose=True, force=False):
     """Recompute only the observation block, for every registered experiment.
 
@@ -199,19 +225,7 @@ def rejoin_one(cfg, cycle, work, verbose=True, force=False):
     and maps untouched.
     """
     jpath = os.path.join(cfg['cache'], '%s.json' % cycle)
-    sources = [p for p in (os.path.join(root, '%s.json' % cycle)
-                           for root in cfg['caches'][1:]) if os.path.exists(p)]
-    # The join only changes when a source cache does: a page-cache file
-    # newer than every per-experiment file it merges is still the right
-    # answer, and re-reading 650 MB of observations to reproduce it was the
-    # one part of a rerun that scaled with the cycle count for nothing.
-    bpath = os.path.join(cfg['cache'], '%s_obsbins.npz' % cycle)
-    # (With the page cache as the only cache there is nothing to merge from,
-    # and the existing file is the answer by definition.)
-    if (not force and os.path.exists(jpath)
-            and _obsbins_current(bpath)    # an older join predates the bins
-            and (not sources or os.path.getmtime(jpath)
-                 > max(map(os.path.getmtime, sources)))):
+    if not force and rejoin_current(cfg, cycle):
         return 'cached', 'join newer than its sources (--force to redo)'
     merged = None
     for root in cfg['caches']:
@@ -241,7 +255,7 @@ def run_one(cfg, cycle, grid, work, force=False, verbose=True,
             keep_work=False):
     """Compute and cache one cycle. Returns (status, detail)."""
     jpath = os.path.join(cfg['cache'], '%s.json' % cycle)
-    if os.path.exists(jpath) and not force:
+    if not force and is_cached(cfg, cycle):
         return 'cached', 'already computed (--force to redo)'
 
     # NOT gated on cycle_is_present() here: that only checks each
