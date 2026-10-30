@@ -10,7 +10,7 @@ re-run freely while tuning what the page shows.
             --cache /scratch/me/verif/letkf/cache \\
             --outdir /scratch/me/verif/page
 
-Stages: rejoin the observations, render the three figure sets, write the
+Stages: rejoin the observations, render the figure sets, write the
 scorecard, then assemble the HTML report.
 
 Why the rejoin comes first
@@ -45,6 +45,7 @@ import plot_stability  # noqa: E402
 import plot_obsspace  # noqa: E402
 import plot_statespace  # noqa: E402
 import plot_timeseries  # noqa: E402
+import plot_tsdiag  # noqa: E402
 import scorecard  # noqa: E402
 
 
@@ -92,7 +93,7 @@ def main(argv=None):
     ap.add_argument('--skip', action='append', default=None,
                     choices=['rejoin', 'obsspace', 'obsbins', 'statespace',
                              'timeseries', 'fronts', 'stability', 'grep',
-                             'bkgerr',
+                             'bkgerr', 'tsdiag',
                              'scorecard', 'report'],
                     help='skip a stage (repeatable)')
     a = ap.parse_args(argv)
@@ -154,6 +155,11 @@ def main(argv=None):
         # error) where an archive keeps no *bkgerr_parametric_stddev.nc.
         ('bkgerr', 'parametric background-error (D) figures',
          lambda: plot_bkgerr.main(common + ['--hours', a.hours] + force)),
+        # Argo (and any other profile platform with both T and S) on a
+        # theta-S diagram, from '<cycle>_tsdiag.npz'; every cached cycle
+        # pooled, and per month.
+        ('tsdiag', 'T-S diagrams',
+         lambda: plot_tsdiag.main(common + force)),
         ('scorecard', 'scorecard', lambda: scorecard.main(common)),
         ('report', 'HTML report', lambda: build_report.main(common)),
     ]

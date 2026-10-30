@@ -53,7 +53,7 @@
 #   stage 2  rejoin first (it rewrites the page cache the rest read), its
 #            out-of-date cycles split across the nodes the same way; then the figure
 #            stages -- obs-space, state-space, binned departures, time
-#            series, fronts, stability, GREP, background error -- and the
+#            series, fronts, stability, GREP, background error, T-S -- and the
 #            scorecard, one step each, CONCURRENTLY (they only share the
 #            read-only cache and write different files), then the report
 #            once all of them are in. Binned departures, state-space,
@@ -471,7 +471,7 @@ fi
 # note -- that is about the invocation, not the run: the rejoin happened in
 # 2a, and the scorecard and report read the joined sample from the cache.)
 # ---------------------------------------------------------------------------
-ALL_STAGES="rejoin obsspace obsbins statespace timeseries fronts stability grep bkgerr scorecard report"
+ALL_STAGES="rejoin obsspace obsbins statespace timeseries fronts stability grep bkgerr tsdiag scorecard report"
 stage() {
     # stage <name> <jobs> [option...]: the command (in STAGE) that runs only
     # that sub-stage of build_comparison.py, with --jobs <jobs> and any
@@ -543,10 +543,10 @@ done
 echo
 echo "== stage 2b: figures + scorecard, concurrently =="
 # The five stages with a worker pool share what the allocation has left
-# after the four single-process ones (two shares each: the stage, and room
+# after the five single-process ones (two shares each: the stage, and room
 # for what it loads).
 POOLED="obsbins statespace fronts stability grep"
-SINGLE="obsspace timeseries bkgerr scorecard"
+SINGLE="obsspace timeseries bkgerr tsdiag scorecard"
 jobs=$(( TOTCAP - 2 * $(words "$SINGLE") ))
 jobs=$(( jobs / $(words "$POOLED") - 1 ))
 [ "$jobs" -gt "$NCYC" ] && jobs=$NCYC

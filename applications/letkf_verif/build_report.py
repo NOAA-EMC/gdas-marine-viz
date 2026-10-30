@@ -858,6 +858,86 @@ def bkgerr_widgets(figs, dates, dated, dated_hemi):
     return out
 
 
+def tsdiag_widgets(cfg, figs):
+    """{'m_ts', 'ts_note'} for section 13.
+
+    View (density, water-mass bias) over depth range over region over
+    period, every level built from the PNGs plot_tsdiag.py actually wrote:
+    a region or depth with too few paired levels has no figure and no chip.
+    """
+    import lv_tsdiag as TS
+    files = set(os.listdir(figs)) if os.path.isdir(figs) else set()
+    regions = ['global'] + region_list(cfg)
+    depths = [TS.depth_slug(lo, hi) for lo, hi in TS.depth_ranges(cfg)]
+    # non-greedy: a region slug may itself start like a platform suffix
+    # ('e_pacific' after 'argo')
+    pat = re.compile(r'^ts_(?:density|bias)_(.+?)_(?:%s)_(?:%s)_(all|\d{6})\.png$'
+                     % ('|'.join(re.escape(P.slug(r)) for r in regions),
+                        '|'.join(re.escape(d) for d in depths)))
+    plats, periods = set(), set()
+    for f in files:
+        m = pat.match(f)
+        if m:
+            plats.add(m.group(1))
+            periods.add(m.group(2))
+    periods = sorted(periods - {'all'})
+    basin_color = basin_colors(cfg)
+
+    def name(kind, plat, r, d, p):
+        return TS.fig_name(kind, plat, P.slug(r), d, p)
+
+    def period_menu(group, kind, plat, r, d):
+        have = [p for p in ['all'] + periods
+                if name(kind, plat, r, d, p) in files]
+        if not have:
+            return ''
+
+        def panel(p):
+            return img(os.path.join(figs, name(kind, plat, r, d, p)),
+                       '%s T-S %s, %s, %s, %s' % (plat, kind, r, d, p))
+        if len(have) == 1:
+            return panel(have[0])
+        return picker_widget(group, have,
+                             label_fn=lambda p: ('all cycles' if p == 'all'
+                                                 else _month_label(p)),
+                             panel_fn=panel, dropdown='period',
+                             default='all')
+
+    def region_picker(group, kind, plat, d):
+        have = [r for r in regions
+                if any(name(kind, plat, r, d, p) in files
+                       for p in ['all'] + periods)]
+        return picker_widget(
+            group, have, label_fn=lambda r: r.replace('_', ' '),
+            panel_fn=lambda r: period_menu('%s-%s' % (group, P.slug(r)),
+                                           kind, plat, r, d),
+            style_fn=lambda r: _basin_chip_style(basin_color, r))
+
+    def depth_picker(group, kind, plat):
+        def label(d):
+            lo, hi = d[1:-1].split('-')
+            return '%s-%s m' % (lo, hi)
+        return picker_widget(
+            group, depths, label_fn=label,
+            panel_fn=lambda d: region_picker('%s-%s' % (group, P.slug(d)),
+                                             kind, plat, d))
+
+    entries = []
+    for plat in sorted(plats):
+        views = [(title, depth_picker('ts-%s-%s' % (kind, P.slug(plat)),
+                                      kind, plat))
+                 for kind, title in (('density', 'theta-S density'),
+                                     ('bias', 'water-mass bias'))]
+        entries.append((plat, figure_menu('tsview-%s' % P.slug(plat),
+                                          'T-S view', views)))
+    return {'m_ts': figure_menu('tsplat', 'platform', entries),
+            'ts_note': ('' if entries else
+                        'Nothing to show: no cycle has paired temperature '
+                        'and salinity profile observations '
+                        '(<code>insitu_temp_profile_*</code> with a matching '
+                        '<code>insitu_salt_profile_*</code>) in its cache.')}
+
+
 def _bkgerr_views(figs, var):
     """The depth views drawn for ``var``, full column first."""
     cuts = set()
@@ -1073,6 +1153,7 @@ SECTIONS = [
     ('10', 'forcing', 'Atmospheric forcing'),
     ('11', 'grep', 'Monthly mean vs GREP'),
     ('12', 'bkgerr', 'Background error (D)'),
+    ('13', 'ts', 'T-S diagrams'),
 ]
 
 
@@ -1568,6 +1649,8 @@ def build(cfg, cycles, out):
     # Variables are read off the figure names, so the menus show exactly
     # what plot_bkgerr.py drew (u/v only where the archive carries them).
     subs.update(bkgerr_widgets(figs, dates, dated, dated_hemi))
+    # -- T-S diagrams (section 13) ----------------------------------------
+    subs.update(tsdiag_widgets(cfg, figs))
 
     subs['m_grep'] = figure_menu('grepview', 'GREP view', [
         ('Heat and salt content through time', subs['f_grepcontent']),
@@ -2166,6 +2249,35 @@ columns compare directly. Drawn for the same dates as the other per-date
 figures (<code>--hours</code> plus the latest cycle). Where an archive keeps no
 D file the section is empty.</p>
 """,
+    '13': """
+<p>Each <code>insitu_temp_profile_*</code> type is paired with the
+<code>insitu_salt_profile_*</code> of the same platform, level by level, on
+exact station, time, position and depth, within the common sample: a level
+counts when both the temperature and the salinity passed QC in every
+experiment. The observation and every experiment&rsquo;s background
+(y&nbsp;&minus;&nbsp;O&minus;B) and analysis (y&nbsp;&minus;&nbsp;O&minus;A)
+are kept per level in <code>&lt;cycle&gt;_tsdiag.npz</code>.</p>
+<p>Temperature is converted to potential temperature (EOS-80, Fofonoff 1977;
+pressure from depth by Saunders 1981) on both sides. The observations are
+in-situ and so is H(x) &mdash; the operator converts the model&rsquo;s
+potential temperature to in-situ at the observation &mdash; so the same
+conversion keeps their difference what the DA saw. &sigma;<sub>0</sub> is the
+UNESCO one-atmosphere equation of state.</p>
+<p>The density view is a histogram on a fixed 0.1&nbsp;&deg;C &times; 0.02
+grid, pooled over the period; contours enclose 50 and 90&nbsp;% of the levels,
+drawn on blocks of that grid sized to put about 60 across the plotted window
+and smoothed 3&times;3, so a full-column panel is not contoured cell by
+cell. The bias view bins by the observed
+&sigma;<sub>0</sub>: 0.05&nbsp;kg&nbsp;m<sup>&minus;3</sup> classes pooled,
+lightest first, until each holds at least 200 levels (or 1/40 of the
+sample, whichever is more), so the classes are fine where the water is
+dense in &sigma;<sub>0</sub> and wide where it is not. Each is drawn at its
+count-weighted &sigma;<sub>0</sub>, with &plusmn;1 standard deviation about
+the background&rsquo;s mean. Depth ranges come from
+<code>ts_diagram: {depth_ranges: ...}</code>; regions are the configured
+basins and boxes. Periods are every cached cycle together, and each calendar
+month when there is more than one.</p>
+""",
 }
 
 
@@ -2467,9 +2579,28 @@ SEC_BKGERR = r"""
 </section>
 """
 
+SEC_TS = r"""
+<section>
+  <div class="sec-head"><span class="sec-n">13</span>
+    <h2>T-S diagrams</h2></div>
+  ${m_13}
+  <p class="lede">${ts_note} Water masses as the profiles observed them and as
+  each experiment had them: potential temperature against salinity at every
+  level where a float measured both, on the common sample. The
+  <b>density</b> view sets each experiment&rsquo;s background (top row) and
+  analysis (bottom row) contours over the observed ones (black); a water mass in
+  the wrong place shows as a contour off the black one, and too much mixing
+  as a model cloud tighter than the observed. The <b>water-mass bias</b>
+  view averages model&nbsp;&minus;&nbsp;observed salinity and temperature in
+  &sigma;<sub>0</sub> classes of the observed water, so experiments compare
+  on one axis.</p>
+  ${m_ts}
+</section>
+"""
+
 SECTION_TEMPLATES = [SEC_FIT, SEC_USAGE, SEC_STATE, SEC_BACKGROUND, SEC_DATES,
                      SEC_VERIF, SEC_CYCLING, SEC_CALIBRATION, SEC_BINNED,
-                     SEC_FORCING, SEC_GREP, SEC_BKGERR]
+                     SEC_FORCING, SEC_GREP, SEC_BKGERR, SEC_TS]
 
 TAIL = r"""
 <footer>

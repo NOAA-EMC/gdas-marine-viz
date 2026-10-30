@@ -26,6 +26,7 @@ import lv_obsbins  # noqa: E402
 import lv_obsspace  # noqa: E402
 import lv_plot  # noqa: E402
 import lv_statespace  # noqa: E402
+import lv_tsdiag  # noqa: E402
 from lv_common import (Grid, ObsSet, join_obs, load_config,  # noqa: E402
                        open_workdir, release_workdir,
                        select_experiments)
@@ -88,6 +89,9 @@ def observation_block(cfg, cycle, work, verbose=True):
             per_type.setdefault(t, {})[e.name] = p
 
     out, skipped, bins = {}, [], {}
+    # the profile T and S types' common samples, kept (cut down to what the
+    # pairing needs) until both of a platform's types have been read
+    ts_parts = {}
     for obstype in sorted(per_type):
         paths = per_type[obstype]
         if verbose:
@@ -116,6 +120,8 @@ def observation_block(cfg, cycle, work, verbose=True):
         for k, v in arrays.items():
             bins['obsbins/%s/%s' % (obstype, k)] = v
         out[obstype]['regression'] = fits
+        if lv_tsdiag.is_pair_type(obstype):
+            ts_parts[obstype] = lv_tsdiag.extract(aligned, common_pass)
         if verbose:
             n = list(counts.values())[0]['n_matched']
             missing = {e.name for e in present} - set(paths)
@@ -123,16 +129,32 @@ def observation_block(cfg, cycle, work, verbose=True):
             print(' matched %8d  common-pass %8d%s'
                   % (n, common_pass.sum(), note))
         del own, aligned
+    # T-S pairs: they travel with the bins and are split off into their own
+    # file by write_obsbins
+    for plat, (t, s) in lv_tsdiag.pairs(ts_parts).items():
+        arrays = lv_tsdiag.compute(plat, ts_parts[t], ts_parts[s])
+        bins.update(arrays)
+        if verbose and arrays:
+            print('  T-S  %-32s paired %8d'
+                  % (plat, arrays['tsdiag/%s/obs/theta' % plat].size))
     return out, skipped, bins
 
 
 def write_obsbins(cfg, cycle, bins):
-    if not bins:
-        return
-    bins = dict(bins, **{'obsbins/version': np.array(lv_obsbins.VERSION)})
-    bp = os.path.join(cfg['cache'], '%s_obsbins.npz' % cycle)
-    np.savez_compressed(bp + '.tmp.npz', **bins)
-    os.replace(bp + '.tmp.npz', bp)
+    """'<cycle>_obsbins.npz' and '<cycle>_tsdiag.npz' from observation_block's
+    arrays. The T-S file is written even when it holds nothing but its
+    version, so rejoin_current can tell 'no pairs' from 'not computed'."""
+    ts = {k: v for k, v in bins.items() if k.startswith('tsdiag/')}
+    bins = {k: v for k, v in bins.items() if not k.startswith('tsdiag/')}
+    if bins:
+        bins['obsbins/version'] = np.array(lv_obsbins.VERSION)
+        bp = os.path.join(cfg['cache'], '%s_obsbins.npz' % cycle)
+        np.savez_compressed(bp + '.tmp.npz', **bins)
+        os.replace(bp + '.tmp.npz', bp)
+    ts['tsdiag/version'] = np.array(lv_tsdiag.VERSION)
+    tp = os.path.join(cfg['cache'], '%s_tsdiag.npz' % cycle)
+    np.savez_compressed(tp + '.tmp.npz', **ts)
+    os.replace(tp + '.tmp.npz', tp)
 
 
 def compute_cycle(cfg, cycle, grid, work, verbose=True):
@@ -189,6 +211,19 @@ def _obsbins_current(bpath):
         return False
 
 
+def _tsdiag_current(tpath):
+    """The cycle's T-S pairs exist and were written by this version of
+    lv_tsdiag."""
+    if not os.path.exists(tpath):
+        return False
+    try:
+        with np.load(tpath) as z:
+            return ('tsdiag/version' in z.files
+                    and int(z['tsdiag/version']) >= lv_tsdiag.VERSION)
+    except (OSError, ValueError):
+        return False
+
+
 def is_cached(cfg, cycle):
     """The cycle already has a cache file (what run_one skips on)."""
     return os.path.exists(os.path.join(cfg['cache'], '%s.json' % cycle))
@@ -209,8 +244,10 @@ def rejoin_current(cfg, cycle):
     sources = [p for p in (os.path.join(root, '%s.json' % cycle)
                            for root in cfg['caches'][1:]) if os.path.exists(p)]
     bpath = os.path.join(cfg['cache'], '%s_obsbins.npz' % cycle)
+    tpath = os.path.join(cfg['cache'], '%s_tsdiag.npz' % cycle)
     return (os.path.exists(jpath)
             and _obsbins_current(bpath)    # an older join predates the bins
+            and _tsdiag_current(tpath)     # ... or the T-S pairs
             and (not sources or os.path.getmtime(jpath)
                  > max(map(os.path.getmtime, sources))))
 
