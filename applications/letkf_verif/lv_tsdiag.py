@@ -25,7 +25,8 @@ salinity and pressure keeps the difference what the DA saw.
 
 Pairing is on exact scaled-integer metadata, the join's own keys. A level
 present in one file and not the other (a QC'd salinity, a temperature-only
-float) is simply not a pair.
+float) is simply not a pair. As in the join, stationID counts only where the
+files have it: the GFSv17 reanalysis diags do not.
 """
 
 import numpy as np
@@ -35,13 +36,15 @@ from lv_woa import depth_to_pressure, potential_temperature
 
 # Bumped whenever what goes into '<cycle>_tsdiag.npz' changes; a cached file
 # with an older (or no) version is rebuilt by the rejoin.
-VERSION = 1
+VERSION = 2
 
 TEMP = 'insitu_temp_profile'
 SALT = 'insitu_salt_profile'
 
 # The metadata a T level and an S level must share to be one water sample.
 PAIR_META = ('dateTime', 'stationID', 'latitude', 'longitude', 'depth')
+# ... those of them used only when both files have them
+PAIR_OPTIONAL = ('stationID',)
 
 # Stored per platform: the observation once, the model per experiment.
 OBS_FIELDS = ('latitude', 'longitude', 'depth', 'theta', 'salt')
@@ -137,17 +140,17 @@ def extract(aligned, common_pass):
     if not names:
         return None
     first = aligned[names[0]]
-    if not all(m in first.meta for m in PAIR_META):
+    if not all(m in first.meta for m in PAIR_META if m not in PAIR_OPTIONAL):
         return None
-    return {'meta': {m: first.meta[m] for m in PAIR_META},
+    return {'meta': {m: first.meta[m] for m in PAIR_META if m in first.meta},
             'y': first.y,
             'pass': np.asarray(common_pass, dtype=bool),
             'ombg': {n: aligned[n].ombg for n in names},
             'oman': {n: aligned[n].oman for n in names}}
 
 
-def _pair_key(part):
-    cols = [_scaled(part['meta'][m], _KEY_SCALE[m]) for m in PAIR_META]
+def _pair_key(part, fields):
+    cols = [_scaled(part['meta'][m], _KEY_SCALE[m]) for m in fields]
     full = np.ascontiguousarray(np.stack(cols, axis=1))
     return full.view(np.dtype((np.void, full.shape[1] * 8))).ravel()
 
@@ -160,7 +163,10 @@ def compute(plat, tpart, spart):
     names = [n for n in tpart['ombg'] if n in spart['ombg']]
     if not names:
         return {}
-    _common, it, js = np.intersect1d(_pair_key(tpart), _pair_key(spart),
+    fields = [m for m in PAIR_META
+              if m in tpart['meta'] and m in spart['meta']]
+    _common, it, js = np.intersect1d(_pair_key(tpart, fields),
+                                     _pair_key(spart, fields),
                                      return_indices=True)
     meta = {m: v[it] for m, v in tpart['meta'].items()}
     t_o, s_o = tpart['y'][it], spart['y'][js]

@@ -108,6 +108,43 @@ def test_compute_with_a_missing_partner_is_empty():
     assert TS.compute('argo', part, None) == {}
 
 
+def _no_station(depth):
+    m = _meta(depth)
+    del m['stationID']
+    return m
+
+
+def test_compute_pairs_without_station_ids():
+    # the GFSv17 reanalysis diags carry no MetaData/stationID
+    tm, sm = _no_station([10, 20]), _no_station([20, 30])
+    both = np.ones(2, bool)
+    t = TS.extract({'a': _set(tm, [20, 18], [0, 0], [0, 0])}, both)
+    s = TS.extract({'a': _set(sm, [35, 36], [0, 0], [0, 0])}, both)
+    out = TS.compute('argo', t, s)
+    assert out['tsdiag/argo/obs/depth'].tolist() == [20.0]
+    assert out['tsdiag/argo/obs/salt'][0] == pytest.approx(35.0)
+
+
+def test_compute_pairs_when_only_one_file_has_station_ids():
+    both = np.ones(1, bool)
+    t = TS.extract({'a': _set(_meta([10]), [20], [0], [0])}, both)
+    s = TS.extract({'a': _set(_no_station([10]), [35], [0], [0])}, both)
+    assert TS.compute('argo', t, s)['tsdiag/argo/obs/depth'].tolist() == [10.0]
+
+
+def test_compute_does_not_pair_different_stations():
+    both = np.ones(1, bool)
+    t = TS.extract({'a': _set(_meta([10], station=1), [20], [0], [0])}, both)
+    s = TS.extract({'a': _set(_meta([10], station=2), [35], [0], [0])}, both)
+    assert TS.compute('argo', t, s)['tsdiag/argo/obs/depth'].size == 0
+
+
+def test_extract_still_requires_position():
+    m = _meta([10])
+    del m['latitude']
+    assert TS.extract({'a': _set(m, [20], [0], [0])}, np.ones(1, bool)) is None
+
+
 def test_potential_temperature_is_in_situ_at_the_surface():
     m = _meta([0.0])
     t = TS.extract({'a': _set(m, [12.3], [0], [0])}, np.ones(1, bool))
