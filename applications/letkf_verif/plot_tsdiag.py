@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """T-S (water-mass) diagrams. Reads '<cycle>_tsdiag.npz'.
 
-Per profile platform (Argo, ...), region and depth range, two figures, drawn
+Per profile platform (Argo, ...), region and depth range, three figures, drawn
 once for every cached cycle pooled ('all') and once per calendar month when
-the cache spans more than one:
+the cache spans more than one. The first two are the same three panels side
+by side -- observations, background, analysis -- one row per experiment, with
+sigma0 isopycnals throughout:
 
     figs/ts_density_<platform>_<region>_<depth>_<period>.png
-        the observed theta-S distribution as a log-density histogram, then
-        per experiment the background (top row) and the analysis (bottom
-        row) with the observations behind them: the observed 50 and 90 %
-        contours in black, the model's in the experiment's colour. sigma0 isopycnals
-        throughout. A water mass the model puts at the wrong temperature
-        or salinity shows as a contour that does not sit on the black one.
+        each as a log-density histogram, on one colour scale.
+    figs/ts_contour_<platform>_<region>_<depth>_<period>.png
+        each over the observed density in grey: the observed 50 and 90 %
+        contours in black, the model's in the experiment's colour. A water
+        mass the model puts at the wrong temperature or salinity shows as a
+        contour that does not sit on the black one.
     figs/ts_bias_<platform>_<region>_<depth>_<period>.png
         model minus observation, S and theta, averaged in sigma0 classes of
         the OBSERVED water -- classes pooled until each holds enough levels,
@@ -59,6 +61,8 @@ MAX_CLASSES = 40
 CONTOUR_FRACTIONS = (0.9, 0.5)
 # Contour cells across the plotted window, each way (see _coarse).
 CONTOUR_CELLS = 60
+# The model panels of a row, after the observations.
+SIDES = (('b', 'background'), ('a', 'analysis'))
 
 
 def tsdiag_path(cfg, cycle):
@@ -150,74 +154,113 @@ def _isopycnals(ax, slim, tlim):
     ax.clabel(cs, fontsize=7, fmt='%.1f')
 
 
-def fig_density(acc, names, col, title):
+def _window(acc, names):
+    """The experiments to draw and the (theta, S) ranges every panel shares,
+    from the observed distribution."""
     obs = acc['obs/hist']
-    have = [n for n in names if '%s/hist_b' % n in acc]
-    tlim = _limits(obs, TS.THETA_EDGES, 1)
-    slim = _limits(obs, TS.SALT_EDGES, 0)
+    return ([n for n in names if '%s/hist_b' % n in acc],
+            _limits(obs, TS.THETA_EDGES, 1), _limits(obs, TS.SALT_EDGES, 0))
+
+
+def _panels(nrow, colorbar=False):
+    """A figure of [observations, background, analysis] rows, one per
+    experiment, and (``colorbar``) a colour-bar axis closing each row."""
+    ratios = [1, 1, 1] + ([0.05] if colorbar else [])
+    fig = plt.figure(figsize=(3.5 * 3 + (0.7 if colorbar else 0), 6.9 * nrow))
+    gs = fig.add_gridspec(nrow, len(ratios), width_ratios=ratios)
+    first = fig.add_subplot(gs[0, 0])
+    rows = [[first if r == c == 0
+             else fig.add_subplot(gs[r, c], sharex=first, sharey=first)
+             for c in range(3)] for r in range(nrow)]
+    caxes = [fig.add_subplot(gs[r, 3]) for r in range(nrow)] if colorbar else []
+    return fig, rows, caxes
+
+
+def _finish(fig, rows, slim, tlim, title):
+    """What every row of panels has in common: isopycnals, axes, the title."""
+    for row in rows:
+        for c, ax in enumerate(row):
+            _isopycnals(ax, slim, tlim)
+            P.tidy(ax, xgrid=True)
+            ax.set_xlabel('salinity')
+            if c == 0:
+                ax.set_ylabel('potential temperature ($^\\circ$C)')
+            else:
+                ax.tick_params(labelleft=False)
+    rows[0][0].set_xlim(slim)
+    rows[0][0].set_ylim(tlim)
+    fig.suptitle(title, fontsize=11, color=P.INK, y=1 - 0.005 / len(rows))
+
+
+def fig_density(acc, names, col, title):
+    """Observations, background and analysis as log-density histograms."""
+    have, tlim, slim = _window(acc, names)
+    if not have:
+        return None
+    obs = acc['obs/hist']
+    # one colour scale, so a colour is the same density in every panel
+    top = max(int(h.max()) for h in [obs] + [acc['%s/hist_%s' % (n, side)]
+                                             for n in have
+                                             for side, _w in SIDES])
+    norm = LogNorm(vmin=1, vmax=max(2, top))
+    fig, rows, caxes = _panels(len(have), colorbar=True)
+    for row, cax, n in zip(rows, caxes, have):
+        panels = [(row[0], obs, 'observations', P.INK)]
+        panels += [(ax, acc['%s/hist_%s' % (n, side)], '%s: %s' % (n, word),
+                    col[n]) for ax, (side, word) in zip(row[1:], SIDES)]
+        for ax, h, what, color in panels:
+            pm = ax.pcolormesh(TS.SALT_EDGES, TS.THETA_EDGES,
+                               np.ma.masked_equal(h, 0), cmap=P.SEQUENTIAL,
+                               norm=norm, zorder=0)
+            ax.set_title('%s (n = %d)' % (what, int(h.sum())), fontsize=9,
+                         color=color)
+        fig.colorbar(pm, cax=cax, label='levels per cell')
+    _finish(fig, rows, slim, tlim, title)
+    fig.tight_layout(rect=(0, 0, 1, 1 - 0.035 / len(rows)))
+    return fig
+
+
+def fig_contour(acc, names, col, title):
+    """Observations, background and analysis contoured over the observed
+    density. Drawn in one panel the background and analysis lie almost on
+    each other and the analysis vanishes."""
+    have, tlim, slim = _window(acc, names)
+    if not have:
+        return None
+    obs = acc['obs/hist']
     ft, fs = _factor(tlim, TS.THETA_EDGES), _factor(slim, TS.SALT_EDGES)
     sc = _coarse_centres(TS.SALT_EDGES, fs)
     tc = _coarse_centres(TS.THETA_EDGES, ft)
-    # The observations on the left, spanning both rows; then one column per
-    # experiment, background on the top row and analysis below. Drawn in
-    # one panel the two lie almost on each other and the analysis vanishes.
-    ncol = 1 + len(have)
-    fig = plt.figure(figsize=(3.5 * ncol, 6.9))
-    gs = fig.add_gridspec(2, ncol)
-    ax0 = fig.add_subplot(gs[:, 0])
-    grid = [[fig.add_subplot(gs[r, c + 1], sharex=ax0, sharey=ax0)
-             for c in range(len(have))] for r in range(2)]
     dens = np.ma.masked_equal(obs, 0)
     norm = LogNorm(vmin=1, vmax=max(2, int(obs.max())))
     obs_s = _coarse(obs, ft, fs)
     obs_lv = contour_levels(obs_s)
-
-    pm = ax0.pcolormesh(TS.SALT_EDGES, TS.THETA_EDGES, dens,
-                        cmap=P.SEQUENTIAL, norm=norm, zorder=0)
-    fig.colorbar(pm, ax=ax0, shrink=0.6, pad=0.02, label='levels per cell')
-    ax0.set_title('observations (n = %d)' % int(obs.sum()), fontsize=9.5)
-    ax0.set_ylabel('potential temperature ($^\\circ$C)')
-    panels = [ax0]
-    for r, (side, word) in enumerate((('b', 'background'),
-                                      ('a', 'analysis'))):
-        for c, n in enumerate(have):
-            ax = grid[r][c]
+    fig, rows, _caxes = _panels(len(have))
+    for row, n in zip(rows, have):
+        for ax in row:
             ax.pcolormesh(TS.SALT_EDGES, TS.THETA_EDGES, dens, cmap='Greys',
                           norm=norm, alpha=0.45, zorder=0)
             if obs_lv:
                 ax.contour(sc, tc, obs_s, levels=obs_lv, colors=P.INK,
                            linewidths=1.1, zorder=3)
+        row[0].set_title('observations (n = %d)' % int(obs.sum()), fontsize=9,
+                         color=P.INK)
+        for ax, (side, word) in zip(row[1:], SIDES):
             h = _coarse(acc['%s/hist_%s' % (n, side)], ft, fs)
             lv = contour_levels(h)
             if lv:
                 ax.contour(sc, tc, h, levels=lv, colors=col[n],
                            linewidths=1.5, zorder=4)
             ax.set_title('%s: %s' % (n, word), fontsize=9, color=col[n])
-            if c == 0:
-                ax.set_ylabel('$\\theta$ ($^\\circ$C)')
-            else:
-                ax.tick_params(labelleft=False)
-            if r == 0:
-                ax.tick_params(labelbottom=False)
-            panels.append(ax)
-    for ax in panels:
-        _isopycnals(ax, slim, tlim)
-        P.tidy(ax, xgrid=True)
-    ax0.set_xlim(slim)
-    ax0.set_ylim(tlim)
-    ax0.set_xlabel('salinity')
-    for ax in grid[1]:
-        ax.set_xlabel('salinity')
-    fig.suptitle(title, fontsize=11, color=P.INK)
-    if have:
-        handles = [Line2D([], [], color=P.INK, lw=1.1, label='observed')] + [
-            Line2D([], [], color=col[n], lw=1.5, label=n) for n in have]
-        fig.legend(handles=handles, loc='lower center', ncol=len(handles),
-                   fontsize=8, frameon=False,
-                   title='contours enclose %s and %s %% of levels'
-                   % tuple(int(100 * f) for f in CONTOUR_FRACTIONS),
-                   title_fontsize=8)
-    fig.tight_layout(rect=(0, 0.07, 1, 0.97))
+    _finish(fig, rows, slim, tlim, title)
+    handles = [Line2D([], [], color=P.INK, lw=1.1, label='observed')] + [
+        Line2D([], [], color=col[n], lw=1.5, label=n) for n in have]
+    fig.legend(handles=handles, loc='lower center', ncol=len(handles),
+               fontsize=8, frameon=False,
+               title='contours enclose %s and %s %% of levels'
+               % tuple(int(100 * f) for f in CONTOUR_FRACTIONS),
+               title_fontsize=8)
+    fig.tight_layout(rect=(0, 0.07 / len(rows), 1, 1 - 0.035 / len(rows)))
     return fig
 
 
@@ -288,15 +331,14 @@ def draw(total, period, names, cfg):
         if acc['obs/hist'].sum() < MIN_POINTS:
             continue
         lbl = _label(plat, region, dslug, period)
-        fig = fig_density(acc, names, col,
-                          '$\\theta$-S, common sample: %s' % lbl)
-        written.append(_save(fig, cfg, TS.fig_name(
-            'density', plat, P.slug(region), dslug, period)))
-        fig = fig_bias(acc, names, col,
-                       'water-mass bias by density class: %s' % lbl)
-        if fig is not None:
-            written.append(_save(fig, cfg, TS.fig_name(
-                'bias', plat, P.slug(region), dslug, period)))
+        for kind, plot, what in (
+                ('density', fig_density, '$\\theta$-S density, common sample'),
+                ('contour', fig_contour, '$\\theta$-S contours, common sample'),
+                ('bias', fig_bias, 'water-mass bias by density class')):
+            fig = plot(acc, names, col, '%s: %s' % (what, lbl))
+            if fig is not None:
+                written.append(_save(fig, cfg, TS.fig_name(
+                    kind, plat, P.slug(region), dslug, period)))
     return written
 
 

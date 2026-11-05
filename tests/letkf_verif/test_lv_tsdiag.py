@@ -200,6 +200,40 @@ def n_levels(arr):
     return arr['tsdiag/argo/obs/theta'].size
 
 
+def _titles(fig):
+    return [ax.get_title() for ax in fig.axes if ax.get_title()]
+
+
+@pytest.mark.parametrize('name', ['fig_density', 'fig_contour'])
+def test_density_figures_are_obs_background_analysis_per_experiment(name):
+    PT = pytest.importorskip('plot_tsdiag')
+    n = 400
+    rng = np.random.default_rng(0)
+    arr = _arrays(rng.normal(10, 2, n), rng.normal(35, 0.3, n),
+                  np.full(n, 800.0), 0.5, -0.1)
+    for side in 'ba':
+        for f in ('theta', 'salt'):
+            arr['tsdiag/argo/y/%s_%s' % (f, side)] = (
+                arr['tsdiag/argo/x/%s_%s' % (f, side)])
+    acc = TS.reduce_cycle(arr, {}, [[0, 6000]])[
+        ('argo', 'global', 'd0-6000m')]
+    fig = getattr(PT, name)(acc, ['x', 'y'], {'x': 'C0', 'y': 'C1'}, 't')
+    words = [t.split(' (')[0] for t in _titles(fig)]
+    assert words == ['observations', 'x: background', 'x: analysis',
+                     'observations', 'y: background', 'y: analysis']
+    PT.plt.close(fig)
+
+
+@pytest.mark.parametrize('name', ['fig_density', 'fig_contour'])
+def test_density_figures_need_an_experiment(name):
+    PT = pytest.importorskip('plot_tsdiag')
+    arr = _arrays(np.full(300, 10.0), np.full(300, 35.0), np.full(300, 800.0),
+                  0.0, 0.0)
+    acc = TS.reduce_cycle(arr, {}, [[0, 6000]])[
+        ('argo', 'global', 'd0-6000m')]
+    assert getattr(PT, name)(acc, ['absent'], {}, 't') is None
+
+
 def test_merge_classes_pools_until_each_class_is_full():
     n = np.array([0, 0, 3, 1, 0, 6, 2, 2, 1, 0, 0])
     # 3+1+0+6 = 10, 2+2+1 = 5 is short and joins the last full class

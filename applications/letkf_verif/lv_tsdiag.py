@@ -99,7 +99,7 @@ def depth_slug(lo, hi):
 
 
 def fig_name(kind, plat, region_slug, dslug, period):
-    """'ts_<density|bias>_<platform>_<region>_<depth>_<all|YYYYMM>.png' --
+    """'ts_<density|contour|bias>_<platform>_<region>_<depth>_<all|YYYYMM>.png' --
     shared by plot_tsdiag.py (writes) and build_report.py (finds)."""
     return 'ts_%s_%s_%s_%s_%s.png' % (kind, plat, region_slug, dslug, period)
 
