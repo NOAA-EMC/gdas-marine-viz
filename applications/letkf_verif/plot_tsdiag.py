@@ -162,6 +162,10 @@ def _window(acc, names):
             _limits(obs, TS.THETA_EDGES, 1), _limits(obs, TS.SALT_EDGES, 0))
 
 
+def _obs_hist(acc, name):
+    return acc.get('obs/hist_%s' % name, acc['obs/hist'])
+
+
 def _panels(nrow, colorbar=False):
     """A figure of [observations, background, analysis] rows, one per
     experiment, and (``colorbar``) a colour-bar axis closing each row."""
@@ -197,15 +201,15 @@ def fig_density(acc, names, col, title):
     have, tlim, slim = _window(acc, names)
     if not have:
         return None
-    obs = acc['obs/hist']
     # one colour scale, so a colour is the same density in every panel
-    top = max(int(h.max()) for h in [obs] + [acc['%s/hist_%s' % (n, side)]
-                                             for n in have
-                                             for side, _w in SIDES])
+    top = max(int(h.max()) for h in
+              [_obs_hist(acc, n) for n in have]
+              + [acc['%s/hist_%s' % (n, side)] for n in have
+                 for side, _w in SIDES])
     norm = LogNorm(vmin=1, vmax=max(2, top))
     fig, rows, caxes = _panels(len(have), colorbar=True)
     for row, cax, n in zip(rows, caxes, have):
-        panels = [(row[0], obs, 'observations', P.INK)]
+        panels = [(row[0], _obs_hist(acc, n), 'observations', P.INK)]
         panels += [(ax, acc['%s/hist_%s' % (n, side)], '%s: %s' % (n, word),
                     col[n]) for ax, (side, word) in zip(row[1:], SIDES)]
         for ax, h, what, color in panels:
@@ -227,16 +231,16 @@ def fig_contour(acc, names, col, title):
     have, tlim, slim = _window(acc, names)
     if not have:
         return None
-    obs = acc['obs/hist']
     ft, fs = _factor(tlim, TS.THETA_EDGES), _factor(slim, TS.SALT_EDGES)
     sc = _coarse_centres(TS.SALT_EDGES, fs)
     tc = _coarse_centres(TS.THETA_EDGES, ft)
-    dens = np.ma.masked_equal(obs, 0)
-    norm = LogNorm(vmin=1, vmax=max(2, int(obs.max())))
-    obs_s = _coarse(obs, ft, fs)
-    obs_lv = contour_levels(obs_s)
     fig, rows, _caxes = _panels(len(have))
     for row, n in zip(rows, have):
+        obs = _obs_hist(acc, n)
+        dens = np.ma.masked_equal(obs, 0)
+        norm = LogNorm(vmin=1, vmax=max(2, int(obs.max())))
+        obs_s = _coarse(obs, ft, fs)
+        obs_lv = contour_levels(obs_s)
         for ax in row:
             ax.pcolormesh(TS.SALT_EDGES, TS.THETA_EDGES, dens, cmap='Greys',
                           norm=norm, alpha=0.45, zorder=0)

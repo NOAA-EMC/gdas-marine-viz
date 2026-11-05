@@ -255,9 +255,9 @@ def reduce_cycle(arrays, cfg, ranges=None):
     """One cycle's points to sums: {(platform, region, depth slug): {name:
     array}}, which add across cycles (see accumulate).
 
-    Per key: 'obs/hist', '<exp>/hist_b', '<exp>/hist_a', 'n' per sigma0
-    class of the observation, and the sums and sums of squares of model
-    minus observation, theta and S, background and analysis, per class.
+    Per key: 'obs/hist', '<exp>/hist_b', '<exp>/hist_a', and 'n' per sigma0
+    class of the observation. Experiment-specific observation histograms and
+    counts include only cycles where that experiment has T-S data.
     """
     ranges = ranges or depth_ranges(cfg)
     out = {}
@@ -282,6 +282,8 @@ def reduce_cycle(arrays, cfg, ranges=None):
                 ok = sel & in_cls
                 acc['n'] = np.bincount(cls[ok], minlength=nb)
                 for n in exps:
+                    acc['obs/hist_%s' % n] = hist2d(th[sel], sa[sel])
+                    acc['%s/n' % n] = np.bincount(cls[ok], minlength=nb)
                     m = d[n]
                     for side in ('b', 'a'):
                         mt, ms = m['theta_' + side], m['salt_' + side]
@@ -343,7 +345,7 @@ def class_stats(acc, name, var, side, groups):
     """(n, mean, sd) of model minus observation in each merged class."""
     def pooled(a):
         return np.array([a[i0:i1].sum() for i0, i1 in groups], dtype='f8')
-    n = pooled(acc['n'])
+    n = pooled(acc.get('%s/n' % name, acc['n']))
     s1 = acc.get('%s/d%s_%s' % (name, var, side))
     s2 = acc.get('%s/d%s2_%s' % (name, var, side))
     if s1 is None:

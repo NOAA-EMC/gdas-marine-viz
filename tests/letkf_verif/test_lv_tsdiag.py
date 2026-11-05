@@ -196,6 +196,31 @@ def test_reduce_and_accumulate_sum_over_cycles():
     assert smean[0] == pytest.approx(-0.1, abs=1e-5)
 
 
+def test_class_stats_use_only_cycles_with_experiment_data():
+    nlevels = 50
+    present = _arrays(np.full(nlevels, 10.0), np.full(nlevels, 35.0),
+                      np.full(nlevels, 800.0), 1.0, 0.0)
+    absent = _arrays(np.full(nlevels, 10.0), np.full(nlevels, 35.0),
+                     np.full(nlevels, 800.0), 0.0, 0.0)
+    for key in list(absent):
+        if '/x/' in key:
+            del absent[key]
+
+    total = {}
+    for arrays in (present, absent):
+        TS.accumulate(total, TS.reduce_cycle(arrays, {}, [[0, 6000]]))
+    acc = total[('argo', 'global', 'd0-6000m')]
+    groups = TS.merge_classes(acc['n'], 1)
+    n, mean, sd = TS.class_stats(acc, 'x', 'theta', 'b', groups)
+
+    assert acc['n'].sum() == 2 * nlevels
+    assert acc['x/n'].sum() == nlevels
+    assert acc['obs/hist_x'].sum() == nlevels
+    assert n.sum() == nlevels
+    assert mean[0] == pytest.approx(1.0, abs=1e-5)
+    assert sd[0] == pytest.approx(0.0, abs=1e-5)
+
+
 def n_levels(arr):
     return arr['tsdiag/argo/obs/theta'].size
 
