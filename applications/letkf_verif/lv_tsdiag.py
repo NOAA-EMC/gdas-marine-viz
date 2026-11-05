@@ -150,9 +150,9 @@ def extract(aligned, common_pass):
 
 
 def _pair_key(part, fields):
+    from lv_common import _make_key
     cols = [_scaled(part['meta'][m], _KEY_SCALE[m]) for m in fields]
-    full = np.ascontiguousarray(np.stack(cols, axis=1))
-    return full.view(np.dtype((np.void, full.shape[1] * 8))).ravel()
+    return _make_key(cols)
 
 
 def compute(plat, tpart, spart):
