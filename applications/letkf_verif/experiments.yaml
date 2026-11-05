@@ -213,3 +213,8 @@ obs_bins:
   limits:
     sss: {mean: 1.0, rms: 1.0}
     rads_adt: {mean: 0.15, rms: 0.15}
+
+# T-S diagrams (section 13): the depth ranges (m) drawn, each for every
+# region. View setting only, no recompute. Default shown.
+# ts_diagram:
+#   depth_ranges: [[0, 6000], [0, 500], [500, 2000]]
