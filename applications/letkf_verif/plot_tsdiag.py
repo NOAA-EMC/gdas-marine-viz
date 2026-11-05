@@ -29,6 +29,7 @@ is read, so memory does not grow with the number of cycles.
 
 import argparse
 import os
+import re
 import sys
 import time
 
@@ -346,6 +347,21 @@ def draw(total, period, names, cfg):
     return written
 
 
+def _prune_outputs(figs, fresh, periods):
+    """Keep only T-S figures recorded for the periods in the current run."""
+    fresh.records = {period: record for period, record in fresh.records.items()
+                     if period in periods}
+    outputs = {os.path.abspath(path)
+               for record in fresh.records.values()
+               for path in record.get('outputs', [])}
+    pattern = re.compile(r'^ts_(?:density|contour|bias)_.+_(?:all|\d{6})\.png$')
+    for name in os.listdir(figs):
+        path = os.path.join(figs, name)
+        if pattern.fullmatch(name) and os.path.isfile(path) and \
+                os.path.abspath(path) not in outputs:
+            os.remove(path)
+
+
 # --------------------------------------------------------------------------
 
 def main(argv=None):
@@ -368,6 +384,8 @@ def main(argv=None):
     paths = {c: tsdiag_path(cfg, c) for c in sorted(cycles)}
     paths = {c: p for c, p in paths.items() if p}
     if not paths:
+        _prune_outputs(cfg['figs'], fresh, set())
+        fresh.save()
         print('no T-S pairs cached -- run compute_cycle.py (or its --rejoin) '
               'first')
         return 0
@@ -414,6 +432,7 @@ def main(argv=None):
                      written)
         print('  all cycles: %d figure(s) in %.1fs'
               % (len(written), time.time() - t), flush=True)
+    _prune_outputs(cfg['figs'], fresh, set(periods))
     fresh.save()
     print('done in %.1fs (%d period(s) up to date and skipped)'
           % (time.time() - t_all, fresh.skipped), flush=True)

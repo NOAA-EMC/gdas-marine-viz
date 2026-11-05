@@ -259,6 +259,29 @@ def test_density_figures_need_an_experiment(name):
     assert getattr(PT, name)(acc, ['absent'], {}, 't') is None
 
 
+def test_prune_outputs_removes_stale_t_s_figures(tmp_path):
+    PT = pytest.importorskip('plot_tsdiag')
+    current = tmp_path / 'ts_density_argo_global_d0-6000m_202606.png'
+    stale_month = tmp_path / 'ts_bias_argo_global_d0-6000m_202605.png'
+    stale_panel = tmp_path / 'ts_contour_argo_global_d0-500m_202606.png'
+    unrelated = tmp_path / 'ts_custom.png'
+    for path in (current, stale_month, stale_panel, unrelated):
+        path.touch()
+    fresh = SimpleNamespace(records={
+        '202605': {'outputs': [str(stale_month)]},
+        '202606': {'outputs': [str(current)]},
+        'all': {'outputs': []},
+    })
+
+    PT._prune_outputs(str(tmp_path), fresh, {'202606', 'all'})
+
+    assert current.exists()
+    assert not stale_month.exists()
+    assert not stale_panel.exists()
+    assert unrelated.exists()
+    assert set(fresh.records) == {'202606', 'all'}
+
+
 def test_merge_classes_pools_until_each_class_is_full():
     n = np.array([0, 0, 3, 1, 0, 6, 2, 2, 1, 0, 0])
     # 3+1+0+6 = 10, 2+2+1 = 5 is short and joins the last full class
