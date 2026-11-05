@@ -920,8 +920,12 @@ def tsdiag_widgets(cfg, figs):
         def label(d):
             lo, hi = d[1:-1].split('-')
             return '%s-%s m' % (lo, hi)
+        have = [d for d in depths
+                if any(name(k, plat, r, d, p) in files
+                       for k in kinds for r in regions
+                       for p in ['all'] + periods)]
         return picker_widget(
-            group, depths, label_fn=label,
+            group, have, label_fn=label,
             panel_fn=lambda d: region_picker('%s-%s' % (group, P.slug(d)),
                                              kinds, plat, d))
 
