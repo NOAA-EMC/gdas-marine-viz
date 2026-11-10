@@ -113,6 +113,7 @@ def extract_last_dir(HPSS_root, hsi_output=None, result_file=None):
         for ifile, tarfile in enumerate(CYCLE_TARFILES, start=1):
             tarpath = f"{HPSS_dir}/{cycle_str}/{tarfile}"
             cmd = ["htar", "-xf", tarpath]
+            logger.debug("Running: %s", " ".join(cmd))
             logger.info("Cycle %s: downloading file %d of %d: %s",
                         cycle_str, ifile, len(CYCLE_TARFILES), tarpath)
             file_start = time.monotonic()
