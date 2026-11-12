@@ -479,9 +479,9 @@ fi
 # ---------------------------------------------------------------------------
 # stage 2: build the comparison. build_comparison.py runs its sub-stages in
 # sequence; --skip lets one invocation run exactly one of them, which is how
-# the independent ones are run side by side here. (Each of those invocations
-# ends its log with build_comparison.py's "the observation join was skipped"
-# note -- that is about the invocation, not the run: the rejoin happened in
+# the independent ones are run side by side here. (Skipping the rejoin that
+# way does not print build_comparison.py's "the observation join was
+# skipped" note -- only --no-rejoin in BUILD_OPTS does: the rejoin happens in
 # 2a, and the scorecard and report read the joined sample from the cache.)
 # ---------------------------------------------------------------------------
 ALL_STAGES="rejoin obsspace obsbins statespace timeseries fronts stability grep bkgerr tsdiag scorecard report"

@@ -171,7 +171,10 @@ def main(argv=None):
             print('\n%s failed (exit %s)' % (name, rc))
             return rc
 
-    if 'rejoin' in skip:
+    # Only for --no-rejoin: a '--skip rejoin' alone is how run_verif.sh runs
+    # one sub-stage per invocation after it has already done the rejoin, and
+    # the note would wrongly claim the scores are own-sample there.
+    if a.no_rejoin:
         print('\nNote: the observation join was skipped, so the scores are on '
               'each experiment\'s OWN sample and are confounded by differences '
               'in thinning and QC. Re-run without --no-rejoin where the '
