@@ -186,6 +186,39 @@ cycles (about 4 min each in stage 1, in one parallel wave) plus a few minutes of
 stage 2; a cycle that arrives late (an archive fetched afterwards) is picked up
 by the next run, since absent cycles are never cached.
 
+### HPSS retrieval followed by comparisons
+
+On Ursa, `run_archive_verif.sh` combines the HPSS retrieval with the baseline,
+realtime and stream2 comparisons under
+`/scratch3/NCEPDEV/da/Andrew.Eichmann/vrfy/comparisons`. It uses the same EVA
+module, archive config and destination as the existing HPSS cron job, but runs
+the retrieval script from this checkout. Replace the old HPSS cron entry rather
+than running both: the combined driver's lock only covers its own invocations.
+For example, with cron output redirected to a writable log:
+
+```cron
+0 6 * * * bash -l /path/to/gdas-marine-viz/applications/letkf_verif/run_archive_verif.sh >> /path/to/archive-verif.log 2>&1
+```
+
+After a successful retrieval, each comparison's `cycles.stop` advances (never
+backwards) to the latest `last_extracted_cycle` among its configured
+experiments. Experiment roots must resolve to active entries in the HPSS YAML,
+and each must have a valid `cycles.yaml`. Each comparison is submitted with
+`sbatch --wait` from its own directory, even if the stop did not change, so a
+failed job or late-arriving experiment can be retried. Extraction failures
+leave the relevant tracker at the last fully extracted cycle and prevent all
+submissions; nonzero Slurm job statuses and submission failures are reported
+after trying the others. As with standalone `run_verif.sh`, individual stage
+failures can be advisory: inspect the Slurm logs as well as cron output. The
+lock remains held until all jobs finish; manual jobs and `run_daily.sh` do not
+share it.
+
+The driver accepts `--archive-config PATH`, repeated `--comparison DIR`,
+`--lock PATH`, and `--sbatch PATH` for other installations. Its default lock
+is in the comparisons directory. Existing per-cycle caches are not invalidated
+when previously cached partial data is supplemented; use the existing
+`PRECOMPUTE_OPTS=--force` when those caches need rebuilding.
+
 ## Relationship to `statestats_ostia`
 
 Both compare a model surface state to OSTIA, and both read the same

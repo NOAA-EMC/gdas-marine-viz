@@ -123,7 +123,7 @@ def extract_last_dir(HPSS_root, hsi_output=None, result_file=None):
                 logger.error("Cycle %s: failed to extract %s (exit code %s): %s",
                              cycle_str, tarpath, e.returncode, " ".join(cmd))
                 logger.error("Stopping; %s left at last successful cycle", result_file)
-                return
+                raise
             logger.info("Cycle %s: finished %s in %.1f s",
                         cycle_str, tarfile, time.monotonic() - file_start)
 
@@ -145,6 +145,7 @@ def main(yaml_file):
 
     local_hpss_root = expconfigs['local hpss root']
 
+    failed = []
     for experiment in expconfigs['experiments']:
         pslot = experiment['pslot']
         local_hpss_dir = os.path.join(local_hpss_root, pslot)
@@ -160,8 +161,15 @@ def main(yaml_file):
         else:
             raise FileNotFoundError(f"Directory does not exist: {local_hpss_dir}")
 
-        extract_last_dir(hpss_dir, hsi_output='out.txt', result_file='cycles.yaml')
-        logger.info("Finished experiment %s", pslot)
+        try:
+            extract_last_dir(hpss_dir, hsi_output='out.txt', result_file='cycles.yaml')
+        except subprocess.CalledProcessError:
+            failed.append(pslot)
+        else:
+            logger.info("Finished experiment %s", pslot)
+
+    if failed:
+        raise RuntimeError("Archive retrieval failed for: " + ", ".join(failed))
 
 
 if __name__ == "__main__":
