@@ -143,7 +143,8 @@ def main(yaml_file):
     with open(yaml_file) as f:
         expconfigs = yaml.safe_load(f)
 
-    local_hpss_root = expconfigs['local hpss root']
+    local_hpss_root = Path(os.path.expandvars(
+        os.path.expanduser(expconfigs['local hpss root']))).resolve()
 
     failed = []
     for experiment in expconfigs['experiments']:

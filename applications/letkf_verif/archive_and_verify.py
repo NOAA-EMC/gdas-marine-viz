@@ -136,10 +136,9 @@ def main(argv=None):
                   % '\n'.join(active_jobs), flush=True)
             return 0
         archive = read_yaml(config)
-        root = resolved(archive['local hpss root'], Path.cwd())
         print('Retrieving archives using %s' % config, flush=True)
         subprocess.run([sys.executable, str(args.archive_script.resolve()),
-                        '--yaml_file', str(config)], cwd=root, check=True)
+                        '--yaml_file', str(config)], check=True)
         failures = []
         submitted = []
         for directory in comparisons:

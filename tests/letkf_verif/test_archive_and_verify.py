@@ -209,3 +209,25 @@ def test_failed_extraction_preserves_tracker(tmp_path, monkeypatch):
     with pytest.raises(subprocess.CalledProcessError):
         get_hpss_arch.extract_last_dir('/archive', listing, tracker)
     assert yaml.safe_load(tracker.read_text())['last_extracted_cycle'] == '2024010100'
+
+
+@pytest.mark.parametrize('root', ['archive', '~/archive', '$ARCHIVE_ROOT'])
+def test_archive_root_is_expanded_before_retrieval(tmp_path, monkeypatch, root):
+    archive_root = tmp_path / 'archive'
+    destination = archive_root / 'one'
+    destination.mkdir(parents=True)
+    config = write(tmp_path / 'archive.yaml', yaml.safe_dump({
+        'local hpss root': root,
+        'experiments': [{'pslot': 'one', 'HPSS root': '/hpss'}],
+    }))
+    retrieved = []
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('ARCHIVE_ROOT', str(archive_root))
+    monkeypatch.setattr(get_hpss_arch, 'extract_last_dir',
+                        lambda hpss_root, **kwargs: retrieved.append(
+                            (Path.cwd(), hpss_root)))
+
+    get_hpss_arch.main(str(config))
+
+    assert retrieved == [(destination, '/hpss/one')]
