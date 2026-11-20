@@ -7,7 +7,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --exclusive
 #SBATCH --mem=0
-#SBATCH --time=07:20:00
+#SBATCH --time=03:00:00
 #SBATCH --output=slurm-%j.log
 
 # The verification job: precompute + build the LETKF-verif comparison
@@ -99,6 +99,12 @@ job_times() {
         $(( t / 3600 )) $(( t % 3600 / 60 )) $(( t % 60 )) "$rc"
 }
 trap job_times EXIT
+
+# Do not let modules inherited from the submitting shell override the venv.
+set +u
+source /etc/profile.d/modules.sh
+set -u
+module purge
 
 source /scratch3/NCEPDEV/da/Guillaume.Vernieres/venvs/gdas-marine-viz/bin/activate
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
