@@ -3,6 +3,7 @@
 
 import argparse
 import fcntl
+import hashlib
 import os
 import stat
 import subprocess
@@ -16,6 +17,9 @@ import yaml
 HERE = Path(__file__).resolve().parent
 DEFAULT_ROOT = Path('/scratch3/NCEPDEV/da/Andrew.Eichmann/vrfy/comparisons')
 DEFAULT_ARCHIVE = Path('/scratch3/NCEPDEV/da/Andrew.Eichmann/hpss/get_hpss_arch.yaml')
+ACTIVE_STATES = ('pending,running,suspended,completing,configuring,expediting,'
+                 'resizing,resv_del_hold,requeued,requeue_fed,requeue_hold,'
+                 'signaling,special_exit,stage_out,stopped')
 
 
 def read_yaml(path):
@@ -33,6 +37,11 @@ def cycle(value):
 def resolved(path, base):
     path = Path(os.path.expandvars(os.path.expanduser(str(path))))
     return (base / path).resolve()
+
+
+def job_name(directory):
+    digest = hashlib.sha256(os.fsencode(str(directory))).hexdigest()[:16]
+    return 'archiveverif-' + digest
 
 
 def advance_stop(config, archive):
@@ -101,10 +110,14 @@ def main(argv=None):
                         help='comparison directory; repeat to select multiple')
     parser.add_argument('--lock', type=Path, default=DEFAULT_ROOT / '.archive-verif.lock')
     parser.add_argument('--sbatch', default='sbatch', help='sbatch executable')
+    parser.add_argument('--squeue', default='squeue', help='squeue executable')
     args = parser.parse_args(argv)
     config = args.archive_config.resolve()
-    comparisons = args.comparison or [DEFAULT_ROOT / name
-                                      for name in ('baseline', 'realtime', 'stream2')]
+    comparisons = [directory.resolve() for directory in (
+        args.comparison or [DEFAULT_ROOT / name
+                            for name in ('baseline', 'realtime', 'stream2')])]
+    if len(set(comparisons)) != len(comparisons):
+        parser.error('comparison directories must be distinct')
 
     with args.lock.open('a') as lock:
         try:
@@ -112,27 +125,51 @@ def main(argv=None):
         except BlockingIOError:
             print('Another archive and verification run holds %s; skipping.' % args.lock)
             return 0
+        active = subprocess.run(
+            [args.squeue, '--all', '--noheader', '--user', str(os.getuid()),
+             '--states', ACTIVE_STATES, '--name',
+             ','.join(job_name(directory) for directory in comparisons),
+             '--format', '%i %j %T'],
+            check=True, text=True, stdout=subprocess.PIPE)
+        if active.stdout.strip():
+            print('Previous verification jobs are still active; skipping:\n%s'
+                  % active.stdout.strip(), flush=True)
+            return 0
         archive = read_yaml(config)
         root = resolved(archive['local hpss root'], Path.cwd())
         print('Retrieving archives using %s' % config, flush=True)
         subprocess.run([sys.executable, str(args.archive_script.resolve()),
                         '--yaml_file', str(config)], cwd=root, check=True)
         failures = []
+        submitted = []
         for directory in comparisons:
-            directory = directory.resolve()
             try:
                 stop = advance_stop(directory / 'experiments.yaml', archive)
                 print('Submitting %s through %s' % (directory, stop), flush=True)
                 env = os.environ.copy()
                 env.pop('CFG', None)
                 env.pop('APP', None)
-                subprocess.run([args.sbatch, '--wait', 'run_verif.sh'],
-                               cwd=directory, env=env, check=True)
-            except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError,
-                    subprocess.CalledProcessError) as exc:
-                print('%s: verification failed: %s' % (directory, exc),
+                env.pop('SBATCH_WAIT', None)
+                process = subprocess.Popen(
+                    [args.sbatch, '--parsable', '--job-name=' + job_name(directory),
+                     'run_verif.sh'], cwd=directory, env=env,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                submitted.append((directory, process))
+            except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError) as exc:
+                print('%s: submission failed: %s' % (directory, exc),
                       file=sys.stderr, flush=True)
                 failures.append(directory)
+        for directory, process in submitted:
+            stdout, stderr = process.communicate()
+            if process.returncode:
+                print('%s: submission failed (exit %s): %s' %
+                      (directory, process.returncode, stderr.strip()),
+                      file=sys.stderr, flush=True)
+                failures.append(directory)
+            else:
+                print('%s: submitted job %s' % (directory, stdout.strip()), flush=True)
+                if stderr:
+                    print(stderr, file=sys.stderr, end='', flush=True)
         return 1 if failures else 0
 
 

@@ -43,10 +43,14 @@ def workflow(tmp_path):
         comparisons.append(directory)
     fake_archive = write(tmp_path / 'archive.py', 'print("archive complete")\n')
     fake_sbatch = write(tmp_path / 'sbatch',
-                        '#!/bin/sh\nprintf "%s\\n" "$PWD $*" >> "$CALLS"\n')
+                        '#!/bin/sh\nprintf "%s\\n" "$PWD $*" >> "$CALLS"\n'
+                        'echo 12345\n')
     fake_sbatch.chmod(0o755)
+    fake_squeue = write(tmp_path / 'squeue', '#!/bin/sh\nexit 0\n')
+    fake_squeue.chmod(0o755)
     args = [sys.executable, str(DRIVER), '--archive-config', str(archive),
             '--archive-script', str(fake_archive), '--sbatch', str(fake_sbatch),
+            '--squeue', str(fake_squeue),
             '--lock', str(tmp_path / 'lock')]
     for directory in comparisons:
         args += ['--comparison', str(directory)]
@@ -69,7 +73,12 @@ def test_full_workflow_and_retry(tmp_path):
         assert 'stop: untouched' in text
         assert 'stop: "%s" # retain comment' % expected in text
     calls = (tmp_path / 'calls').read_text().splitlines()
-    assert calls == ['%s --wait run_verif.sh' % d for d in comparisons]
+    assert len(calls) == 2
+    for directory in comparisons:
+        assert any(line.startswith('%s --parsable --job-name=archiveverif-' % directory)
+                   and line.endswith(' run_verif.sh') for line in calls)
+    assert '--wait' not in '\n'.join(calls)
+    assert result.stdout.count('submitted job 12345') == 2
     # A previous failed build, or a lagging experiment, still gets a rerun.
     assert run(args, tmp_path).returncode == 0
     assert len((tmp_path / 'calls').read_text().splitlines()) == 4
@@ -90,8 +99,9 @@ def test_untracked_root_fails_only_that_comparison(tmp_path):
     result = run(args, tmp_path)
     assert result.returncode != 0
     assert 'not in the archive config' in result.stderr
-    assert (tmp_path / 'calls').read_text().splitlines() == [
-        '%s --wait run_verif.sh' % comparisons[1]]
+    calls = (tmp_path / 'calls').read_text().splitlines()
+    assert len(calls) == 1
+    assert calls[0].startswith('%s --parsable ' % comparisons[1])
 
 
 def test_submission_failure_continues_and_never_moves_stop_back(tmp_path):
@@ -104,8 +114,49 @@ def test_submission_failure_continues_and_never_moves_stop_back(tmp_path):
     result = run(args, tmp_path)
     assert result.returncode != 0
     assert '2024010200' in config.read_text()
-    assert (tmp_path / 'calls').read_text().splitlines() == [
-        str(d) for d in comparisons]
+    assert sorted((tmp_path / 'calls').read_text().splitlines()) == sorted(
+        str(d) for d in comparisons)
+
+
+def test_submissions_run_concurrently(tmp_path):
+    args, comparisons, _ = workflow(tmp_path)
+    sbatch = tmp_path / 'sbatch'
+    write(sbatch, '#!%s\n'
+          'import os, pathlib, sys, time\n'
+          'assert "SBATCH_WAIT" not in os.environ\n'
+          'root = pathlib.Path(os.environ["CALLS"]).parent\n'
+          '(root / pathlib.Path.cwd().name).with_suffix(".started").touch()\n'
+          'deadline = time.monotonic() + 5\n'
+          'while len(list(root.glob("*.started"))) < 2:\n'
+          '    if time.monotonic() > deadline: sys.exit(1)\n'
+          '    time.sleep(0.01)\n'
+          'print("456")\n' % sys.executable)
+    env = os.environ.copy()
+    env.update(CALLS=str(tmp_path / 'calls'), SBATCH_WAIT='1')
+    env.pop('LETKF_VERIF_ROOT', None)
+    result = subprocess.run(args, text=True, capture_output=True, env=env, timeout=10)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.count('submitted job 456') == len(comparisons)
+
+
+def test_active_jobs_prevent_retrieval_and_resubmission(tmp_path):
+    args, comparisons, fake_archive = workflow(tmp_path)
+    write(fake_archive, 'raise SystemExit(1)\n')
+    write(tmp_path / 'squeue', '#!/bin/sh\necho "123 archiveverif-test RUNNING"\n')
+    result = run(args, tmp_path)
+    assert result.returncode == 0
+    assert 'still active' in result.stdout
+    assert not (tmp_path / 'calls').exists()
+    assert '2024010106' in (comparisons[0] / 'experiments.yaml').read_text()
+
+
+def test_squeue_failure_prevents_retrieval(tmp_path):
+    args, _, _ = workflow(tmp_path)
+    write(tmp_path / 'squeue', '#!/bin/sh\necho unavailable >&2\nexit 1\n')
+    result = run(args, tmp_path)
+    assert result.returncode != 0
+    assert 'unavailable' in result.stderr
+    assert not (tmp_path / 'calls').exists()
 
 
 def test_overlapping_run_does_not_retrieve_or_submit(tmp_path):
