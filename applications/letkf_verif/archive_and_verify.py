@@ -124,13 +124,16 @@ def main(argv=None):
             return 0
         active = subprocess.run(
             [args.squeue, '--all', '--noheader', '--user', str(os.getuid()),
-             '--states', ACTIVE_STATES, '--name',
-             ','.join(job_name(directory) for directory in comparisons),
-             '--format', '%i %j %T'],
+             '--states', ACTIVE_STATES, '--format', '%i %j %T'],
             check=True, text=True, stdout=subprocess.PIPE)
-        if active.stdout.strip():
+        active_jobs = []
+        for line in active.stdout.splitlines():
+            fields = line.split(maxsplit=2)
+            if len(fields) > 1 and fields[1].startswith('archiveverif-'):
+                active_jobs.append(line)
+        if active_jobs:
             print('Previous verification jobs are still active; skipping:\n%s'
-                  % active.stdout.strip(), flush=True)
+                  % '\n'.join(active_jobs), flush=True)
             return 0
         archive = read_yaml(config)
         root = resolved(archive['local hpss root'], Path.cwd())

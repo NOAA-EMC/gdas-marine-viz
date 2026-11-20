@@ -213,10 +213,11 @@ be reported by this driver after it exits; inspect Slurm status and each
 comparison's `slurm-<jobid>.log`. Individual stage failures can be advisory.
 
 A lock prevents simultaneous driver invocations. Before retrieval, `squeue`
-checks for active jobs from this driver for any selected comparison and skips
-the run if any remain, so a later cron invocation cannot rewrite the configs or
-data while those jobs are pending or running. The check fails closed if Slurm
-cannot be queried. Manual jobs, jobs from older versions of the driver, and
+checks for active jobs submitted by this driver and skips the run if any remain,
+including jobs for comparisons not selected for this invocation, so a later
+cron invocation cannot rewrite the configs or data while those jobs are pending
+or running. The check fails closed if Slurm cannot be queried. Manual jobs, jobs
+from older versions of the driver, and
 `run_daily.sh` are not covered by this check or the lock.
 
 The driver accepts `--archive-config PATH`, repeated `--comparison DIR`,

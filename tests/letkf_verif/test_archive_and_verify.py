@@ -163,6 +163,18 @@ def test_active_jobs_prevent_retrieval_and_resubmission(tmp_path):
     assert '2024010106' in (comparisons[0] / 'experiments.yaml').read_text()
 
 
+def test_unselected_driver_job_prevents_retrieval(tmp_path):
+    args, comparisons, fake_archive = workflow(tmp_path)
+    write(fake_archive, 'raise SystemExit(1)\n')
+    second_comparison = args.index('--comparison', args.index('--comparison') + 1)
+    del args[second_comparison:second_comparison + 2]
+    write(tmp_path / 'squeue', '#!/bin/sh\necho "123 archiveverif-other RUNNING"\n')
+    result = run(args, tmp_path)
+    assert result.returncode == 0
+    assert 'archiveverif-other RUNNING' in result.stdout
+    assert not (tmp_path / 'calls').exists()
+
+
 def test_squeue_failure_prevents_retrieval(tmp_path):
     args, _, _ = workflow(tmp_path)
     write(tmp_path / 'squeue', '#!/bin/sh\necho unavailable >&2\nexit 1\n')
