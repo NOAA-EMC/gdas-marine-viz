@@ -84,6 +84,19 @@ def test_full_workflow_and_retry(tmp_path):
     assert len((tmp_path / 'calls').read_text().splitlines()) == 4
 
 
+def test_non_aligned_cycles_are_accepted(tmp_path):
+    args, comparisons, _ = workflow(tmp_path)
+    for directory in comparisons:
+        config = directory / 'experiments.yaml'
+        config.write_text(config.read_text().replace('step: 6', 'step: 24'))
+
+    result = run(args, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert 'stop: "2024010118"' in (comparisons[0] / 'experiments.yaml').read_text()
+    assert 'stop: "2024010112"' in (comparisons[1] / 'experiments.yaml').read_text()
+
+
 def test_archive_failure_never_submits(tmp_path):
     args, comparisons, fake_archive = workflow(tmp_path)
     write(fake_archive, 'raise SystemExit(1)\n')

@@ -52,7 +52,7 @@ def advance_stop(config, archive):
         raise ValueError('%s: cycles must be a start/stop/step mapping' % config)
     start, stop = cycle(spec['start']), cycle(spec['stop'])
     step = timedelta(hours=float(spec.get('step', 6)))
-    if step <= timedelta(0) or stop < start or (stop - start) % step:
+    if step <= timedelta(0) or stop < start:
         raise ValueError('%s: invalid cycle range or step' % config)
 
     archive_root = resolved(archive['local hpss root'], Path.cwd())
@@ -75,9 +75,6 @@ def advance_stop(config, archive):
     latest = max(found)
     if latest <= stop:
         return stop.strftime('%Y%m%d%H')
-    if (latest - start) % step:
-        raise ValueError('%s: tracked cycle is not on the configured cycle grid' % config)
-
     text = config.read_text(encoding='utf-8')
     document = yaml.compose(text)
     cycles_node = next(value for key, value in document.value if key.value == 'cycles')
