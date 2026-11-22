@@ -111,7 +111,7 @@ def submit_cycles(archive, archive_root, state, state_path, args):
                 command = [sys.executable, str(args.cycle_script.resolve()), str(config),
                            '--after-cycle', previous.strftime('%Y%m%d%H'),
                            '--through-cycle', latest.strftime('%Y%m%d%H'), '--wait',
-                           '--job-name', job_name(output_dir)]
+                           '--job-name', job_name(output_dir), '--sbatch', args.sbatch]
                 print('%s: plotting cycles after %s through %s' %
                       (pslot, previous.strftime('%Y%m%d%H'), latest.strftime('%Y%m%d%H')),
                       flush=True)

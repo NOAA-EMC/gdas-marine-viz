@@ -116,11 +116,11 @@ def test_selected_cycles_wait_and_report_job_failure(tmp_path):
         'base_exp_path': str(tmp_path), 'vrfyout': str(tmp_path / 'out'),
     }))
     env = os.environ.copy()
-    env.update(PATH=str(tmp_path) + os.pathsep + env['PATH'], CALLS=str(tmp_path / 'calls'))
+    env.update(CALLS=str(tmp_path / 'calls'))
     result = subprocess.run(
         [sys.executable, str(root / 'applications/cycle_diagnostics/run_vrfy.py'),
          str(config), '--after-cycle', '2024010112', '--through-cycle', '2024010200',
-         '--wait', '--job-name', 'archiveverif-test'],
+         '--wait', '--job-name', 'archiveverif-test', '--sbatch', str(sbatch)],
         cwd=tmp_path, env=env, capture_output=True, text=True)
     assert result.returncode != 0
     assert 'failed with exit code' in result.stderr

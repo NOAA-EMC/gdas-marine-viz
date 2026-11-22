@@ -67,6 +67,7 @@ if __name__ == "__main__":
     parser.add_argument("--through-cycle", help="Submit only cycles through YYYYMMDDHH")
     parser.add_argument("--wait", action="store_true", help="Wait for all plotting jobs")
     parser.add_argument("--job-name", help="Override the Slurm job name")
+    parser.add_argument("--sbatch", default="sbatch", help="sbatch executable")
     args = parser.parse_args()
     if bool(args.after_cycle) != bool(args.through_cycle):
         parser.error("--after-cycle and --through-cycle must be used together")
@@ -115,7 +116,7 @@ if __name__ == "__main__":
             generate_jobcard(template_jobcard, jobcard, context)
 
             # Submit the plotting job
-            command = ["sbatch"]
+            command = [args.sbatch]
             if args.wait:
                 command.append("--wait")
             if args.job_name:

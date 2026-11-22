@@ -268,6 +268,7 @@ def test_new_cycles_are_retried_and_gallery_follows_success(tmp_path):
     assert str(tmp_path / 'plots/one') not in (tmp_path / 'sites').read_text()
     calls = (tmp_path / 'cycles').read_text()
     assert '--after-cycle 2024010112 --through-cycle 2024010200 --wait' in calls
+    assert '--sbatch %s' % (tmp_path / 'sbatch') in calls
     env['CYCLE_EXIT'] = '0'
     success = subprocess.run(args, text=True, capture_output=True, env=env)
     assert success.returncode == 0, success.stderr
