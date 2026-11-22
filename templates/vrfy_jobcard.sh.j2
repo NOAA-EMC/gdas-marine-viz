@@ -13,6 +13,8 @@
 #SBATCH --mem={{ memory | default("24GB") }}              # Request memory
 #SBATCH --time={{ walltime | default("00:30:00") }}       # Set the walltime limit
 
+set -e
+
 # Define HOMEgdas
 export HOMEgdasmv="{{ homegdasmarineviz }}"
 export HOMEgfs="{{ homegfs }}"

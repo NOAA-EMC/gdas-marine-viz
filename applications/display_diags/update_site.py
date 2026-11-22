@@ -12,14 +12,13 @@ from pathlib import Path
 
 import argparse
 
-ROOT = Path(__file__).resolve().parent
+SCRIPTS = Path(__file__).resolve().parent
 
 parser = argparse.ArgumentParser(description='Update manifest and static gallery')
 parser.add_argument('root', nargs='?', help='project root to operate on (default: script parent)', default=None)
 parser.add_argument('--out', help='optional output path to pass to generate_manifest.py', default=None)
 args = parser.parse_args()
-if args.root:
-    ROOT = Path(args.root).resolve()
+ROOT = Path(args.root).resolve() if args.root else SCRIPTS
 
 print('Updating manifest and static gallery...')
 
@@ -33,8 +32,8 @@ def run(cmd):
 
 
 if __name__ == '__main__':
-    gm = [sys.executable, str(ROOT / 'generate_manifest.py')]
-    gs = [sys.executable, str(ROOT / 'generate_static_gallery.py')]
+    gm = [sys.executable, str(SCRIPTS / 'generate_manifest.py')]
+    gs = [sys.executable, str(SCRIPTS / 'generate_static_gallery.py')]
     # If a custom root was provided, pass it through
     if args.root:
         gm.append(str(ROOT))

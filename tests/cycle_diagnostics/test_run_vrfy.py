@@ -1,6 +1,9 @@
 import pytest
 import os
 import subprocess
+import sys
+from pathlib import Path
+import yaml
 from unittest.mock import patch
 from applications.cycle_diagnostics.run_vrfy import (
     render_html,
@@ -98,3 +101,46 @@ def test_job_submission(mock_subprocess, sample_job_template, temp_output_file):
 def test_render_html_missing_template(mock_logging_error, temp_output_file):
     """Test that render_html handles missing templates gracefully."""
     render_html("non_existent_template.j2", temp_output_file, {"pslot": "test"})
+
+
+def test_selected_cycles_wait_and_report_job_failure(tmp_path):
+    root = Path(__file__).resolve().parents[2]
+    sbatch = tmp_path / 'sbatch'
+    sbatch.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$CALLS"\n'
+                      'case "$*" in *20240102.00*) exit 1;; esac\n')
+    sbatch.chmod(0o755)
+    config = tmp_path / 'config.yaml'
+    config.write_text(yaml.safe_dump({
+        'pslot': 'test', 'start_pdy': '20240101', 'end_pdy': '20240101',
+        'cycs': ['00', '06', '12', '18'], 'homegdasmarineviz': str(root),
+        'base_exp_path': str(tmp_path), 'vrfyout': str(tmp_path / 'out'),
+    }))
+    env = os.environ.copy()
+    env.update(PATH=str(tmp_path) + os.pathsep + env['PATH'], CALLS=str(tmp_path / 'calls'))
+    result = subprocess.run(
+        [sys.executable, str(root / 'applications/cycle_diagnostics/run_vrfy.py'),
+         str(config), '--after-cycle', '2024010112', '--through-cycle', '2024010200',
+         '--wait', '--job-name', 'archiveverif-test'],
+        cwd=tmp_path, env=env, capture_output=True, text=True)
+    assert result.returncode != 0
+    assert 'failed with exit code' in result.stderr
+    calls = (tmp_path / 'calls').read_text().splitlines()
+    assert len(calls) == 2
+    assert all('--wait --job-name=archiveverif-test' in line for line in calls)
+    assert any('20240101.18.sh' in line for line in calls)
+    assert any('20240102.00.sh' in line for line in calls)
+
+
+def test_update_site_uses_checkout_scripts_for_external_root(tmp_path):
+    root = Path(__file__).resolve().parents[2]
+    image = tmp_path / 'gdas.20240101.00/vrfy/ana/sst/test.png'
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b'png')
+    result = subprocess.run(
+        [sys.executable, str(root / 'applications/display_diags/update_site.py'), str(tmp_path)],
+        capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert 'gdas.20240101.00/vrfy/ana/sst/test.png' in (
+        tmp_path / 'images_manifest.json').read_text()
+    assert 'gdas.20240101.00/vrfy/ana/sst/test.png' in (
+        tmp_path / 'gallery_static.html').read_text()
