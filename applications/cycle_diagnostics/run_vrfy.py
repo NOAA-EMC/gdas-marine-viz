@@ -1,4 +1,5 @@
 from jinja2 import Template
+import argparse
 import subprocess
 from datetime import datetime, timedelta
 import yaml
@@ -60,12 +61,24 @@ def generate_jobcard(template_path, output_path, context):
 # Example usage
 if __name__ == "__main__":
 
-    # Get the YAML configuration file name from the input argument
-    if len(sys.argv) != 2:
-        print("Usage: python run_vrfy.py <config.yaml>")
-        sys.exit(1)
-
-    config_file = sys.argv[1]
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config_file")
+    parser.add_argument("--after-cycle", help="Submit only cycles after YYYYMMDDHH")
+    parser.add_argument("--through-cycle", help="Submit only cycles through YYYYMMDDHH")
+    parser.add_argument("--wait", action="store_true", help="Wait for all plotting jobs")
+    parser.add_argument("--job-name", help="Override the Slurm job name")
+    parser.add_argument("--sbatch", default="sbatch", help="sbatch executable")
+    args = parser.parse_args()
+    if bool(args.after_cycle) != bool(args.through_cycle):
+        parser.error("--after-cycle and --through-cycle must be used together")
+    if args.after_cycle:
+        for value in (args.after_cycle, args.through_cycle):
+            if len(value) != 10 or not value.isdigit():
+                parser.error("cycle bounds must be YYYYMMDDHH")
+            datetime.strptime(value, "%Y%m%d%H")
+        if args.after_cycle > args.through_cycle:
+            parser.error("--after-cycle must not be later than --through-cycle")
+    config_file = args.config_file
 
     # Read the YAML template from the file
     with open(config_file, "r") as file:
@@ -77,13 +90,20 @@ if __name__ == "__main__":
     # Render the template with Jinja2
     template = Template(yaml_template)
     config = yaml.safe_load(template.render(pslot=template_dict["pslot"]))
+    if args.after_cycle:
+        config['start_pdy'] = min(str(config['start_pdy']), args.after_cycle[:8])
+        config['end_pdy'] = max(str(config['end_pdy']), args.through_cycle[:8])
 
     # Iterate over the date range
     pdys = []
+    processes = []
+    failures = []
     for pdy in iterate_pdy_range(config['start_pdy'], config['end_pdy']):
         context = copy.deepcopy(config)
         pdys.append(pdy)
         for cyc in config["cycs"]:
+            if args.after_cycle and not (args.after_cycle < pdy + str(cyc) <= args.through_cycle):
+                continue
             # Update the cycle's date
             context.update({"pdy": pdy, "cyc": cyc})
 
@@ -96,7 +116,24 @@ if __name__ == "__main__":
             generate_jobcard(template_jobcard, jobcard, context)
 
             # Submit the plotting job
-            subprocess.run(f"sbatch {jobcard}", shell=True)
+            command = [args.sbatch]
+            if args.wait:
+                command.append("--wait")
+            if args.job_name:
+                command.append("--job-name=" + args.job_name)
+            command.append(jobcard)
+            try:
+                processes.append((jobcard, subprocess.Popen(command)))
+            except OSError as exc:
+                print(f"Failed to submit {jobcard}: {exc}", file=sys.stderr)
+                failures.append(jobcard)
+
+    for jobcard, process in processes:
+        if process.wait():
+            print(f"Job {jobcard} failed with exit code {process.returncode}", file=sys.stderr)
+            failures.append(jobcard)
+    if failures:
+        sys.exit(1)
 
     # Create the list of years, months, and days from pdys
     pdys = sorted(pdys)

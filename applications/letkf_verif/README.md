@@ -206,18 +206,42 @@ experiments. Experiment roots must resolve to active entries in the HPSS YAML,
 and each must have a valid `cycles.yaml`. Each comparison is submitted from its
 own directory, even if the stop did not change, so a failed job or late-arriving
 experiment can be retried. Submissions run concurrently; the driver reports
-their job IDs and exits without waiting for the jobs. Extraction failures leave
+their job IDs without waiting for the comparison jobs. Extraction failures leave
 the tracker at the last fully extracted cycle and prevent all submissions;
-submission failures are reported after trying the others. Job failures cannot
-be reported by this driver after it exits; inspect Slurm status and each
-comparison's `slurm-<jobid>.log`. Individual stage failures can be advisory.
+submission failures are reported after trying the others. Comparison job
+failures cannot be reported by this driver after it exits; inspect Slurm status
+and each comparison's `slurm-<jobid>.log`. Individual stage failures can be advisory.
+
+The same cron invocation also generates cycle diagnostics for every active
+`pslot` in the archive YAML. Each needs
+`<cycle-root>/<pslot>/run/vrfy_config.yaml`, with matching `pslot`,
+`base_exp_path` (the downloaded archive directory), and `vrfyout`
+(`<cycle-root>/<pslot>`). The default cycle root is
+`/scratch3/NCEPDEV/da/Andrew.Eichmann/vrfy`; set `--cycle-root` to override it.
+Missing or mismatched configurations are reported as errors while the other
+experiments continue.
+
+On the first invocation, the driver saves each existing download tracker as
+the plotting baseline **before** retrieval; it plots only cycles downloaded
+after that baseline, filtered by the config's `cycs`. It retains a separate
+checkpoint beside the lock (`.archive-verif.lock.cycles.yaml`, or
+`--cycle-state PATH`), including when retrieval fails partway through. Preserve
+this file to retry unfinished cycles; deleting it resets the baseline to the
+current download trackers. All selected plotting jobs are submitted with
+`sbatch --wait`, and the driver waits for them before regenerating that
+experiment's manifest and static gallery. A failed submission, plotting job,
+or gallery update leaves the checkpoint unchanged, so the batch is retried
+on the next invocation. Galleries are also refreshed when there are no new
+cycles. Unlike the external `update_all`, this does not delete logs, jobcards,
+CSS, or intermediate YAML files.
 
 A lock prevents simultaneous driver invocations. Before retrieval, `squeue`
 checks for active jobs submitted by this driver and skips the run if any remain,
 including jobs for comparisons not selected for this invocation, so a later
 cron invocation cannot rewrite the configs or data while those jobs are pending
-or running. The check fails closed if Slurm cannot be queried. Manual jobs, jobs
-from older versions of the driver, and
+or running. Cycle plotting jobs use the same job-name prefix, so they are also
+detected if the driver is interrupted. The check fails closed if Slurm cannot
+be queried. Manual jobs, jobs from older versions of the driver, and
 `run_daily.sh` are not covered by this check or the lock.
 
 The driver accepts `--archive-config PATH`, repeated `--comparison DIR`,

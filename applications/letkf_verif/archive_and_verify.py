@@ -13,10 +13,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import yaml
+from jinja2 import Template, TemplateError
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_ROOT = Path('/scratch3/NCEPDEV/da/Andrew.Eichmann/vrfy/comparisons')
 DEFAULT_ARCHIVE = Path('/scratch3/NCEPDEV/da/Andrew.Eichmann/hpss/get_hpss_arch.yaml')
+DEFAULT_CYCLE_ROOT = DEFAULT_ROOT.parent
 ACTIVE_STATES = ('pending,running,suspended,completing,configuring,expediting,'
                  'resizing,resv_del_hold,requeued,requeue_fed,requeue_hold,'
                  'signaling,special_exit,stage_out,stopped')
@@ -42,6 +44,100 @@ def resolved(path, base):
 def job_name(directory):
     digest = hashlib.sha256(os.fsencode(str(directory))).hexdigest()[:16]
     return 'archiveverif-' + digest
+
+
+def save_cycle_state(path, state):
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent,
+                                         delete=False) as stream:
+            tmp = Path(stream.name)
+            yaml.safe_dump(state, stream)
+        os.replace(tmp, path)
+    finally:
+        if tmp is not None and tmp.exists():
+            tmp.unlink()
+
+
+def initialize_cycle_state(archive, state_path):
+    root = resolved(archive['local hpss root'], Path.cwd())
+    state = read_yaml(state_path) if state_path.exists() else {}
+    if not isinstance(state, dict):
+        raise ValueError('%s: invalid cycle state' % state_path)
+    for experiment in archive['experiments']:
+        pslot = experiment['pslot']
+        if not isinstance(pslot, str) or Path(pslot).name != pslot or pslot in ('', '.', '..'):
+            raise ValueError('invalid pslot: %r' % pslot)
+        archive_dir = resolved(pslot, root)
+        key = str(archive_dir)
+        latest = cycle(read_yaml(archive_dir / 'cycles.yaml')['last_extracted_cycle'])
+        if key not in state:
+            state[key] = latest.strftime('%Y%m%d%H')
+        else:
+            cycle(state[key])
+    save_cycle_state(state_path, state)
+    return root, state
+
+
+def validate_cycle_config(config_path, pslot, archive_dir, output_dir):
+    text = config_path.read_text(encoding='utf-8')
+    raw = yaml.safe_load(text)
+    config = yaml.safe_load(Template(text).render(pslot=raw['pslot']))
+    if config['pslot'] != pslot:
+        raise ValueError('%s: pslot does not match %s' % (config_path, pslot))
+    for field, expected in (('base_exp_path', archive_dir), ('vrfyout', output_dir)):
+        if resolved(config[field], config_path.parent) != expected.resolve():
+            raise ValueError('%s: %s must resolve to %s' % (config_path, field, expected))
+
+
+def submit_cycles(archive, archive_root, state, state_path, args):
+    failures = []
+    submitted = []
+    for experiment in archive['experiments']:
+        pslot = experiment['pslot']
+        archive_dir = resolved(pslot, archive_root)
+        output_dir = args.cycle_root / pslot
+        run_dir = output_dir / 'run'
+        config = run_dir / 'vrfy_config.yaml'
+        try:
+            validate_cycle_config(config, pslot, archive_dir, output_dir)
+            previous = cycle(state[str(archive_dir)])
+            latest = cycle(read_yaml(archive_dir / 'cycles.yaml')['last_extracted_cycle'])
+            if latest < previous:
+                raise ValueError('archive tracker moved backwards from %s to %s' %
+                                 (previous, latest))
+            process = None
+            if latest > previous:
+                command = [sys.executable, str(args.cycle_script.resolve()), str(config),
+                           '--after-cycle', previous.strftime('%Y%m%d%H'),
+                           '--through-cycle', latest.strftime('%Y%m%d%H'), '--wait',
+                           '--job-name', job_name(output_dir), '--sbatch', args.sbatch]
+                print('%s: plotting cycles after %s through %s' %
+                      (pslot, previous.strftime('%Y%m%d%H'), latest.strftime('%Y%m%d%H')),
+                      flush=True)
+                process = subprocess.Popen(command, cwd=run_dir)
+            submitted.append((pslot, archive_dir, output_dir, latest, process))
+        except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError, TemplateError) as exc:
+            print('%s: cycle verification failed: %s' % (pslot, exc),
+                  file=sys.stderr, flush=True)
+            failures.append(pslot)
+    for pslot, archive_dir, output_dir, latest, process in submitted:
+        if process is not None and process.wait():
+            print('%s: cycle verification failed (exit %s)' % (pslot, process.returncode),
+                  file=sys.stderr, flush=True)
+            failures.append(pslot)
+            continue
+        try:
+            subprocess.run([sys.executable, str(args.site_script.resolve()), str(output_dir)],
+                           check=True)
+            updated = dict(state)
+            updated[str(archive_dir)] = latest.strftime('%Y%m%d%H')
+            save_cycle_state(state_path, updated)
+            state.update(updated)
+        except (OSError, subprocess.CalledProcessError) as exc:
+            print('%s: gallery update failed: %s' % (pslot, exc), file=sys.stderr, flush=True)
+            failures.append(pslot)
+    return failures
 
 
 def advance_stop(config, archive):
@@ -108,8 +204,18 @@ def main(argv=None):
     parser.add_argument('--lock', type=Path, default=DEFAULT_ROOT / '.archive-verif.lock')
     parser.add_argument('--sbatch', default='sbatch', help='sbatch executable')
     parser.add_argument('--squeue', default='squeue', help='squeue executable')
+    parser.add_argument('--cycle-root', type=Path, default=DEFAULT_CYCLE_ROOT,
+                        help='parent directory of experiment verification outputs')
+    parser.add_argument('--cycle-script', type=Path,
+                        default=HERE.parent / 'cycle_diagnostics/run_vrfy.py')
+    parser.add_argument('--site-script', type=Path,
+                        default=HERE.parent / 'display_diags/update_site.py')
+    parser.add_argument('--cycle-state', type=Path,
+                        help='persistent cycle plotting checkpoint (default: beside lock)')
     args = parser.parse_args(argv)
     config = args.archive_config.resolve()
+    args.cycle_root = args.cycle_root.resolve()
+    state_path = (args.cycle_state or args.lock.with_name(args.lock.name + '.cycles.yaml')).resolve()
     comparisons = [directory.resolve() for directory in (
         args.comparison or [DEFAULT_ROOT / name
                             for name in ('baseline', 'realtime', 'stream2')])]
@@ -136,6 +242,7 @@ def main(argv=None):
                   % '\n'.join(active_jobs), flush=True)
             return 0
         archive = read_yaml(config)
+        archive_root, cycle_state = initialize_cycle_state(archive, state_path)
         print('Retrieving archives using %s' % config, flush=True)
         subprocess.run([sys.executable, str(args.archive_script.resolve()),
                         '--yaml_file', str(config)], check=True)
@@ -169,6 +276,7 @@ def main(argv=None):
                 print('%s: submitted job %s' % (directory, stdout.strip()), flush=True)
                 if stderr:
                     print(stderr, file=sys.stderr, end='', flush=True)
+        failures.extend(submit_cycles(archive, archive_root, cycle_state, state_path, args))
         return 1 if failures else 0
 
 

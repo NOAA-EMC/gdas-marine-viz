@@ -48,9 +48,28 @@ def workflow(tmp_path):
     fake_sbatch.chmod(0o755)
     fake_squeue = write(tmp_path / 'squeue', '#!/bin/sh\nexit 0\n')
     fake_squeue.chmod(0o755)
+    cycle_root = tmp_path / 'plots'
+    for name in ('one', 'two'):
+        run_dir = cycle_root / name / 'run'
+        run_dir.mkdir(parents=True)
+        write(run_dir / 'vrfy_config.yaml', yaml.safe_dump({
+            'pslot': name, 'base_exp_path': str(archive_root / name),
+            'vrfyout': str(cycle_root / name),
+        }))
+    fake_cycle = write(tmp_path / 'cycle.py',
+                       'import os, pathlib, sys\n'
+                       'with open(os.environ["CYCLES"], "a") as f:\n'
+                       '    print(pathlib.Path.cwd(), *sys.argv[1:], file=f)\n'
+                       'sys.exit(int(os.environ.get("CYCLE_EXIT", "0")))\n')
+    fake_site = write(tmp_path / 'site.py',
+                      'import os, sys\n'
+                      'with open(os.environ["SITES"], "a") as f:\n'
+                      '    print(sys.argv[1], file=f)\n')
     args = [sys.executable, str(DRIVER), '--archive-config', str(archive),
             '--archive-script', str(fake_archive), '--sbatch', str(fake_sbatch),
             '--squeue', str(fake_squeue),
+            '--cycle-root', str(cycle_root), '--cycle-script', str(fake_cycle),
+            '--site-script', str(fake_site),
             '--lock', str(tmp_path / 'lock')]
     for directory in comparisons:
         args += ['--comparison', str(directory)]
@@ -59,7 +78,8 @@ def workflow(tmp_path):
 
 def run(args, tmp_path):
     env = os.environ.copy()
-    env.update(CALLS=str(tmp_path / 'calls'))
+    env.update(CALLS=str(tmp_path / 'calls'), CYCLES=str(tmp_path / 'cycles'),
+               SITES=str(tmp_path / 'sites'))
     env.pop('LETKF_VERIF_ROOT', None)
     return subprocess.run(args, text=True, capture_output=True, env=env)
 
@@ -145,7 +165,8 @@ def test_submissions_run_concurrently(tmp_path):
           '    time.sleep(0.01)\n'
           'print("456")\n' % sys.executable)
     env = os.environ.copy()
-    env.update(CALLS=str(tmp_path / 'calls'), SBATCH_WAIT='1')
+    env.update(CALLS=str(tmp_path / 'calls'), SBATCH_WAIT='1',
+               CYCLES=str(tmp_path / 'cycles'), SITES=str(tmp_path / 'sites'))
     env.pop('LETKF_VERIF_ROOT', None)
     result = subprocess.run(args, text=True, capture_output=True, env=env, timeout=10)
     assert result.returncode == 0, result.stderr
@@ -231,3 +252,58 @@ def test_archive_root_is_expanded_before_retrieval(tmp_path, monkeypatch, root):
     get_hpss_arch.main(str(config))
 
     assert retrieved == [(destination, '/hpss/one')]
+
+
+def test_new_cycles_are_retried_and_gallery_follows_success(tmp_path):
+    args, _, fake_archive = workflow(tmp_path)
+    write(fake_archive, 'from pathlib import Path\n'
+          'Path(%r).write_text("last_extracted_cycle: 2024010200\\n")\n'
+          % str(tmp_path / 'archive/one/cycles.yaml'))
+    env = os.environ.copy()
+    env.update(CALLS=str(tmp_path / 'calls'), CYCLES=str(tmp_path / 'cycles'),
+               SITES=str(tmp_path / 'sites'), CYCLE_EXIT='1')
+    env.pop('LETKF_VERIF_ROOT', None)
+    failed = subprocess.run(args, text=True, capture_output=True, env=env)
+    assert failed.returncode != 0
+    assert str(tmp_path / 'plots/one') not in (tmp_path / 'sites').read_text()
+    calls = (tmp_path / 'cycles').read_text()
+    assert '--after-cycle 2024010112 --through-cycle 2024010200 --wait' in calls
+    assert '--sbatch %s' % (tmp_path / 'sbatch') in calls
+    env['CYCLE_EXIT'] = '0'
+    success = subprocess.run(args, text=True, capture_output=True, env=env)
+    assert success.returncode == 0, success.stderr
+    assert len((tmp_path / 'cycles').read_text().splitlines()) == 2
+    assert str(tmp_path / 'plots/one') in (tmp_path / 'sites').read_text()
+    assert run(args, tmp_path).returncode == 0
+    assert len((tmp_path / 'cycles').read_text().splitlines()) == 2
+
+
+def test_missing_cycle_config_reports_failure_and_continues(tmp_path):
+    args, _, _ = workflow(tmp_path)
+    (tmp_path / 'plots/one/run/vrfy_config.yaml').unlink()
+    result = run(args, tmp_path)
+    assert result.returncode != 0
+    assert 'one: cycle verification failed' in result.stderr
+    assert str(tmp_path / 'plots/two') in (tmp_path / 'sites').read_text()
+
+
+def test_partial_retrieval_and_failed_gallery_are_retried(tmp_path):
+    args, _, fake_archive = workflow(tmp_path)
+    write(fake_archive, 'from pathlib import Path\n'
+          'Path(%r).write_text("last_extracted_cycle: 2024010200\\n")\n'
+          'raise SystemExit(1)\n' % str(tmp_path / 'archive/one/cycles.yaml'))
+    assert run(args, tmp_path).returncode != 0
+    assert not (tmp_path / 'cycles').exists()
+
+    write(fake_archive, 'print("archive complete")\n')
+    site = tmp_path / 'site.py'
+    original_site = site.read_text()
+    write(site, 'import sys\n'
+          'sys.exit(1 if sys.argv[1].endswith("/one") else 0)\n')
+    assert run(args, tmp_path).returncode != 0
+    assert len((tmp_path / 'cycles').read_text().splitlines()) == 1
+    write(site, original_site)
+    result = run(args, tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert len((tmp_path / 'cycles').read_text().splitlines()) == 2
+    assert str(tmp_path / 'plots/one') in (tmp_path / 'sites').read_text()
